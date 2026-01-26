@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'pages/dashboard_page.dart';
 import 'pages/calendar_page.dart';
 import 'pages/employees_page.dart';
+import 'pages/add_booking_page.dart';
 
 void main() {
   runApp(const HotelManagementApp());
@@ -23,7 +23,7 @@ class HotelManagementApp extends StatelessWidget {
           seedColor: const Color(0xFF007AFF),
           brightness: Brightness.light,
         ),
-        textTheme: GoogleFonts.interTextTheme(),
+        // Material 3 uses clean default typography - no need to override
         cardTheme: const CardThemeData(
           elevation: 0,
           shape: RoundedRectangleBorder(
@@ -56,12 +56,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     DashboardPage(),
     CalendarPage(),
     EmployeesPage(),
+    AddBookingPage(),
   ];
 
   final List<_NavItem> _navItems = const [
     _NavItem(Icons.dashboard_rounded, 'Dashboard'),
     _NavItem(Icons.calendar_month_rounded, 'Calendar'),
     _NavItem(Icons.people_rounded, 'Employees'),
+    _NavItem(Icons.add_circle_outline_rounded, 'Add Booking'),
   ];
 
   @override

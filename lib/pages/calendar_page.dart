@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'add_booking_page.dart';
 
 class CalendarPage extends StatefulWidget {
   const CalendarPage({super.key});
@@ -513,7 +514,17 @@ class _CalendarPageState extends State<CalendarPage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          _showAddBookingDialog(context);
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const AddBookingPage(),
+            ),
+          ).then((bookingCreated) {
+            if (bookingCreated == true) {
+              // Refresh the calendar if booking was created
+              setState(() {});
+            }
+          });
         },
         backgroundColor: const Color(0xFF007AFF),
         child: const Icon(Icons.add, color: Colors.white),
@@ -727,105 +738,27 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   void _showBookingDialog(List<String> rooms, List<DateTime> dates) {
-    final nights = dates.length;
     final startDate = dates.first;
-    final endDate = dates.last;
+    final endDate = dates.last.add(const Duration(days: 1)); // Check-out is the day after last night
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('New Booking'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (rooms.length > 1)
-                Text(
-                  '${rooms.length} Rooms: ${rooms.first} - ${rooms.last}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                )
-              else
-                Text(
-                  'Room: ${rooms.first}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-              const SizedBox(height: 8),
-              Text(
-                '${nights} ${nights == 1 ? 'night' : 'nights'}',
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 13,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${DateFormat('MMM d').format(startDate)} - ${DateFormat('MMM d, yyyy').format(endDate)}',
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 13,
-                ),
-              ),
-              const SizedBox(height: 16),
-              const TextField(
-                decoration: InputDecoration(
-                  labelText: 'Guest Name',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              const TextField(
-                decoration: InputDecoration(
-                  labelText: 'Contact Info',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
+    // Navigate to Add Booking page with preselected values
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddBookingPage(
+          preselectedRoom: rooms.length == 1 ? rooms.first : null,
+          preselectedStartDate: startDate,
+          preselectedEndDate: endDate,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // Here you would add the booking logic
-              // For now, just show a confirmation
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'Booking created for ${rooms.length} ${rooms.length == 1 ? 'room' : 'rooms'} for $nights ${nights == 1 ? 'night' : 'nights'}',
-                  ),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
-            child: const Text('Create Booking'),
-          ),
-        ],
       ),
-    );
+    ).then((bookingCreated) {
+      if (bookingCreated == true) {
+        // Refresh the calendar if booking was created
+        setState(() {});
+      }
+    });
   }
 
-  void _showAddBookingDialog(
-    BuildContext context, {
-    String? room,
-    DateTime? date,
-  }) {
-    // Legacy method for single cell tap - now starts selection
-    if (room != null && date != null) {
-      _startSelection(room, date);
-    }
-  }
 
   bool isSameDay(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
