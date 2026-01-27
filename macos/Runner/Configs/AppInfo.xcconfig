@@ -1,4 +1,7 @@
 // Application-level settings for the Runner target.
+#include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
+#include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
+#include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"
 //
 // This may be replaced with something auto-generated from metadata (e.g., pubspec.yaml) in the
 // future. If not, the values below would default to using the project name when this becomes a

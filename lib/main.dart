@@ -1,10 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'pages/dashboard_page.dart';
 import 'pages/calendar_page.dart';
 import 'pages/employees_page.dart';
 import 'pages/add_booking_page.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase with generated options
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    debugPrint('Firebase initialized successfully');
+  } catch (e) {
+    // Firebase not configured yet - app will still run
+    debugPrint('Firebase not initialized: $e');
+  }
+
   runApp(const HotelManagementApp());
 }
 

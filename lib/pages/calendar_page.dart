@@ -51,7 +51,6 @@ class _CalendarPageState extends State<CalendarPage> {
   @override
   void initState() {
     super.initState();
-    _initializeSampleBookings();
   }
 
   @override
@@ -59,42 +58,6 @@ class _CalendarPageState extends State<CalendarPage> {
     _verticalScrollController.dispose();
     _horizontalScrollController.dispose();
     super.dispose();
-  }
-
-  void _initializeSampleBookings() {
-    final now = DateTime.now();
-
-    // Add some sample bookings
-    _addBooking('101', now, 3, 'John Smith', const Color(0xFF007AFF));
-    _addBooking(
-      '102',
-      now.add(const Duration(days: 2)),
-      2,
-      'Sarah Johnson',
-      const Color(0xFF34C759),
-    );
-    _addBooking(
-      '201',
-      now.add(const Duration(days: 1)),
-      4,
-      'Mike Chen',
-      const Color(0xFFFF9500),
-    );
-    _addBooking('203', now, 1, 'Emily Davis', const Color(0xFF5856D6));
-    _addBooking(
-      '301',
-      now.add(const Duration(days: 5)),
-      2,
-      'David Wilson',
-      const Color(0xFFFF2D55),
-    );
-    _addBooking(
-      '104',
-      now.add(const Duration(days: 3)),
-      3,
-      'Lisa Anderson',
-      const Color(0xFF5AC8FA),
-    );
   }
 
   void _addBooking(
@@ -145,33 +108,24 @@ class _CalendarPageState extends State<CalendarPage> {
     final startDate = _selectionStartDate!;
     final endDate = _selectionEndDate ?? startDate;
 
-    final minRoomIndex =
-        startRoomIndex < endRoomIndex ? startRoomIndex : endRoomIndex;
-    final maxRoomIndex =
-        startRoomIndex > endRoomIndex ? startRoomIndex : endRoomIndex;
-    
+    final minRoomIndex = startRoomIndex < endRoomIndex
+        ? startRoomIndex
+        : endRoomIndex;
+    final maxRoomIndex = startRoomIndex > endRoomIndex
+        ? startRoomIndex
+        : endRoomIndex;
+
     // Normalize dates to midnight for comparison
-    final minDate = DateTime(
-      startDate.year,
-      startDate.month,
-      startDate.day,
-    );
-    final maxDate = DateTime(
-      endDate.year,
-      endDate.month,
-      endDate.day,
-    );
-    final currentDate = DateTime(
-      date.year,
-      date.month,
-      date.day,
-    );
+    final minDate = DateTime(startDate.year, startDate.month, startDate.day);
+    final maxDate = DateTime(endDate.year, endDate.month, endDate.day);
+    final currentDate = DateTime(date.year, date.month, date.day);
 
     final roomInRange =
         currentRoomIndex >= minRoomIndex && currentRoomIndex <= maxRoomIndex;
-    
+
     // Check if current date is within the selected date range
-    final dateInRange = (currentDate.isAtSameMomentAs(minDate) ||
+    final dateInRange =
+        (currentDate.isAtSameMomentAs(minDate) ||
             currentDate.isAtSameMomentAs(maxDate)) ||
         (currentDate.isAfter(minDate) && currentDate.isBefore(maxDate));
 
@@ -279,7 +233,7 @@ class _CalendarPageState extends State<CalendarPage> {
     // Calculate which room column
     final roomX = adjustedX - 100;
     final roomIndex = (roomX / _roomColumnWidth).floor();
-    
+
     if (roomIndex < 0 || roomIndex >= _rooms.length) {
       return null;
     }
@@ -287,15 +241,12 @@ class _CalendarPageState extends State<CalendarPage> {
     // Calculate which day row
     final adjustedY = position.dy + scrollY;
     final dayIndex = (adjustedY / _dayRowHeight).floor();
-    
+
     if (dayIndex < 0 || dayIndex >= _dates.length) {
       return null;
     }
 
-    return {
-      'room': _rooms[roomIndex],
-      'date': _dates[dayIndex],
-    };
+    return {'room': _rooms[roomIndex], 'date': _dates[dayIndex]};
   }
 
   @override
@@ -393,7 +344,10 @@ class _CalendarPageState extends State<CalendarPage> {
                       decoration: BoxDecoration(
                         color: Colors.grey.shade50,
                         border: Border(
-                          bottom: BorderSide(color: Colors.grey.shade200, width: 1),
+                          bottom: BorderSide(
+                            color: Colors.grey.shade200,
+                            width: 1,
+                          ),
                         ),
                       ),
                       child: Row(
@@ -459,15 +413,23 @@ class _CalendarPageState extends State<CalendarPage> {
                       child: GestureDetector(
                         key: _gridKey,
                         onPanStart: (details) {
-                          final cell = _getCellFromPosition(details.localPosition);
-                          if (cell != null && _getBooking(cell['room']!, cell['date']!) == null) {
+                          final cell = _getCellFromPosition(
+                            details.localPosition,
+                          );
+                          if (cell != null &&
+                              _getBooking(cell['room']!, cell['date']!) ==
+                                  null) {
                             _startSelection(cell['room']!, cell['date']!);
                           }
                         },
                         onPanUpdate: (details) {
                           if (_isSelecting) {
-                            final cell = _getCellFromPosition(details.localPosition);
-                            if (cell != null && _getBooking(cell['room']!, cell['date']!) == null) {
+                            final cell = _getCellFromPosition(
+                              details.localPosition,
+                            );
+                            if (cell != null &&
+                                _getBooking(cell['room']!, cell['date']!) ==
+                                    null) {
                               _updateSelection(cell['room']!, cell['date']!);
                             }
                           }
@@ -516,9 +478,7 @@ class _CalendarPageState extends State<CalendarPage> {
         onPressed: () {
           Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (context) => const AddBookingPage(),
-            ),
+            MaterialPageRoute(builder: (context) => const AddBookingPage()),
           ).then((bookingCreated) {
             if (bookingCreated == true) {
               // Refresh the calendar if booking was created
@@ -617,15 +577,21 @@ class _CalendarPageState extends State<CalendarPage> {
             right: BorderSide(color: Colors.grey.shade200, width: 1),
             top: isSelected
                 ? BorderSide(
-                    color: const Color(0xFF007AFF).withOpacity(0.5), width: 2)
+                    color: const Color(0xFF007AFF).withOpacity(0.5),
+                    width: 2,
+                  )
                 : BorderSide.none,
             bottom: isSelected
                 ? BorderSide(
-                    color: const Color(0xFF007AFF).withOpacity(0.5), width: 2)
+                    color: const Color(0xFF007AFF).withOpacity(0.5),
+                    width: 2,
+                  )
                 : BorderSide.none,
             left: isSelected
                 ? BorderSide(
-                    color: const Color(0xFF007AFF).withOpacity(0.5), width: 2)
+                    color: const Color(0xFF007AFF).withOpacity(0.5),
+                    width: 2,
+                  )
                 : BorderSide.none,
           ),
         ),
@@ -739,7 +705,9 @@ class _CalendarPageState extends State<CalendarPage> {
 
   void _showBookingDialog(List<String> rooms, List<DateTime> dates) {
     final startDate = dates.first;
-    final endDate = dates.last.add(const Duration(days: 1)); // Check-out is the day after last night
+    final endDate = dates.last.add(
+      const Duration(days: 1),
+    ); // Check-out is the day after last night
 
     // Navigate to Add Booking page with preselected values
     Navigator.push(
@@ -758,7 +726,6 @@ class _CalendarPageState extends State<CalendarPage> {
       }
     });
   }
-
 
   bool isSameDay(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
