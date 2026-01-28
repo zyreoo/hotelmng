@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/booking_model.dart';
 import 'add_booking_page.dart';
 
 class CalendarPage extends StatefulWidget {
@@ -111,6 +113,9 @@ class _CalendarPageState extends State<CalendarPage> {
           _roomHeadersScrollController.jumpTo(mainOffset);
         }
       }
+
+      // Load initial bookings for the visible date range
+      _loadBookings();
     });
   }
 
@@ -152,13 +157,8 @@ class _CalendarPageState extends State<CalendarPage> {
       }
     });
 
-    // Load bookings for new dates - use the OLD earliestDate captured before update
-    _loadBookingsForDateRange(newEarliestDate, oldEarliestDate);
-  }
-
-  void _loadBookingsForDateRange(DateTime startDate, DateTime endDate) {
-    // TODO: Implement loading bookings from your data source (Firebase, etc.)
-    // This is a placeholder - implement based on your actual data loading mechanism
+    // Reload bookings for the expanded date range
+    _loadBookings();
   }
 
   void _scrollToDate(DateTime targetDate) {
@@ -449,6 +449,83 @@ class _CalendarPageState extends State<CalendarPage> {
     if (dayIndex < 0 || dayIndex >= _dates.length) return null;
 
     return {'room': _rooms[roomIndex], 'date': _dates[dayIndex]};
+  }
+
+  Future<void> _loadBookings() async {
+    try {
+      // Normalize range start and compute exclusive range end
+      final rangeStart = DateTime(
+        _earliestDate.year,
+        _earliestDate.month,
+        _earliestDate.day,
+      );
+      final rangeEnd = rangeStart.add(Duration(days: _totalDaysLoaded));
+
+      // Fetch bookings from Firestore
+      final snapshot =
+          await FirebaseFirestore.instance.collection('bookings').get();
+
+      final Map<DateTime, Map<String, Booking>> loadedBookings = {};
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final bookingModel = BookingModel.fromFirestore(data, doc.id);
+
+        // Normalize booking dates
+        final bookingStart = DateTime(
+          bookingModel.checkIn.year,
+          bookingModel.checkIn.month,
+          bookingModel.checkIn.day,
+        );
+        final bookingEnd = DateTime(
+          bookingModel.checkOut.year,
+          bookingModel.checkOut.month,
+          bookingModel.checkOut.day,
+        );
+
+        // Skip bookings that don't overlap our visible range at all
+        if (!bookingStart.isBefore(rangeEnd) || !bookingEnd.isAfter(rangeStart)) {
+          continue;
+        }
+
+        // Only show bookings that have specific rooms assigned
+        final rooms = bookingModel.selectedRooms;
+        if (rooms == null || rooms.isEmpty) continue;
+
+        final totalNights = bookingModel.numberOfNights;
+
+        for (final room in rooms) {
+          // Only render for rooms that exist in our calendar
+          if (!_rooms.contains(room)) continue;
+
+          for (int i = 0; i < totalNights; i++) {
+            final nightDate = bookingStart.add(Duration(days: i));
+
+            // Only keep nights inside the visible range
+            if (!nightDate.isBefore(rangeEnd) || nightDate.isBefore(rangeStart)) {
+              continue;
+            }
+
+            loadedBookings[nightDate] ??= {};
+            loadedBookings[nightDate]![room] = Booking(
+              guestName: bookingModel.userName,
+              color: Colors.blueAccent,
+              isFirstNight: i == 0,
+              isLastNight: i == totalNights - 1,
+              totalNights: totalNights,
+            );
+          }
+        }
+      }
+
+      setState(() {
+        _bookings
+          ..clear()
+          ..addAll(loadedBookings);
+      });
+    } catch (e) {
+      debugPrint('Failed to load bookings for calendar: $e');
+    }
   }
 
   @override
@@ -749,7 +826,7 @@ class _CalendarPageState extends State<CalendarPage> {
           ).then((bookingCreated) {
             if (bookingCreated == true) {
               // Refresh the calendar if booking was created
-              setState(() {});
+              _loadBookings();
             }
           });
         },
