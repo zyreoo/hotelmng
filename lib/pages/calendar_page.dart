@@ -672,14 +672,11 @@ class _CalendarPageState extends State<CalendarPage> {
 
                           final scrollOffset =
                               _verticalScrollController.hasClients
-                              ? _verticalScrollController.offset
-                              : 0.0;
-                          // Position line inside the row (slightly below top, e.g., 8px down)
-                          const lineOffsetInRow = 8.0; // Offset from top of row
-                          final lineY =
-                              _headerHeight +
-                              (todayIndex * _dayRowHeight) +
-                              lineOffsetInRow -
+                                  ? _verticalScrollController.offset
+                                  : 0.0;
+                          // Position line on the top border of today's row (above the row, not inside)
+                          final lineY = _headerHeight +
+                              (todayIndex * _dayRowHeight) -
                               scrollOffset;
 
                           return Positioned(
@@ -760,51 +757,49 @@ class _CalendarPageState extends State<CalendarPage> {
             child: Container(color: Colors.grey.shade200),
           ),
 
-          // Pill positioned at the top of the row
-          Positioned(
-            top: 0,
-            left: 8,
-            right: 6,
-            height: 34, // Fixed height for the pill
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Colors.white, // "cuts" the gridline
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: FittedBox(
-                  alignment: Alignment.centerLeft,
-                  fit: BoxFit.scaleDown,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        DateFormat('EEE').format(date),
-                        style: TextStyle(
-                          fontSize: 10,
-                          height: 1.0,
-                          color: Colors.grey.shade600,
-                          fontWeight: FontWeight.w500,
-                        ),
+          // Background for the whole date row (filled, not rounded)
+          Positioned.fill(
+            child: Container(
+              color: isToday
+                  ? const Color(0xFF007AFF).withOpacity(0.08)
+                  : Colors.transparent,
+            ),
+          ),
+
+          // Date text
+          Positioned.fill(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: FittedBox(
+                alignment: Alignment.centerLeft,
+                fit: BoxFit.scaleDown,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      DateFormat('EEE').format(date),
+                      style: TextStyle(
+                        fontSize: 10,
+                        height: 1.0,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w500,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        DateFormat('MMM d').format(date),
-                        style: TextStyle(
-                          fontSize: 13,
-                          height: 1.0,
-                          fontWeight: isToday
-                              ? FontWeight.bold
-                              : FontWeight.w600,
-                          color: isToday
-                              ? const Color(0xFF007AFF)
-                              : Colors.black87,
-                        ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      DateFormat('MMM d').format(date),
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.0,
+                        fontWeight:
+                            isToday ? FontWeight.bold : FontWeight.w600,
+                        color: isToday
+                            ? const Color(0xFF007AFF)
+                            : Colors.black87,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
