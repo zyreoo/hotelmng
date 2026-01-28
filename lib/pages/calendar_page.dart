@@ -46,6 +46,7 @@ class _CalendarPageState extends State<CalendarPage> {
   final Map<DateTime, Map<String, Booking>> _bookings = {};
 
   // Selection state for drag-and-drop booking
+  int _numberOfSelectedRooms = 0;
   String? _selectionStartRoom;
   DateTime? _selectionStartDate;
   String? _selectionEndRoom;
@@ -289,6 +290,8 @@ class _CalendarPageState extends State<CalendarPage> {
 
   void _startSelection(String room, DateTime date) {
     setState(() {
+      // starting on a single room
+      _numberOfSelectedRooms = 1;
       _isSelecting = true;
       _selectionStartRoom = room;
       _selectionStartDate = date;
@@ -302,6 +305,17 @@ class _CalendarPageState extends State<CalendarPage> {
       setState(() {
         _selectionEndRoom = room;
         _selectionEndDate = date;
+
+        // update how many rooms are currently spanned horizontally
+        if (_selectionStartRoom != null) {
+          final startIndex = _rooms.indexOf(_selectionStartRoom!);
+          final endIndex = _rooms.indexOf(_selectionEndRoom!);
+          if (startIndex != -1 && endIndex != -1) {
+            final minIndex = startIndex < endIndex ? startIndex : endIndex;
+            final maxIndex = startIndex > endIndex ? startIndex : endIndex;
+            _numberOfSelectedRooms = maxIndex - minIndex + 1;
+          }
+        }
       });
     }
   }
@@ -972,6 +986,7 @@ class _CalendarPageState extends State<CalendarPage> {
           preselectedRoom: rooms.length == 1 ? rooms.first : null,
           preselectedStartDate: startDate,
           preselectedEndDate: endDate,
+          preselectedNumberOfRooms: rooms.length,
         ),
       ),
     ).then((bookingCreated) {

@@ -9,12 +9,14 @@ class AddBookingPage extends StatefulWidget {
   final String? preselectedRoom;
   final DateTime? preselectedStartDate;
   final DateTime? preselectedEndDate;
+  final int? preselectedNumberOfRooms;
 
   const AddBookingPage({
     super.key,
     this.preselectedRoom,
     this.preselectedStartDate,
     this.preselectedEndDate,
+    this.preselectedNumberOfRooms,
   });
 
   @override
@@ -71,6 +73,10 @@ class _AddBookingPageState extends State<AddBookingPage> {
       _selectedRooms = [widget.preselectedRoom!];
       _wantsSpecificRoom = true;
       _numberOfRooms = 1;
+    }
+    if (widget.preselectedNumberOfRooms != null &&
+        widget.preselectedNumberOfRooms! > 0) {
+      _numberOfRooms = widget.preselectedNumberOfRooms!;
     }
     _checkInDate = widget.preselectedStartDate;
     _checkOutDate = widget.preselectedEndDate;
