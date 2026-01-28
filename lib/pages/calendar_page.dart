@@ -47,11 +47,13 @@ class _CalendarPageState extends State<CalendarPage> {
 
   // Selection state for drag-and-drop booking
   int _numberOfSelectedRooms = 0;
+  bool _roomsNextToEachOther = false;
   String? _selectionStartRoom;
   DateTime? _selectionStartDate;
   String? _selectionEndRoom;
   DateTime? _selectionEndDate;
   bool _isSelecting = false;
+  List<int> _preselectedRoomsIndex = [];
   final GlobalKey _gridKey = GlobalKey();
   final ScrollController _verticalScrollController = ScrollController();
   final ScrollController _horizontalScrollController = ScrollController();
@@ -254,7 +256,6 @@ class _CalendarPageState extends State<CalendarPage> {
     final maxRoomIndex = startRoomIndex > endRoomIndex
         ? startRoomIndex
         : endRoomIndex;
-
     // Normalize dates to midnight for comparison
     final startDateNormalized = DateTime(
       startDate.year,
@@ -293,6 +294,7 @@ class _CalendarPageState extends State<CalendarPage> {
       // starting on a single room
       _numberOfSelectedRooms = 1;
       _isSelecting = true;
+      _roomsNextToEachOther = false;
       _selectionStartRoom = room;
       _selectionStartDate = date;
       _selectionEndRoom = room;
@@ -328,7 +330,18 @@ class _CalendarPageState extends State<CalendarPage> {
       final selectedDates = _getSelectedDates();
 
       if (selectedRooms.isNotEmpty && selectedDates.isNotEmpty) {
-        _showBookingDialog(selectedRooms, selectedDates);
+        _roomsNextToEachOther =
+            _areSelectedRoomsNextToEachOther(selectedRooms);
+        _preselectedRoomsIndex = selectedRooms
+            .map((room) => _rooms.indexOf(room))
+            .where((index) => index != -1)
+            .toList();
+        _showBookingDialog(
+          selectedRooms,
+          selectedDates,
+          _roomsNextToEachOther,
+          preselectedRoomIndexes: _preselectedRoomsIndex,
+        );
       }
 
       setState(() {
@@ -337,6 +350,8 @@ class _CalendarPageState extends State<CalendarPage> {
         _selectionStartDate = null;
         _selectionEndRoom = null;
         _selectionEndDate = null;
+        _roomsNextToEachOther = false;
+        _preselectedRoomsIndex = [];
       });
     }
   }
@@ -384,6 +399,21 @@ class _CalendarPageState extends State<CalendarPage> {
         minDate.day,
       ).add(Duration(days: index));
     });
+  }
+
+  bool _areSelectedRoomsNextToEachOther(List<String> rooms) {
+    if (rooms.length < 2) return false;
+
+    final indices = rooms.map((room) => _rooms.indexOf(room)).toList();
+    if (indices.any((index) => index == -1)) return false;
+
+    indices.sort();
+    for (var i = 1; i < indices.length; i++) {
+      if (indices[i] - indices[i - 1] != 1) {
+        return false;
+      }
+    }
+    return true;
   }
 
   List<DateTime> get _dates {
@@ -659,7 +689,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       bottom: 0,
                       width: _dayLabelWidth,
                       child: Container(
-                        color: Colors.transparent,
+                        color: Colors.white,
                         child: SingleChildScrollView(
                           controller: _stickyDayLabelsScrollController,
                           scrollDirection: Axis.vertical,
@@ -686,10 +716,11 @@ class _CalendarPageState extends State<CalendarPage> {
 
                           final scrollOffset =
                               _verticalScrollController.hasClients
-                                  ? _verticalScrollController.offset
-                                  : 0.0;
+                              ? _verticalScrollController.offset
+                              : 0.0;
                           // Position line on the top border of today's row (above the row, not inside)
-                          final lineY = _headerHeight +
+                          final lineY =
+                              _headerHeight +
                               (todayIndex * _dayRowHeight) -
                               scrollOffset;
 
@@ -776,7 +807,7 @@ class _CalendarPageState extends State<CalendarPage> {
             child: Container(
               color: isToday
                   ? const Color(0xFF007AFF).withOpacity(0.08)
-                  : Colors.transparent,
+                  : Colors.white,
             ),
           ),
 
@@ -806,8 +837,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       style: TextStyle(
                         fontSize: 13,
                         height: 1.0,
-                        fontWeight:
-                            isToday ? FontWeight.bold : FontWeight.w600,
+                        fontWeight: isToday ? FontWeight.bold : FontWeight.w600,
                         color: isToday
                             ? const Color(0xFF007AFF)
                             : Colors.black87,
@@ -832,7 +862,7 @@ class _CalendarPageState extends State<CalendarPage> {
           _showBookingDetails(context, room, date, booking);
         } else if (!_isSelecting) {
           // Single tap on empty cell - show quick booking dialog for one cell
-          _showBookingDialog([room], [date]);
+          _showBookingDialog([room], [date], false);
         }
       },
       child: Container(
@@ -972,7 +1002,12 @@ class _CalendarPageState extends State<CalendarPage> {
     );
   }
 
-  void _showBookingDialog(List<String> rooms, List<DateTime> dates) {
+  void _showBookingDialog(
+    List<String> rooms,
+    List<DateTime> dates,
+    bool roomsNextToEachOther, {
+    List<int>? preselectedRoomIndexes,
+  }) {
     final startDate = dates.first;
     final endDate = dates.last.add(
       const Duration(days: 1),
@@ -987,6 +1022,8 @@ class _CalendarPageState extends State<CalendarPage> {
           preselectedStartDate: startDate,
           preselectedEndDate: endDate,
           preselectedNumberOfRooms: rooms.length,
+          preselectedRoomsNextToEachOther: roomsNextToEachOther,
+          preselectedRoomsIndex: preselectedRoomIndexes,
         ),
       ),
     ).then((bookingCreated) {

@@ -10,6 +10,8 @@ class AddBookingPage extends StatefulWidget {
   final DateTime? preselectedStartDate;
   final DateTime? preselectedEndDate;
   final int? preselectedNumberOfRooms;
+  final bool? preselectedRoomsNextToEachOther;
+  final List<int>? preselectedRoomsIndex;
 
   const AddBookingPage({
     super.key,
@@ -17,6 +19,8 @@ class AddBookingPage extends StatefulWidget {
     this.preselectedStartDate,
     this.preselectedEndDate,
     this.preselectedNumberOfRooms,
+    this.preselectedRoomsNextToEachOther,
+    this.preselectedRoomsIndex,
   });
 
   @override
@@ -40,6 +44,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
   DateTime? _checkOutDate;
   int _numberOfGuests = 1;
   int _numberOfRooms = 1;
+  List<int> _preselectedRoomsIndex = [];
   String _bookingStatus = 'Confirmed';
   bool _wantsSpecificRoom = false;
   bool _roomsNextToEachOther = false;
@@ -57,7 +62,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
     '204',
     '205',
     '301',
-    '302',
+    '302', 
     '303',
     '304',
     '305',
@@ -80,6 +85,24 @@ class _AddBookingPageState extends State<AddBookingPage> {
     }
     _checkInDate = widget.preselectedStartDate;
     _checkOutDate = widget.preselectedEndDate;
+    if (widget.preselectedRoomsNextToEachOther == true &&
+        _numberOfRooms >= 2) {
+      _roomsNextToEachOther = true;
+    }
+    if (widget.preselectedRoomsIndex != null &&
+        widget.preselectedRoomsIndex!.isNotEmpty) {
+      _wantsSpecificRoom = true;
+      if (_numberOfRooms < widget.preselectedRoomsIndex!.length) {
+        _numberOfRooms = widget.preselectedRoomsIndex!.length;
+      }
+      _selectedRooms = List.generate(_numberOfRooms, (_) => '');
+      for (var i = 0; i < widget.preselectedRoomsIndex!.length; i++) {
+        final roomIndex = widget.preselectedRoomsIndex![i];
+        if (roomIndex >= 0 && roomIndex < _rooms.length) {
+          _selectedRooms[i] = _rooms[roomIndex];
+        }
+      }
+    }
   }
 
   @override
