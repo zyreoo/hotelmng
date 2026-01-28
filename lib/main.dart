@@ -69,16 +69,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   final List<Widget> _pages = const [
     DashboardPage(),
+    AddBookingPage(),
     CalendarPage(),
     EmployeesPage(),
-    AddBookingPage(),
   ];
 
   final List<_NavItem> _navItems = const [
     _NavItem(Icons.dashboard_rounded, 'Dashboard'),
+    _NavItem(Icons.add_circle_outline_rounded, 'Add Booking'),
     _NavItem(Icons.calendar_month_rounded, 'Calendar'),
     _NavItem(Icons.people_rounded, 'Employees'),
-    _NavItem(Icons.add_circle_outline_rounded, 'Add Booking'),
   ];
 
   @override

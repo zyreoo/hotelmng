@@ -10,10 +10,17 @@ class CalendarPage extends StatefulWidget {
 }
 
 class _CalendarPageState extends State<CalendarPage> {
-  DateTime _startDate = DateTime.now();
-  final int _daysToShow = 30; // Show 30 days
+  static const double _headerHeight = 50.0;
+  static const double _dayLabelWidth = 100.0;
+
   final double _roomColumnWidth = 120.0;
-  final double _dayRowHeight = 60.0;
+  final double _dayRowHeight = 50.0;
+
+  // For infinite scroll
+  DateTime _earliestDate = DateTime.now();
+  int _totalDaysLoaded = 30;
+  static const int _loadMoreDays = 30; // Load 30 more days when scrolling up
+  bool _isLoadingMore = false;
 
   // Sample rooms
   final List<String> _rooms = [
@@ -47,16 +54,148 @@ class _CalendarPageState extends State<CalendarPage> {
   final GlobalKey _gridKey = GlobalKey();
   final ScrollController _verticalScrollController = ScrollController();
   final ScrollController _horizontalScrollController = ScrollController();
+  final ScrollController _roomHeadersScrollController = ScrollController();
+  final ScrollController _stickyDayLabelsScrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _earliestDate = DateTime.now();
+
+    // Sync room headers scroll with horizontal scroll
+    _horizontalScrollController.addListener(() {
+      if (_roomHeadersScrollController.hasClients &&
+          _horizontalScrollController.hasClients) {
+        final mainOffset = _horizontalScrollController.offset;
+        final headerOffset = _roomHeadersScrollController.offset;
+        // Only jump if offsets differ significantly (avoid redundant jumps)
+        if ((mainOffset - headerOffset).abs() > 0.1) {
+          _roomHeadersScrollController.jumpTo(mainOffset);
+        }
+      }
+    });
+
+    // Sync sticky day labels scroll with main vertical scroll
+    _verticalScrollController.addListener(() {
+      if (_stickyDayLabelsScrollController.hasClients &&
+          _verticalScrollController.hasClients) {
+        final mainOffset = _verticalScrollController.offset;
+        final stickyOffset = _stickyDayLabelsScrollController.offset;
+        // Only jump if offsets differ significantly (avoid redundant jumps)
+        if ((mainOffset - stickyOffset).abs() > 0.1) {
+          _stickyDayLabelsScrollController.jumpTo(mainOffset);
+        }
+      }
+      // Also check for loading more dates
+      _onVerticalScroll();
+    });
+
+    // Ensure initial synchronization after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_verticalScrollController.hasClients &&
+          _stickyDayLabelsScrollController.hasClients) {
+        final mainOffset = _verticalScrollController.offset;
+        final stickyOffset = _stickyDayLabelsScrollController.offset;
+        if ((mainOffset - stickyOffset).abs() > 0.1) {
+          _stickyDayLabelsScrollController.jumpTo(mainOffset);
+        }
+      }
+      if (_horizontalScrollController.hasClients &&
+          _roomHeadersScrollController.hasClients) {
+        final mainOffset = _horizontalScrollController.offset;
+        final headerOffset = _roomHeadersScrollController.offset;
+        if ((mainOffset - headerOffset).abs() > 0.1) {
+          _roomHeadersScrollController.jumpTo(mainOffset);
+        }
+      }
+    });
+  }
+
+  void _onVerticalScroll() {
+    // If scrolled near the top (within 200px), load more dates
+    if (_verticalScrollController.offset < 200 &&
+        _verticalScrollController.hasClients &&
+        !_isLoadingMore) {
+      _loadMoreDatesUp();
+    }
+  }
+
+  void _loadMoreDatesUp() {
+    if (_isLoadingMore) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    final currentOffset = _verticalScrollController.offset;
+    final daysToAdd = _loadMoreDays;
+    // Capture oldEarliestDate BEFORE updating it
+    final oldEarliestDate = _earliestDate;
+    final newEarliestDate = _earliestDate.subtract(Duration(days: daysToAdd));
+
+    setState(() {
+      _earliestDate = newEarliestDate;
+      _totalDaysLoaded += daysToAdd;
+      _isLoadingMore = false;
+    });
+
+    // Adjust scroll position to maintain view after frame is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_verticalScrollController.hasClients) {
+        // Use dayRowHeight for scroll offset
+        final newOffset = currentOffset + (daysToAdd * _dayRowHeight);
+        _verticalScrollController.jumpTo(newOffset);
+        // Sticky day labels will be updated automatically by the listener
+      }
+    });
+
+    // Load bookings for new dates - use the OLD earliestDate captured before update
+    _loadBookingsForDateRange(newEarliestDate, oldEarliestDate);
+  }
+
+  void _loadBookingsForDateRange(DateTime startDate, DateTime endDate) {
+    // TODO: Implement loading bookings from your data source (Firebase, etc.)
+    // This is a placeholder - implement based on your actual data loading mechanism
+  }
+
+  void _scrollToDate(DateTime targetDate) {
+    if (!_verticalScrollController.hasClients) return;
+
+    // Ensure the target date is loaded
+    if (targetDate.isBefore(_earliestDate)) {
+      final daysNeeded = _earliestDate.difference(targetDate).inDays;
+      final daysToAdd = ((daysNeeded / _loadMoreDays).ceil() * _loadMoreDays);
+      final newEarliestDate = _earliestDate.subtract(Duration(days: daysToAdd));
+
+      setState(() {
+        _earliestDate = newEarliestDate;
+        _totalDaysLoaded += daysToAdd;
+      });
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToDate(targetDate);
+      });
+      return;
+    }
+
+    // Calculate scroll position
+    final daysFromStart = targetDate.difference(_earliestDate).inDays;
+    if (daysFromStart >= 0 && daysFromStart < _totalDaysLoaded) {
+      final targetOffset = daysFromStart * _dayRowHeight;
+      _verticalScrollController.animateTo(
+        targetOffset,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
   }
 
   @override
   void dispose() {
     _verticalScrollController.dispose();
     _horizontalScrollController.dispose();
+    _roomHeadersScrollController.dispose();
+    _stickyDayLabelsScrollController.dispose();
     super.dispose();
   }
 
@@ -116,14 +255,30 @@ class _CalendarPageState extends State<CalendarPage> {
         : endRoomIndex;
 
     // Normalize dates to midnight for comparison
-    final minDate = DateTime(startDate.year, startDate.month, startDate.day);
-    final maxDate = DateTime(endDate.year, endDate.month, endDate.day);
+    final startDateNormalized = DateTime(
+      startDate.year,
+      startDate.month,
+      startDate.day,
+    );
+    final endDateNormalized = DateTime(
+      endDate.year,
+      endDate.month,
+      endDate.day,
+    );
     final currentDate = DateTime(date.year, date.month, date.day);
+
+    // Ensure minDate is before maxDate (handle upward selection)
+    final minDate = startDateNormalized.isBefore(endDateNormalized)
+        ? startDateNormalized
+        : endDateNormalized;
+    final maxDate = startDateNormalized.isAfter(endDateNormalized)
+        ? startDateNormalized
+        : endDateNormalized;
 
     final roomInRange =
         currentRoomIndex >= minRoomIndex && currentRoomIndex <= maxRoomIndex;
 
-    // Check if current date is within the selected date range
+    // Check if current date is within the selected date range (inclusive)
     final dateInRange =
         (currentDate.isAtSameMomentAs(minDate) ||
             currentDate.isAtSameMomentAs(maxDate)) ||
@@ -192,8 +347,20 @@ class _CalendarPageState extends State<CalendarPage> {
     final startDate = _selectionStartDate!;
     final endDate = _selectionEndDate ?? startDate;
 
-    final minDate = startDate.isBefore(endDate) ? startDate : endDate;
-    final maxDate = startDate.isAfter(endDate) ? startDate : endDate;
+    // Normalize dates to midnight and ensure min/max order
+    final startNormalized = DateTime(
+      startDate.year,
+      startDate.month,
+      startDate.day,
+    );
+    final endNormalized = DateTime(endDate.year, endDate.month, endDate.day);
+
+    final minDate = startNormalized.isBefore(endNormalized)
+        ? startNormalized
+        : endNormalized;
+    final maxDate = startNormalized.isAfter(endNormalized)
+        ? startNormalized
+        : endNormalized;
 
     final days = maxDate.difference(minDate).inDays + 1;
     return List.generate(days, (index) {
@@ -206,17 +373,16 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   List<DateTime> get _dates {
-    return List.generate(_daysToShow, (index) {
+    return List.generate(_totalDaysLoaded, (index) {
       return DateTime(
-        _startDate.year,
-        _startDate.month,
-        _startDate.day,
+        _earliestDate.year,
+        _earliestDate.month,
+        _earliestDate.day,
       ).add(Duration(days: index));
     });
   }
 
   Map<String, dynamic>? _getCellFromPosition(Offset position) {
-    // Account for scroll offsets
     final scrollX = _horizontalScrollController.hasClients
         ? _horizontalScrollController.offset
         : 0.0;
@@ -224,27 +390,19 @@ class _CalendarPageState extends State<CalendarPage> {
         ? _verticalScrollController.offset
         : 0.0;
 
-    // Account for the day label column (100px)
     final adjustedX = position.dx + scrollX;
-    if (adjustedX < 100) {
-      return null; // Clicked on day label column
-    }
+    if (adjustedX < _dayLabelWidth) return null;
 
-    // Calculate which room column
-    final roomX = adjustedX - 100;
-    final roomIndex = (roomX / _roomColumnWidth).floor();
+    final roomIndex = ((adjustedX - _dayLabelWidth) / _roomColumnWidth).floor();
+    if (roomIndex < 0 || roomIndex >= _rooms.length) return null;
 
-    if (roomIndex < 0 || roomIndex >= _rooms.length) {
-      return null;
-    }
+    // Position is already relative to the gesture detector which is below the header
+    final localY = position.dy;
+    if (localY < 0) return null;
 
-    // Calculate which day row
-    final adjustedY = position.dy + scrollY;
-    final dayIndex = (adjustedY / _dayRowHeight).floor();
-
-    if (dayIndex < 0 || dayIndex >= _dates.length) {
-      return null;
-    }
+    // Calculate day index using dayRowHeight
+    final dayIndex = ((localY + scrollY) / _dayRowHeight).floor();
+    if (dayIndex < 0 || dayIndex >= _dates.length) return null;
 
     return {'room': _rooms[roomIndex], 'date': _dates[dayIndex]};
   }
@@ -276,7 +434,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '${DateFormat('MMM d').format(_startDate)} - ${DateFormat('MMM d, yyyy').format(_dates.last)}',
+                        '${DateFormat('MMM d').format(_earliestDate)} - ${DateFormat('MMM d, yyyy').format(_dates.last)}',
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                           color: Colors.grey.shade600,
                         ),
@@ -288,11 +446,9 @@ class _CalendarPageState extends State<CalendarPage> {
                       IconButton(
                         icon: const Icon(Icons.chevron_left),
                         onPressed: () {
-                          setState(() {
-                            _startDate = _startDate.subtract(
-                              const Duration(days: 7),
-                            );
-                          });
+                          _scrollToDate(
+                            _earliestDate.subtract(const Duration(days: 7)),
+                          );
                         },
                         style: IconButton.styleFrom(
                           backgroundColor: Colors.white,
@@ -303,11 +459,9 @@ class _CalendarPageState extends State<CalendarPage> {
                       IconButton(
                         icon: const Icon(Icons.chevron_right),
                         onPressed: () {
-                          setState(() {
-                            _startDate = _startDate.add(
-                              const Duration(days: 7),
-                            );
-                          });
+                          _scrollToDate(
+                            _earliestDate.add(const Duration(days: 7)),
+                          );
                         },
                         style: IconButton.styleFrom(
                           backgroundColor: Colors.white,
@@ -318,9 +472,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       IconButton(
                         icon: const Icon(Icons.today),
                         onPressed: () {
-                          setState(() {
-                            _startDate = DateTime.now();
-                          });
+                          _scrollToDate(DateTime.now());
                         },
                         style: IconButton.styleFrom(
                           backgroundColor: const Color(0xFF007AFF),
@@ -337,135 +489,208 @@ class _CalendarPageState extends State<CalendarPage> {
             Expanded(
               child: Card(
                 margin: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
+                child: Stack(
                   children: [
-                    // Room headers row (sticky)
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade50,
-                        border: Border(
-                          bottom: BorderSide(
-                            color: Colors.grey.shade200,
-                            width: 1,
-                          ),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          // Empty corner cell
-                          Container(
-                            width: 100,
-                            height: 50,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade100,
-                              border: Border(
-                                right: BorderSide(color: Colors.grey.shade200),
-                              ),
-                            ),
-                            child: const Center(
-                              child: Text(
-                                'Rooms',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
-                                  color: Color(0xFF007AFF),
-                                ),
-                              ),
-                            ),
-                          ),
-                          // Room headers
-                          Expanded(
+                    // Main scrollable grid
+                    Positioned.fill(
+                      child: Padding(
+                        padding: EdgeInsets.only(top: _headerHeight),
+                        child: GestureDetector(
+                          key: _gridKey,
+                          onPanStart: (details) {
+                            final cell = _getCellFromPosition(
+                              details.localPosition,
+                            );
+                            if (cell != null) {
+                              // Only start selection on empty cells
+                              if (_getBooking(cell['room']!, cell['date']!) ==
+                                  null) {
+                                _startSelection(cell['room']!, cell['date']!);
+                              }
+                            }
+                          },
+                          onPanUpdate: (details) {
+                            if (_isSelecting) {
+                              final cell = _getCellFromPosition(
+                                details.localPosition,
+                              );
+                              if (cell != null) {
+                                // Allow selection to continue even over booked cells
+                                _updateSelection(cell['room']!, cell['date']!);
+                              }
+                            }
+                          },
+                          onPanEnd: (details) {
+                            if (_isSelecting) {
+                              _endSelection();
+                            }
+                          },
+                          onPanCancel: () {
+                            if (_isSelecting) {
+                              setState(() {
+                                _isSelecting = false;
+                                _selectionStartRoom = null;
+                                _selectionStartDate = null;
+                                _selectionEndRoom = null;
+                                _selectionEndDate = null;
+                              });
+                            }
+                          },
+                          child: SingleChildScrollView(
+                            controller: _verticalScrollController,
+                            scrollDirection: Axis.vertical,
+                            padding: EdgeInsets.zero,
                             child: SingleChildScrollView(
+                              controller: _horizontalScrollController,
                               scrollDirection: Axis.horizontal,
-                              child: Row(
-                                children: _rooms.map((room) {
-                                  return Container(
-                                    width: _roomColumnWidth,
-                                    height: 50,
-                                    decoration: BoxDecoration(
-                                      border: Border(
-                                        right: BorderSide(
-                                          color: Colors.grey.shade200,
-                                          width: 1,
-                                        ),
-                                      ),
-                                    ),
-                                    child: Center(
-                                      child: Text(
-                                        'Room $room',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ),
+                              padding: EdgeInsets.zero,
+                              child: Column(
+                                children: _dates.map((date) {
+                                  final isToday = isSameDay(
+                                    date,
+                                    DateTime.now(),
                                   );
+                                  return _buildDayRow(date, isToday);
                                 }).toList(),
                               ),
                             ),
                           ),
-                        ],
+                        ),
                       ),
                     ),
 
-                    // Days and bookings grid
-                    Expanded(
-                      child: GestureDetector(
-                        key: _gridKey,
-                        onPanStart: (details) {
-                          final cell = _getCellFromPosition(
-                            details.localPosition,
-                          );
-                          if (cell != null &&
-                              _getBooking(cell['room']!, cell['date']!) ==
-                                  null) {
-                            _startSelection(cell['room']!, cell['date']!);
-                          }
-                        },
-                        onPanUpdate: (details) {
-                          if (_isSelecting) {
-                            final cell = _getCellFromPosition(
-                              details.localPosition,
-                            );
-                            if (cell != null &&
-                                _getBooking(cell['room']!, cell['date']!) ==
-                                    null) {
-                              _updateSelection(cell['room']!, cell['date']!);
-                            }
-                          }
-                        },
-                        onPanEnd: (details) {
-                          if (_isSelecting) {
-                            _endSelection();
-                          }
-                        },
-                        onPanCancel: () {
-                          if (_isSelecting) {
-                            setState(() {
-                              _isSelecting = false;
-                              _selectionStartRoom = null;
-                              _selectionStartDate = null;
-                              _selectionEndRoom = null;
-                              _selectionEndDate = null;
-                            });
-                          }
-                        },
-                        child: SingleChildScrollView(
-                          controller: _verticalScrollController,
-                          scrollDirection: Axis.vertical,
-                          child: SingleChildScrollView(
-                            controller: _horizontalScrollController,
-                            scrollDirection: Axis.horizontal,
-                            child: Column(
-                              children: _dates.map((date) {
-                                final isToday = isSameDay(date, DateTime.now());
-                                return _buildDayRow(date, isToday);
-                              }).toList(),
+                    // Sticky room headers at the top
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: _headerHeight,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          border: Border(
+                            bottom: BorderSide(
+                              color: Colors.grey.shade200,
+                              width: 1,
                             ),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            // Empty corner cell (fixed)
+                            Container(
+                              width: _dayLabelWidth,
+                              height: _headerHeight,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                border: Border(
+                                  right: BorderSide(
+                                    color: Colors.grey.shade200,
+                                  ),
+                                ),
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  'Rooms',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                    color: Color(0xFF007AFF),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // Room headers (scrollable horizontally)
+                            Expanded(
+                              child: SingleChildScrollView(
+                                controller: _roomHeadersScrollController,
+                                scrollDirection: Axis.horizontal,
+                                physics: const NeverScrollableScrollPhysics(),
+                                child: Row(
+                                  children: _rooms.map((room) {
+                                    return Container(
+                                      width: _roomColumnWidth,
+                                      height: 50,
+                                      decoration: BoxDecoration(
+                                        border: Border(
+                                          right: BorderSide(
+                                            color: Colors.grey.shade200,
+                                            width: 1,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          'Room $room',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Sticky day labels on the left
+                    Positioned(
+                      top: _headerHeight,
+                      left: 0,
+                      bottom: 0,
+                      width: _dayLabelWidth,
+                      child: Container(
+                        color: Colors.transparent,
+                        child: SingleChildScrollView(
+                          controller: _stickyDayLabelsScrollController,
+                          scrollDirection: Axis.vertical,
+                          physics: const NeverScrollableScrollPhysics(),
+                          child: Column(
+                            children: _dates.map((date) {
+                              final isToday = isSameDay(date, DateTime.now());
+                              return _buildStickyDayLabel(date, isToday);
+                            }).toList(),
                           ),
                         ),
                       ),
                     ),
+
+                    // Red line overlay for today's date
+                    if (_dates.any((date) => isSameDay(date, DateTime.now())))
+                      AnimatedBuilder(
+                        animation: _verticalScrollController,
+                        builder: (context, _) {
+                          final todayIndex = _dates.indexWhere(
+                            (date) => isSameDay(date, DateTime.now()),
+                          );
+                          if (todayIndex == -1) return const SizedBox.shrink();
+
+                          final scrollOffset =
+                              _verticalScrollController.hasClients
+                              ? _verticalScrollController.offset
+                              : 0.0;
+                          // Position line inside the row (slightly below top, e.g., 8px down)
+                          const lineOffsetInRow = 8.0; // Offset from top of row
+                          final lineY =
+                              _headerHeight +
+                              (todayIndex * _dayRowHeight) +
+                              lineOffsetInRow -
+                              scrollOffset;
+
+                          return Positioned(
+                            top: lineY,
+                            left: _dayLabelWidth, // Start after date column
+                            right: 0,
+                            height: 2,
+                            child: Container(color: Colors.red),
+                          );
+                        },
+                      ),
                   ],
                 ),
               ),
@@ -494,60 +719,95 @@ class _CalendarPageState extends State<CalendarPage> {
 
   Widget _buildDayRow(DateTime date, bool isToday) {
     return Container(
-      height: _dayRowHeight,
+      height: _dayRowHeight, // Row height stays the same, gap is between rows
       decoration: BoxDecoration(
         color: isToday
             ? const Color(0xFF007AFF).withOpacity(0.05)
             : Colors.white,
         border: Border(
+          top: BorderSide(color: Colors.grey.shade200, width: 1),
           bottom: BorderSide(color: Colors.grey.shade200, width: 1),
         ),
       ),
       child: Row(
         children: [
-          // Day label (sticky)
-          Container(
-            width: 100,
-            decoration: BoxDecoration(
-              color: isToday
-                  ? const Color(0xFF007AFF).withOpacity(0.1)
-                  : Colors.grey.shade50,
-              border: Border(
-                right: BorderSide(color: Colors.grey.shade200, width: 1),
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    DateFormat('EEE').format(date),
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey.shade600,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  Text(
-                    DateFormat('MMM d').format(date),
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: isToday ? FontWeight.bold : FontWeight.w600,
-                      color: isToday ? const Color(0xFF007AFF) : Colors.black87,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          // Spacer for sticky day label column
+          SizedBox(width: _dayLabelWidth),
           // Room cells
           Row(
             children: _rooms.map((room) {
               final booking = _getBooking(room, date);
               return _buildRoomCell(room, date, booking);
             }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStickyDayLabel(DateTime date, bool isToday) {
+    return SizedBox(
+      height: _dayRowHeight,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Right divider
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: 1,
+            child: Container(color: Colors.grey.shade200),
+          ),
+
+          // Pill positioned at the top of the row
+          Positioned(
+            top: 0,
+            left: 8,
+            right: 6,
+            height: 34, // Fixed height for the pill
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white, // "cuts" the gridline
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: FittedBox(
+                  alignment: Alignment.centerLeft,
+                  fit: BoxFit.scaleDown,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        DateFormat('EEE').format(date),
+                        style: TextStyle(
+                          fontSize: 10,
+                          height: 1.0,
+                          color: Colors.grey.shade600,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        DateFormat('MMM d').format(date),
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.0,
+                          fontWeight: isToday
+                              ? FontWeight.bold
+                              : FontWeight.w600,
+                          color: isToday
+                              ? const Color(0xFF007AFF)
+                              : Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -728,7 +988,10 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   bool isSameDay(DateTime a, DateTime b) {
-    return a.year == b.year && a.month == b.month && a.day == b.day;
+    // Normalize both dates to midnight for accurate comparison
+    final dateA = DateTime(a.year, a.month, a.day);
+    final dateB = DateTime(b.year, b.month, b.day);
+    return dateA.isAtSameMomentAs(dateB);
   }
 }
 
