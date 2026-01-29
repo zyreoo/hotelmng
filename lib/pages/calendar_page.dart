@@ -60,6 +60,9 @@ class _CalendarPageState extends State<CalendarPage> {
   /// Used to resolve the full booking when editing any cell of a multi-room stay.
   final Map<String, BookingModel> _bookingModelsById = {};
 
+  /// Last date used in date search; persisted so the dialog reopens with it.
+  DateTime? _lastSearchedDate;
+
   // Selection state for drag-and-drop booking
   int _numberOfSelectedRooms = 0;
   bool _roomsNextToEachOther = false;
@@ -204,8 +207,24 @@ class _CalendarPageState extends State<CalendarPage> {
       return;
     }
 
-    // Calculate scroll position
+    // Extend forward if target is after loaded range
     final daysFromStart = targetDate.difference(_earliestDate).inDays;
+    if (daysFromStart >= _totalDaysLoaded) {
+      final extra = (daysFromStart - _totalDaysLoaded + 1).clamp(
+        0,
+        _maxDaysLoaded - _totalDaysLoaded,
+      );
+      if (extra > 0) {
+        setState(() => _totalDaysLoaded += extra);
+        _subscribeToBookings();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToDate(targetDate);
+        });
+        return;
+      }
+    }
+
+    // Scroll to date
     if (daysFromStart >= 0 && daysFromStart < _totalDaysLoaded) {
       final targetOffset = daysFromStart * _dayRowHeight;
       _verticalScrollController.animateTo(
@@ -214,6 +233,162 @@ class _CalendarPageState extends State<CalendarPage> {
         curve: Curves.easeInOut,
       );
     }
+  }
+
+  Future<void> _showDateSearchDialog() async {
+    final initial = _lastSearchedDate ?? _earliestDate;
+    DateTime date = initial;
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 320),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF2F2F7),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 24),
+                    Text(
+                      'Search date',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 17,
+                        color: Colors.black,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Go to date',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Material(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        child: InkWell(
+                          onTap: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: date,
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime(2030),
+                            );
+                            if (picked != null) {
+                              setModalState(() => date = picked);
+                            }
+                          },
+                          borderRadius: BorderRadius.circular(10),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.calendar_today_rounded,
+                                  size: 20,
+                                  color: Colors.grey.shade600,
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  DateFormat('EEEE, MMM d, yyyy').format(date),
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Icon(
+                                  Icons.chevron_right_rounded,
+                                  size: 22,
+                                  color: Colors.grey.shade400,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              style: TextButton.styleFrom(
+                                foregroundColor: const Color(0xFF007AFF),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                              child: const Text('Cancel'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: () {
+                                Navigator.pop(ctx);
+                                if (!mounted) return;
+                                _lastSearchedDate = date;
+                                _scrollToDate(date);
+                              },
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF007AFF),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                elevation: 0,
+                              ),
+                              child: const Text('Search'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -624,10 +799,32 @@ class _CalendarPageState extends State<CalendarPage> {
                             ),
                       ),
                       const SizedBox(height: 8),
-                      Text(
-                        '${DateFormat('MMM d').format(_earliestDate)} - ${DateFormat('MMM d, yyyy').format(_dates.last)}',
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: Colors.grey.shade600,
+                      InkWell(
+                        onTap: _showDateSearchDialog,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 4,
+                            horizontal: 2,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.search_rounded,
+                                size: 18,
+                                color: Colors.grey.shade600,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                DateFormat(
+                                  'MMM d, yyyy',
+                                ).format(_lastSearchedDate ?? _earliestDate),
+                                style: Theme.of(context).textTheme.bodyLarge
+                                    ?.copyWith(color: Colors.grey.shade600),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
@@ -635,14 +832,30 @@ class _CalendarPageState extends State<CalendarPage> {
                   Row(
                     children: [
                       const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.today),
-                        onPressed: () {
-                          _scrollToDate(DateTime.now());
-                        },
-                        style: IconButton.styleFrom(
-                          backgroundColor: const Color(0xFF007AFF),
-                          foregroundColor: Colors.white,
+                      Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF007AFF).withOpacity(0.25),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.today_rounded),
+                          onPressed: () {
+                            _scrollToDate(DateTime.now());
+                          },
+                          style: IconButton.styleFrom(
+                            backgroundColor: const Color(0xFF007AFF),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -653,9 +866,22 @@ class _CalendarPageState extends State<CalendarPage> {
 
             // Calendar Grid
             Expanded(
-              child: Card(
+              child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 24),
-                child: Stack(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Stack(
                   children: [
                     // Main scrollable grid
                     Positioned.fill(
@@ -733,13 +959,20 @@ class _CalendarPageState extends State<CalendarPage> {
                       height: _headerHeight,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
+                          color: const Color(0xFFF9F9F9),
                           border: Border(
                             bottom: BorderSide(
-                              color: Colors.grey.shade200,
+                              color: Colors.grey.shade300,
                               width: 1,
                             ),
                           ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
                         ),
                         child: Row(
                           children: [
@@ -748,21 +981,33 @@ class _CalendarPageState extends State<CalendarPage> {
                               width: _dayLabelWidth,
                               height: _headerHeight,
                               decoration: BoxDecoration(
-                                color: Colors.grey.shade100,
+                                color: const Color(0xFFEFEFF4),
                                 border: Border(
                                   right: BorderSide(
-                                    color: Colors.grey.shade200,
+                                    color: Colors.grey.shade300,
                                   ),
                                 ),
                               ),
-                              child: const Center(
-                                child: Text(
-                                  'Rooms',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 12,
-                                    color: Color(0xFF007AFF),
-                                  ),
+                              child: Center(
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(
+                                      Icons.hotel_rounded,
+                                      size: 14,
+                                      color: Color(0xFF007AFF),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Text(
+                                      'Rooms',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                        color: Color(0xFF007AFF),
+                                        letterSpacing: 0.2,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -791,6 +1036,8 @@ class _CalendarPageState extends State<CalendarPage> {
                                           style: const TextStyle(
                                             fontWeight: FontWeight.w600,
                                             fontSize: 13,
+                                            color: Colors.black87,
+                                            letterSpacing: 0.3,
                                           ),
                                         ),
                                       ),
@@ -813,9 +1060,9 @@ class _CalendarPageState extends State<CalendarPage> {
                       child: Container(
                         color: Colors.white,
                         child: ScrollConfiguration(
-                          behavior: ScrollConfiguration.of(
-                            context,
-                          ).copyWith(scrollbars: false),
+                          behavior: ScrollConfiguration.of(context).copyWith(
+                            scrollbars: false,
+                          ),
                           child: SingleChildScrollView(
                             controller: _stickyDayLabelsScrollController,
                             scrollDirection: Axis.vertical,
@@ -856,7 +1103,7 @@ class _CalendarPageState extends State<CalendarPage> {
                             left: _dayLabelWidth, // Start after date column
                             right: 0,
                             height: 2,
-                            child: Container(color: Colors.red),
+                            child: const ColoredBox(color: Colors.red),
                           );
                         },
                       ),
@@ -864,24 +1111,40 @@ class _CalendarPageState extends State<CalendarPage> {
                 ),
               ),
             ),
+            ),
             const SizedBox(height: 24),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const AddBookingPage()),
-          ).then((bookingCreated) {
-            if (bookingCreated == true) {
-              // Refresh the calendar if booking was created
-              _subscribeToBookings();
-            }
-          });
-        },
-        backgroundColor: const Color(0xFF007AFF),
-        child: const Icon(Icons.add, color: Colors.white),
+      floatingActionButton: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF007AFF).withOpacity(0.3),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: FloatingActionButton(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const AddBookingPage()),
+            ).then((bookingCreated) {
+              if (bookingCreated == true) {
+                _subscribeToBookings();
+              }
+            });
+          },
+          backgroundColor: const Color(0xFF007AFF),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
+        ),
       ),
     );
   }
@@ -1032,12 +1295,21 @@ class _CalendarPageState extends State<CalendarPage> {
                   color: booking.color,
                   borderRadius: BorderRadius.horizontal(
                     left: booking.isFirstNight
-                        ? const Radius.circular(4)
+                        ? const Radius.circular(8)
                         : Radius.zero,
                     right: booking.isLastNight
-                        ? const Radius.circular(4)
+                        ? const Radius.circular(8)
                         : Radius.zero,
                   ),
+                  boxShadow: booking.isFirstNight
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null,
                 ),
                 child: booking.isFirstNight
                     ? Padding(
@@ -1095,109 +1367,372 @@ class _CalendarPageState extends State<CalendarPage> {
   ) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Guest: ${booking.guestName}'),
-            const SizedBox(height: 8),
-            Text('Duration: ${booking.totalNights} nights'),
-            const SizedBox(height: 8),
-            Text('Date: ${DateFormat('MMM d, yyyy').format(date)}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Cancel booking?'),
-                  content: const Text(
-                    'This will permanently delete the booking.',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('No'),
+      barrierDismissible: true,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 340),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF2F2F7),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 24),
+              Text(
+                'Booking Details',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 17,
+                      color: Colors.black,
                     ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text(
-                        'Yes, delete',
-                        style: TextStyle(color: Colors.red),
+              ),
+              const SizedBox(height: 20),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  children: [
+                    _buildDetailRow(
+                      Icons.person_rounded,
+                      'Guest',
+                      booking.guestName,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildDetailRow(
+                      Icons.hotel_rounded,
+                      'Room',
+                      room,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildDetailRow(
+                      Icons.calendar_today_rounded,
+                      'Date',
+                      DateFormat('MMM d, yyyy').format(date),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildDetailRow(
+                      Icons.nightlight_round,
+                      'Duration',
+                      '${booking.totalNights} ${booking.totalNights == 1 ? 'night' : 'nights'}',
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  children: [
+                    // Edit Button
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          final fullBooking =
+                              _bookingModelsById[booking.bookingId];
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => AddBookingPage(
+                                existingBooking: fullBooking,
+                                preselectedRoom:
+                                    fullBooking == null ? room : null,
+                                preselectedStartDate:
+                                    fullBooking?.checkIn ?? date,
+                                preselectedEndDate: fullBooking?.checkOut ??
+                                    date.add(
+                                      Duration(days: booking.totalNights),
+                                    ),
+                                preselectedNumberOfRooms:
+                                    fullBooking?.numberOfRooms ??
+                                        booking.totalNights,
+                              ),
+                            ),
+                          ).then((bookingCreated) {
+                            if (bookingCreated == true) {
+                              _subscribeToBookings();
+                            }
+                          });
+                        },
+                        icon: const Icon(Icons.edit_rounded, size: 18),
+                        label: const Text('Edit Booking'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF007AFF),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Delete Button
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          final confirm = await _showDeleteConfirmation(context);
+                          if (confirm != true) return;
+
+                          try {
+                            _showLoadingDialog(context);
+                            await _deleteBooking(booking.bookingId);
+                            if (mounted) Navigator.pop(context);
+                          } catch (e) {
+                            if (mounted) Navigator.pop(context);
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Failed to delete: $e'),
+                                backgroundColor: Colors.red,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                        label: const Text('Delete Booking'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Close Button
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF007AFF),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: const Text('Close'),
                       ),
                     ),
                   ],
                 ),
-              );
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-              if (confirm != true) return;
-
-              Navigator.pop(context); // close details dialog first (optional)
-
-              try {
-                // Optional: show a small loading indicator dialog
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (_) =>
-                      const Center(child: CircularProgressIndicator()),
-                );
-
-                await _deleteBooking(booking.bookingId);
-
-                if (mounted) Navigator.pop(context);
-              } catch (e) {
-                if (mounted) Navigator.pop(context);
-
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Failed to delete booking: $e')),
-                );
-              }
-            },
-            child: const Text(
-              'Cancel Booking',
-              style: TextStyle(color: Colors.red),
+  Widget _buildDetailRow(IconData icon, String label, String value) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF007AFF).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              icon,
+              size: 20,
+              color: const Color(0xFF007AFF),
             ),
           ),
-
-          TextButton(
-            onPressed: () {
-              // Resolve full booking so multi-room stays edit as one entity
-              final fullBooking = _bookingModelsById[booking.bookingId];
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => AddBookingPage(
-                    existingBooking: fullBooking,
-                    preselectedRoom: fullBooking == null ? room : null,
-                    preselectedStartDate: fullBooking?.checkIn ?? date,
-                    preselectedEndDate:
-                        fullBooking?.checkOut ??
-                        date.add(Duration(days: booking.totalNights)),
-                    preselectedNumberOfRooms:
-                        fullBooking?.numberOfRooms ?? booking.totalNights,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
                   ),
                 ),
-              ).then((bookingCreated) {
-                if (bookingCreated == true) {
-                  _subscribeToBookings();
-                }
-              });
-            },
-            child: const Text('Edit Booking'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-            },
-            child: const Text('Close'),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.black87,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<bool?> _showDeleteConfirmation(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 300),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF2F2F7),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.warning_rounded,
+                  color: Colors.red,
+                  size: 32,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Delete Booking?',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 17,
+                      color: Colors.black,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  'This will permanently delete the booking. This action cannot be undone.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Text('Delete'),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF007AFF),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showLoadingDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF2F2F7),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF007AFF)),
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Please wait...',
+                style: TextStyle(
+                  fontSize: 15,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
