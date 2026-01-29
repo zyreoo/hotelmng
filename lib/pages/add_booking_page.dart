@@ -6,6 +6,8 @@ import '../services/firebase_service.dart';
 import '../widgets/client_search_widget.dart';
 
 class AddBookingPage extends StatefulWidget {
+  /// When set, opens in edit mode: form pre-filled and save updates this document.
+  final BookingModel? existingBooking;
   final String? preselectedRoom;
   final DateTime? preselectedStartDate;
   final DateTime? preselectedEndDate;
@@ -15,6 +17,7 @@ class AddBookingPage extends StatefulWidget {
 
   const AddBookingPage({
     super.key,
+    this.existingBooking,
     this.preselectedRoom,
     this.preselectedStartDate,
     this.preselectedEndDate,
@@ -62,7 +65,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
     '204',
     '205',
     '301',
-    '302', 
+    '302',
     '303',
     '304',
     '305',
@@ -74,32 +77,64 @@ class _AddBookingPageState extends State<AddBookingPage> {
   @override
   void initState() {
     super.initState();
-    if (widget.preselectedRoom != null) {
-      _selectedRooms = [widget.preselectedRoom!];
-      _wantsSpecificRoom = true;
-      _numberOfRooms = 1;
-    }
-    if (widget.preselectedNumberOfRooms != null &&
-        widget.preselectedNumberOfRooms! > 0) {
-      _numberOfRooms = widget.preselectedNumberOfRooms!;
-    }
-    _checkInDate = widget.preselectedStartDate;
-    _checkOutDate = widget.preselectedEndDate;
-    if (widget.preselectedRoomsNextToEachOther == true &&
-        _numberOfRooms >= 2) {
-      _roomsNextToEachOther = true;
-    }
-    if (widget.preselectedRoomsIndex != null &&
-        widget.preselectedRoomsIndex!.isNotEmpty) {
-      _wantsSpecificRoom = true;
-      if (_numberOfRooms < widget.preselectedRoomsIndex!.length) {
-        _numberOfRooms = widget.preselectedRoomsIndex!.length;
+    // Edit mode: pre-fill from full booking so multi-room stays stay unified
+    if (widget.existingBooking != null) {
+      final b = widget.existingBooking!;
+      _selectedClient = UserModel(
+        id: b.userId,
+        name: b.userName,
+        phone: b.userPhone,
+        email: b.userEmail,
+      );
+      _clientNameController.text = b.userName;
+      _clientPhoneController.text = b.userPhone;
+      _clientEmailController.text = b.userEmail ?? '';
+      _checkInDate = b.checkIn;
+      _checkOutDate = b.checkOut;
+      _numberOfRooms = b.numberOfRooms;
+      _numberOfGuests = b.numberOfGuests;
+      _bookingStatus = b.status;
+      _notesController.text = b.notes ?? '';
+      _wantsSpecificRoom =
+          b.selectedRooms != null && b.selectedRooms!.isNotEmpty;
+      _roomsNextToEachOther = b.nextToEachOther;
+      _selectedRooms = b.selectedRooms != null
+          ? List<String>.from(b.selectedRooms!)
+          : <String>[];
+      while (_selectedRooms.length < _numberOfRooms) {
+        _selectedRooms.add('');
       }
-      _selectedRooms = List.generate(_numberOfRooms, (_) => '');
-      for (var i = 0; i < widget.preselectedRoomsIndex!.length; i++) {
-        final roomIndex = widget.preselectedRoomsIndex![i];
-        if (roomIndex >= 0 && roomIndex < _rooms.length) {
-          _selectedRooms[i] = _rooms[roomIndex];
+    } else {
+      if (widget.preselectedRoom != null) {
+        _selectedRooms = [widget.preselectedRoom!];
+        _wantsSpecificRoom = true;
+        _numberOfRooms = 1;
+      }
+      if (widget.preselectedNumberOfRooms != null &&
+          widget.preselectedNumberOfRooms! > 0) {
+        _numberOfRooms = widget.preselectedNumberOfRooms!;
+        while (_selectedRooms.length < _numberOfRooms) {
+          _selectedRooms.add('');
+        }
+      }
+      _checkInDate = widget.preselectedStartDate;
+      _checkOutDate = widget.preselectedEndDate;
+      if (widget.preselectedRoomsNextToEachOther == true &&
+          _numberOfRooms >= 2) {
+        _roomsNextToEachOther = true;
+      }
+      if (widget.preselectedRoomsIndex != null &&
+          widget.preselectedRoomsIndex!.isNotEmpty) {
+        _wantsSpecificRoom = true;
+        if (_numberOfRooms < widget.preselectedRoomsIndex!.length) {
+          _numberOfRooms = widget.preselectedRoomsIndex!.length;
+        }
+        _selectedRooms = List.generate(_numberOfRooms, (_) => '');
+        for (var i = 0; i < widget.preselectedRoomsIndex!.length; i++) {
+          final roomIndex = widget.preselectedRoomsIndex![i];
+          if (roomIndex >= 0 && roomIndex < _rooms.length) {
+            _selectedRooms[i] = _rooms[roomIndex];
+          }
         }
       }
     }
@@ -292,12 +327,13 @@ class _AddBookingPageState extends State<AddBookingPage> {
           }
         }
 
-        // Step 2: Create booking with user information
+        // Step 2: Build booking with user information
         final selectedRoomNumbers = _wantsSpecificRoom
             ? _selectedRooms.where((room) => room.isNotEmpty).toList()
             : null;
 
         final booking = BookingModel(
+          id: widget.existingBooking?.id,
           userId: userId,
           userName: userToUse.name,
           userPhone: userToUse.phone,
@@ -310,10 +346,15 @@ class _AddBookingPageState extends State<AddBookingPage> {
           numberOfGuests: _numberOfGuests,
           status: _bookingStatus,
           notes: _notesController.text.isEmpty ? null : _notesController.text,
+          createdAt: widget.existingBooking?.createdAt,
         );
 
-        // Step 3: Save booking to Firebase
-        await _firebaseService.createBooking(booking);
+        // Step 3: Update or create in Firebase
+        if (widget.existingBooking != null) {
+          await _firebaseService.updateBooking(booking);
+        } else {
+          await _firebaseService.createBooking(booking);
+        }
 
         // Close loading dialog
         if (mounted) Navigator.pop(context);
@@ -322,7 +363,11 @@ class _AddBookingPageState extends State<AddBookingPage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Booking created for ${userToUse.name}'),
+              content: Text(
+                widget.existingBooking != null
+                    ? 'Booking updated for ${userToUse.name}'
+                    : 'Booking created for ${userToUse.name}',
+              ),
               behavior: SnackBarBehavior.floating,
               backgroundColor: const Color(0xFF34C759),
             ),
@@ -384,7 +429,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'New Booking',
+                                  widget.existingBooking != null
+                                      ? 'Edit Booking'
+                                      : 'New Booking',
                                   style: Theme.of(context)
                                       .textTheme
                                       .headlineLarge
@@ -395,7 +442,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'Create a new reservation',
+                                  widget.existingBooking != null
+                                      ? 'Update reservation'
+                                      : 'Create a new reservation',
                                   style: Theme.of(context).textTheme.bodyLarge
                                       ?.copyWith(color: Colors.grey.shade600),
                                 ),
@@ -542,6 +591,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                               // Show search or create form
                               if (!_showCreateClientForm) ...[
                                 ClientSearchWidget(
+                                  initialClient: _selectedClient,
                                   onClientSelected: (client) {
                                     setState(() {
                                       if (client.name.isNotEmpty &&

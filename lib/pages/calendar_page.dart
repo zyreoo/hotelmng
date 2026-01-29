@@ -56,6 +56,10 @@ class _CalendarPageState extends State<CalendarPage> {
   // Key: DateTime (the night), Value: Map of room -> booking info
   final Map<DateTime, Map<String, Booking>> _bookings = {};
 
+  /// Full booking models by document ID. One entry per Firestore document.
+  /// Used to resolve the full booking when editing any cell of a multi-room stay.
+  final Map<String, BookingModel> _bookingModelsById = {};
+
   // Selection state for drag-and-drop booking
   int _numberOfSelectedRooms = 0;
   bool _roomsNextToEachOther = false;
@@ -70,6 +74,13 @@ class _CalendarPageState extends State<CalendarPage> {
   final ScrollController _horizontalScrollController = ScrollController();
   final ScrollController _roomHeadersScrollController = ScrollController();
   final ScrollController _stickyDayLabelsScrollController = ScrollController();
+
+  Future<void> _deleteBooking(String bookingId) async {
+    await FirebaseFirestore.instance
+        .collection('bookings')
+        .doc(bookingId)
+        .delete();
+  }
 
   @override
   void initState() {
@@ -200,7 +211,7 @@ class _CalendarPageState extends State<CalendarPage> {
       _verticalScrollController.animateTo(
         targetOffset,
         duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut, 
+        curve: Curves.easeInOut,
       );
     }
   }
@@ -231,6 +242,7 @@ class _CalendarPageState extends State<CalendarPage> {
       ).add(Duration(days: i));
       _bookings[nightDate] ??= {};
       _bookings[nightDate]![room] = Booking(
+        bookingId: '',
         guestName: guestName,
         color: color,
         isFirstNight: i == 0,
@@ -479,11 +491,14 @@ class _CalendarPageState extends State<CalendarPage> {
         .collection('bookings')
         .where('checkOut', isGreaterThan: rangeStart.toIso8601String())
         .snapshots()
-        .listen((snapshot) {
-      _processBookingChanges(snapshot.docChanges, rangeStart, rangeEnd);
-    }, onError: (error) {
-      debugPrint('Firestore booking subscription error: $error');
-    });
+        .listen(
+          (snapshot) {
+            _processBookingChanges(snapshot.docChanges, rangeStart, rangeEnd);
+          },
+          onError: (error) {
+            debugPrint('Firestore booking subscription error: $error');
+          },
+        );
   }
 
   void _processBookingChanges(
@@ -548,6 +563,7 @@ class _CalendarPageState extends State<CalendarPage> {
             // Added or modified
             _bookings[nightDate] ??= {};
             _bookings[nightDate]![room] = Booking(
+              bookingId: bookingModel.id ?? '',
               guestName: bookingModel.userName,
               color: Colors.blueAccent,
               isFirstNight: i == 0,
@@ -557,6 +573,14 @@ class _CalendarPageState extends State<CalendarPage> {
             needsUpdate = true;
           }
         }
+      }
+
+      // Keep full booking model for edit: one entry per document
+      final docId = change.doc.id;
+      if (change.type == DocumentChangeType.removed) {
+        _bookingModelsById.remove(docId);
+      } else {
+        _bookingModelsById[docId] = bookingModel;
       }
     }
 
@@ -610,31 +634,6 @@ class _CalendarPageState extends State<CalendarPage> {
                   ),
                   Row(
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.chevron_left),
-                        onPressed: () {
-                          _scrollToDate(
-                            _earliestDate.subtract(const Duration(days: 7)),
-                          );
-                        },
-                        style: IconButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: const Color(0xFF007AFF),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.chevron_right),
-                        onPressed: () {
-                          _scrollToDate(
-                            _earliestDate.add(const Duration(days: 7)),
-                          );
-                        },
-                        style: IconButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: const Color(0xFF007AFF),
-                        ),
-                      ),
                       const SizedBox(width: 8),
                       IconButton(
                         icon: const Icon(Icons.today),
@@ -781,7 +780,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                       decoration: BoxDecoration(
                                         border: Border(
                                           right: BorderSide(
-                                            color: Colors.grey.shade200,
+                                            color: Colors.white,
                                             width: 1,
                                           ),
                                         ),
@@ -813,15 +812,20 @@ class _CalendarPageState extends State<CalendarPage> {
                       width: _dayLabelWidth,
                       child: Container(
                         color: Colors.white,
-                        child: SingleChildScrollView(
-                          controller: _stickyDayLabelsScrollController,
-                          scrollDirection: Axis.vertical,
-                          physics: const NeverScrollableScrollPhysics(),
-                          child: Column(
-                            children: _dates.map((date) {
-                              final isToday = isSameDay(date, DateTime.now());
-                              return _buildStickyDayLabel(date, isToday);
-                            }).toList(),
+                        child: ScrollConfiguration(
+                          behavior: ScrollConfiguration.of(
+                            context,
+                          ).copyWith(scrollbars: false),
+                          child: SingleChildScrollView(
+                            controller: _stickyDayLabelsScrollController,
+                            scrollDirection: Axis.vertical,
+                            physics: const NeverScrollableScrollPhysics(),
+                            child: Column(
+                              children: _dates.map((date) {
+                                final isToday = isSameDay(date, DateTime.now());
+                                return _buildStickyDayLabel(date, isToday);
+                              }).toList(),
+                            ),
                           ),
                         ),
                       ),
@@ -1093,7 +1097,6 @@ class _CalendarPageState extends State<CalendarPage> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Room $room'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1107,18 +1110,92 @@ class _CalendarPageState extends State<CalendarPage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // Delete booking logic
+            onPressed: () async {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Cancel booking?'),
+                  content: const Text(
+                    'This will permanently delete the booking.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('No'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text(
+                        'Yes, delete',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+
+              if (confirm != true) return;
+
+              Navigator.pop(context); // close details dialog first (optional)
+
+              try {
+                // Optional: show a small loading indicator dialog
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (_) =>
+                      const Center(child: CircularProgressIndicator()),
+                );
+
+                await _deleteBooking(booking.bookingId);
+
+                if (mounted) Navigator.pop(context);
+              } catch (e) {
+                if (mounted) Navigator.pop(context);
+
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Failed to delete booking: $e')),
+                );
+              }
             },
             child: const Text(
               'Cancel Booking',
               style: TextStyle(color: Colors.red),
             ),
+          ),
+
+          TextButton(
+            onPressed: () {
+              // Resolve full booking so multi-room stays edit as one entity
+              final fullBooking = _bookingModelsById[booking.bookingId];
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => AddBookingPage(
+                    existingBooking: fullBooking,
+                    preselectedRoom: fullBooking == null ? room : null,
+                    preselectedStartDate: fullBooking?.checkIn ?? date,
+                    preselectedEndDate:
+                        fullBooking?.checkOut ??
+                        date.add(Duration(days: booking.totalNights)),
+                    preselectedNumberOfRooms:
+                        fullBooking?.numberOfRooms ?? booking.totalNights,
+                  ),
+                ),
+              ).then((bookingCreated) {
+                if (bookingCreated == true) {
+                  _subscribeToBookings();
+                }
+              });
+            },
+            child: const Text('Edit Booking'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+            },
+            child: const Text('Close'),
           ),
         ],
       ),
@@ -1166,6 +1243,7 @@ class _CalendarPageState extends State<CalendarPage> {
 }
 
 class Booking {
+  final String bookingId;
   final String guestName;
   final Color color;
   final bool isFirstNight;
@@ -1173,6 +1251,7 @@ class Booking {
   final int totalNights;
 
   Booking({
+    required this.bookingId,
     required this.guestName,
     required this.color,
     required this.isFirstNight,
