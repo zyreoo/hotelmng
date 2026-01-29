@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -18,11 +20,18 @@ class _CalendarPageState extends State<CalendarPage> {
   final double _roomColumnWidth = 120.0;
   final double _dayRowHeight = 50.0;
 
-  // For infinite scroll
+  // Sliding window: bounded date range to avoid unbounded widget growth
   DateTime _earliestDate = DateTime.now();
   int _totalDaysLoaded = 30;
-  static const int _loadMoreDays = 30; // Load 30 more days when scrolling up
+  static const int _loadMoreDays = 30;
+  static const int _maxDaysLoaded = 180;
   bool _isLoadingMore = false;
+  List<DateTime> _cachedDates = [];
+
+  // Real-time Firestore synchronization
+  StreamSubscription<QuerySnapshot>? _bookingsSubscription;
+  Timer? _debounceTimer;
+  static const Duration _debounceDuration = Duration(milliseconds: 100);
 
   // Sample rooms
   final List<String> _rooms = [
@@ -114,8 +123,8 @@ class _CalendarPageState extends State<CalendarPage> {
         }
       }
 
-      // Load initial bookings for the visible date range
-      _loadBookings();
+      // Subscribe to real-time bookings for the visible date range
+      _subscribeToBookings();
     });
   }
 
@@ -147,6 +156,9 @@ class _CalendarPageState extends State<CalendarPage> {
       _isLoadingMore = false;
     });
 
+    // Re-subscribe so we fetch bookings for the new range (including dates above today)
+    _subscribeToBookings();
+
     // Adjust scroll position to maintain view after frame is built
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_verticalScrollController.hasClients) {
@@ -156,9 +168,6 @@ class _CalendarPageState extends State<CalendarPage> {
         // Sticky day labels will be updated automatically by the listener
       }
     });
-
-    // Reload bookings for the expanded date range
-    _loadBookings();
   }
 
   void _scrollToDate(DateTime targetDate) {
@@ -175,6 +184,9 @@ class _CalendarPageState extends State<CalendarPage> {
         _totalDaysLoaded += daysToAdd;
       });
 
+      // Re-subscribe so bookings are loaded for the extended range
+      _subscribeToBookings();
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scrollToDate(targetDate);
       });
@@ -188,13 +200,15 @@ class _CalendarPageState extends State<CalendarPage> {
       _verticalScrollController.animateTo(
         targetOffset,
         duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
+        curve: Curves.easeInOut, 
       );
     }
   }
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
+    _bookingsSubscription?.cancel();
     _verticalScrollController.dispose();
     _horizontalScrollController.dispose();
     _roomHeadersScrollController.dispose();
@@ -330,8 +344,7 @@ class _CalendarPageState extends State<CalendarPage> {
       final selectedDates = _getSelectedDates();
 
       if (selectedRooms.isNotEmpty && selectedDates.isNotEmpty) {
-        _roomsNextToEachOther =
-            _areSelectedRoomsNextToEachOther(selectedRooms);
+        _roomsNextToEachOther = _areSelectedRoomsNextToEachOther(selectedRooms);
         _preselectedRoomsIndex = selectedRooms
             .map((room) => _rooms.indexOf(room))
             .where((index) => index != -1)
@@ -451,81 +464,114 @@ class _CalendarPageState extends State<CalendarPage> {
     return {'room': _rooms[roomIndex], 'date': _dates[dayIndex]};
   }
 
-  Future<void> _loadBookings() async {
-    try {
-      // Normalize range start and compute exclusive range end
-      final rangeStart = DateTime(
-        _earliestDate.year,
-        _earliestDate.month,
-        _earliestDate.day,
+  void _subscribeToBookings() {
+    _bookingsSubscription?.cancel();
+
+    final rangeStart = DateTime(
+      _earliestDate.year,
+      _earliestDate.month,
+      _earliestDate.day,
+    );
+    final rangeEnd = rangeStart.add(Duration(days: _totalDaysLoaded));
+
+    // Real-time query: only bookings overlapping [rangeStart, rangeEnd)
+    _bookingsSubscription = FirebaseFirestore.instance
+        .collection('bookings')
+        .where('checkOut', isGreaterThan: rangeStart.toIso8601String())
+        .snapshots()
+        .listen((snapshot) {
+      _processBookingChanges(snapshot.docChanges, rangeStart, rangeEnd);
+    }, onError: (error) {
+      debugPrint('Firestore booking subscription error: $error');
+    });
+  }
+
+  void _processBookingChanges(
+    List<DocumentChange<Map<String, dynamic>>> changes,
+    DateTime rangeStart,
+    DateTime rangeEnd,
+  ) {
+    bool needsUpdate = false;
+
+    for (final change in changes) {
+      final data = change.doc.data();
+      if (data == null) continue;
+
+      final bookingModel = BookingModel.fromFirestore(data, change.doc.id);
+
+      final bookingStart = DateTime(
+        bookingModel.checkIn.year,
+        bookingModel.checkIn.month,
+        bookingModel.checkIn.day,
       );
-      final rangeEnd = rangeStart.add(Duration(days: _totalDaysLoaded));
+      final bookingEnd = DateTime(
+        bookingModel.checkOut.year,
+        bookingModel.checkOut.month,
+        bookingModel.checkOut.day,
+      );
 
-      // Fetch bookings from Firestore
-      final snapshot =
-          await FirebaseFirestore.instance.collection('bookings').get();
+      // Include only bookings that overlap visible range [rangeStart, rangeEnd)
+      // Overlap: bookingStart < rangeEnd AND bookingEnd > rangeStart
+      if (bookingStart.isAtSameMomentAs(rangeEnd) ||
+          bookingStart.isAfter(rangeEnd) ||
+          bookingEnd.isAtSameMomentAs(rangeStart) ||
+          bookingEnd.isBefore(rangeStart)) {
+        continue; // completely outside visible range
+      }
 
-      final Map<DateTime, Map<String, Booking>> loadedBookings = {};
+      final rooms = bookingModel.selectedRooms;
+      if (rooms == null || rooms.isEmpty) continue;
 
-      for (final doc in snapshot.docs) {
-        final data = doc.data();
-        final bookingModel = BookingModel.fromFirestore(data, doc.id);
+      final totalNights = bookingModel.numberOfNights;
 
-        // Normalize booking dates
-        final bookingStart = DateTime(
-          bookingModel.checkIn.year,
-          bookingModel.checkIn.month,
-          bookingModel.checkIn.day,
-        );
-        final bookingEnd = DateTime(
-          bookingModel.checkOut.year,
-          bookingModel.checkOut.month,
-          bookingModel.checkOut.day,
-        );
+      for (final room in rooms) {
+        if (!_rooms.contains(room)) continue;
 
-        // Skip bookings that don't overlap our visible range at all
-        if (!bookingStart.isBefore(rangeEnd) || !bookingEnd.isAfter(rangeStart)) {
-          continue;
-        }
+        for (int i = 0; i < totalNights; i++) {
+          final nightDate = bookingStart.add(Duration(days: i));
 
-        // Only show bookings that have specific rooms assigned
-        final rooms = bookingModel.selectedRooms;
-        if (rooms == null || rooms.isEmpty) continue;
+          // Show only nights inside visible range: nightDate >= rangeStart AND nightDate < rangeEnd
+          if (nightDate.isBefore(rangeStart) ||
+              nightDate.isAtSameMomentAs(rangeEnd) ||
+              nightDate.isAfter(rangeEnd)) {
+            continue; // night outside visible range
+          }
 
-        final totalNights = bookingModel.numberOfNights;
-
-        for (final room in rooms) {
-          // Only render for rooms that exist in our calendar
-          if (!_rooms.contains(room)) continue;
-
-          for (int i = 0; i < totalNights; i++) {
-            final nightDate = bookingStart.add(Duration(days: i));
-
-            // Only keep nights inside the visible range
-            if (!nightDate.isBefore(rangeEnd) || nightDate.isBefore(rangeStart)) {
-              continue;
+          if (change.type == DocumentChangeType.removed) {
+            // Remove booking
+            _bookings[nightDate]?.remove(room);
+            if (_bookings[nightDate]?.isEmpty ?? false) {
+              _bookings.remove(nightDate);
             }
-
-            loadedBookings[nightDate] ??= {};
-            loadedBookings[nightDate]![room] = Booking(
+            needsUpdate = true;
+          } else {
+            // Added or modified
+            _bookings[nightDate] ??= {};
+            _bookings[nightDate]![room] = Booking(
               guestName: bookingModel.userName,
               color: Colors.blueAccent,
               isFirstNight: i == 0,
               isLastNight: i == totalNights - 1,
               totalNights: totalNights,
             );
+            needsUpdate = true;
           }
         }
       }
-
-      setState(() {
-        _bookings
-          ..clear()
-          ..addAll(loadedBookings);
-      });
-    } catch (e) {
-      debugPrint('Failed to load bookings for calendar: $e');
     }
+
+    if (needsUpdate) {
+      _debouncedSetState();
+    }
+  }
+
+  void _debouncedSetState() {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(_debounceDuration, () {
+      if (mounted) {
+        setState(() {});
+      }
+    });
   }
 
   @override
@@ -826,7 +872,7 @@ class _CalendarPageState extends State<CalendarPage> {
           ).then((bookingCreated) {
             if (bookingCreated == true) {
               // Refresh the calendar if booking was created
-              _loadBookings();
+              _subscribeToBookings();
             }
           });
         },
