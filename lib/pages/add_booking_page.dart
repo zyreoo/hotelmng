@@ -34,6 +34,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
   final _formKey = GlobalKey<FormState>();
   final _firebaseService = FirebaseService();
   final _notesController = TextEditingController();
+  final _amountPaidController = TextEditingController();
 
   // Client form controllers
   final _clientNameController = TextEditingController();
@@ -49,6 +50,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
   int _numberOfRooms = 1;
   List<int> _preselectedRoomsIndex = [];
   String _bookingStatus = 'Confirmed';
+  String _paymentMethod = 'Cash';
   bool _wantsSpecificRoom = false;
   bool _roomsNextToEachOther = false;
 
@@ -72,8 +74,6 @@ class _AddBookingPageState extends State<AddBookingPage> {
     'none',
   ];
 
-  final List<String> _statusOptions = ['Confirmed', 'Pending', 'Cancelled'];
-
   @override
   void initState() {
     super.initState();
@@ -94,6 +94,12 @@ class _AddBookingPageState extends State<AddBookingPage> {
       _numberOfRooms = b.numberOfRooms;
       _numberOfGuests = b.numberOfGuests;
       _bookingStatus = b.status;
+      _amountPaidController.text = b.amountOfMoneyPaid > 0
+          ? b.amountOfMoneyPaid.toString()
+          : '';
+      _paymentMethod = b.paymentMethod.isNotEmpty
+          ? b.paymentMethod
+          : BookingModel.paymentMethods.first;
       _notesController.text = b.notes ?? '';
       _wantsSpecificRoom =
           b.selectedRooms != null && b.selectedRooms!.isNotEmpty;
@@ -143,6 +149,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
   @override
   void dispose() {
     _notesController.dispose();
+    _amountPaidController.dispose();
     _clientNameController.dispose();
     _clientPhoneController.dispose();
     _clientEmailController.dispose();
@@ -332,6 +339,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
             ? _selectedRooms.where((room) => room.isNotEmpty).toList()
             : null;
 
+        final amountPaid = int.tryParse(_amountPaidController.text.trim()) ?? 0;
         final booking = BookingModel(
           id: widget.existingBooking?.id,
           userId: userId,
@@ -347,6 +355,8 @@ class _AddBookingPageState extends State<AddBookingPage> {
           status: _bookingStatus,
           notes: _notesController.text.isEmpty ? null : _notesController.text,
           createdAt: widget.existingBooking?.createdAt,
+          amountOfMoneyPaid: amountPaid,
+          paymentMethod: _paymentMethod,
         );
 
         // Step 3: Update or create in Firebase
@@ -1174,7 +1184,8 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   color: Colors.black87,
                                 ),
                                 dropdownColor: Colors.white,
-                                items: _statusOptions.map((status) {
+                                items: BookingModel.statusOptions
+                                    .map((status) {
                                   return DropdownMenuItem(
                                     value: status,
                                     child: Text(
@@ -1189,6 +1200,73 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 onChanged: (value) {
                                   setState(() {
                                     _bookingStatus = value!;
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              // Amount paid
+                              TextFormField(
+                                controller: _amountPaidController,
+                                decoration: InputDecoration(
+                                  labelText: 'Amount paid',
+                                  hintText: '0',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.grey.shade50,
+                                  prefixIcon: const Icon(Icons.payments_rounded),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 16,
+                                  ),
+                                ),
+                                style: const TextStyle(fontSize: 16),
+                                keyboardType: TextInputType.number,
+                              ),
+                              const SizedBox(height: 16),
+                              // Payment method
+                              DropdownButtonFormField<String>(
+                                value: BookingModel.paymentMethods
+                                        .contains(_paymentMethod)
+                                    ? _paymentMethod
+                                    : BookingModel.paymentMethods.first,
+                                decoration: InputDecoration(
+                                  labelText: 'Payment method',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.grey.shade50,
+                                  prefixIcon: const Icon(
+                                    Icons.credit_card_rounded,
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 16,
+                                  ),
+                                ),
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.black87,
+                                ),
+                                dropdownColor: Colors.white,
+                                items: BookingModel.paymentMethods
+                                    .map((method) {
+                                  return DropdownMenuItem(
+                                    value: method,
+                                    child: Text(
+                                      method,
+                                      style: const TextStyle(
+                                        color: Colors.black87,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                                onChanged: (value) {
+                                  setState(() {
+                                    _paymentMethod = value ?? 'Cash';
                                   });
                                 },
                               ),

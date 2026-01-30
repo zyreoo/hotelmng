@@ -1,0 +1,29 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users (clients/guests)
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // Bookings
+    match /bookings/{bookingId} {
+      allow read, write: if true;
+    }
+
+    // Employers (employees)
+    match /employers/{employerId} {
+      allow read, write: if true;
+    }
+
+    // Custom roles and departments (saved when user selects "Other")
+    match /roles/{roleId} {
+      allow read, write: if true;
+    }
+    match /departments/{departmentId} {
+      allow read, write: if true;
+    }
+  }
+}

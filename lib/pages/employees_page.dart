@@ -1,4 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+
+import '../models/employer_model.dart';
+import '../services/firebase_service.dart';
+import 'add_employee_page.dart';
 
 class EmployeesPage extends StatefulWidget {
   const EmployeesPage({super.key});
@@ -9,82 +14,88 @@ class EmployeesPage extends StatefulWidget {
 
 class _EmployeesPageState extends State<EmployeesPage> {
   String _selectedFilter = 'All';
-  final List<String> _filters = ['All', 'Reception', 'Housekeeping', 'Management'];
+  List<String> _filters = ['All', 'Reception', 'Housekeeping', 'Management'];
 
-  final List<Employee> _employees = [
-    Employee(
-      name: 'Sarah Johnson',
-      role: 'Front Desk Manager',
-      department: 'Reception',
-      status: 'Active',
-      avatar: 'SJ',
-      color: const Color(0xFF007AFF),
-    ),
-    Employee(
-      name: 'Michael Chen',
-      role: 'Receptionist',
-      department: 'Reception',
-      status: 'Active',
-      avatar: 'MC',
-      color: const Color(0xFF34C759),
-    ),
-    Employee(
-      name: 'Emily Davis',
-      role: 'Housekeeping Supervisor',
-      department: 'Housekeeping',
-      status: 'Active',
-      avatar: 'ED',
-      color: const Color(0xFFFF9500),
-    ),
-    Employee(
-      name: 'James Wilson',
-      role: 'Housekeeper',
-      department: 'Housekeeping',
-      status: 'Off Duty',
-      avatar: 'JW',
-      color: const Color(0xFF5856D6),
-    ),
-    Employee(
-      name: 'Lisa Anderson',
-      role: 'General Manager',
-      department: 'Management',
-      status: 'Active',
-      avatar: 'LA',
-      color: const Color(0xFFFF2D55),
-    ),
-    Employee(
-      name: 'David Martinez',
-      role: 'Housekeeper',
-      department: 'Housekeeping',
-      status: 'Active',
-      avatar: 'DM',
-      color: const Color(0xFF5AC8FA),
-    ),
-    Employee(
-      name: 'Jessica Brown',
-      role: 'Receptionist',
-      department: 'Reception',
-      status: 'Active',
-      avatar: 'JB',
-      color: const Color(0xFFFFCC00),
-    ),
-    Employee(
-      name: 'Robert Taylor',
-      role: 'Night Auditor',
-      department: 'Reception',
-      status: 'Off Duty',
-      avatar: 'RT',
-      color: const Color(0xFF32ADE6),
-    ),
+  static const List<String> _defaultDepartments = [
+    'Reception',
+    'Housekeeping',
+    'Management',
   ];
 
-  List<Employee> get _filteredEmployees {
-    if (_selectedFilter == 'All') {
-      return _employees;
+  @override
+  void initState() {
+    super.initState();
+    _loadFilters();
+  }
+
+  Future<void> _loadFilters() async {
+    try {
+      final fromDb = await FirebaseService().getDepartments();
+      if (!mounted) return;
+      setState(() {
+        final seen = _defaultDepartments.toSet();
+        final list = List<String>.from(_defaultDepartments);
+        for (final name in fromDb) {
+          if (name.trim().isEmpty) continue;
+          if (seen.add(name.trim())) list.add(name.trim());
+        }
+        _filters = ['All', ...list];
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _filters = ['All', ..._defaultDepartments];
+      });
     }
-    return _employees
-        .where((emp) => emp.department == _selectedFilter)
-        .toList();
+  }
+
+  Stream<List<EmployerModel>> _employerstream() {
+    return FirebaseFirestore.instance
+        .collection('employers')
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => EmployerModel.fromFirestore(doc.data(), doc.id))
+              .toList(),
+        );
+  }
+
+  Future<void> _deleteEmployee(String employeeId) async {
+    await FirebaseFirestore.instance
+        .collection('employers')
+        .doc(employeeId)
+        .delete();
+  }
+
+  static const List<Color> _avatarColors = [
+    Color(0xFF007AFF),
+    Color(0xFF34C759),
+    Color(0xFFFF9500),
+    Color(0xFFFF3B30),
+    Color(0xFFAF52DE),
+  ];
+
+  static Employee _employerToEmployee(EmployerModel employer, int index) {
+    final initials = employer.name.isNotEmpty
+        ? employer.name
+              .trim()
+              .split(RegExp(r'\s+'))
+              .map((w) => w.isNotEmpty ? w[0] : '')
+              .take(2)
+              .join()
+              .toUpperCase()
+        : '?';
+    return Employee(
+      id: employer.id ?? '',
+      name: employer.name,
+      role: employer.role,
+      department: employer.department,
+      status: employer.status,
+      avatar: initials.length >= 2
+          ? initials
+          : (employer.name.isNotEmpty ? employer.name[0].toUpperCase() : '?'),
+      color: _avatarColors[index % _avatarColors.length],
+    );
   }
 
   @override
@@ -92,102 +103,120 @@ class _EmployeesPageState extends State<EmployeesPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F7),
       body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 8),
-                  Text(
-                    'Employees',
-                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 34,
-                        ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${_filteredEmployees.length} members',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+        child: StreamBuilder<List<EmployerModel>>(
+          stream: _employerstream(),
+          builder: (context, snapshot) {
+            final all = snapshot.data ?? [];
+            final filtered = _selectedFilter == 'All'
+                ? all
+                : all.where((e) => e.department == _selectedFilter).toList();
+            final employees = List.generate(
+              filtered.length,
+              (i) => _employerToEmployee(filtered[i], i),
+            );
+
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 8),
+                      Text(
+                        'Employees',
+                        style: Theme.of(context).textTheme.headlineLarge
+                            ?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 34,
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${employees.length} members',
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                           color: Colors.grey.shade600,
                         ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Filter chips
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: _filters.map((filter) {
-                    final isSelected = _selectedFilter == filter;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: FilterChip(
-                        label: Text(filter),
-                        selected: isSelected,
-                        onSelected: (selected) {
-                          setState(() {
-                            _selectedFilter = filter;
-                          });
-                        },
-                        backgroundColor: Colors.white,
-                        selectedColor: const Color(0xFF007AFF).withOpacity(0.1),
-                        labelStyle: TextStyle(
-                          color: isSelected
-                              ? const Color(0xFF007AFF)
-                              : Colors.grey.shade700,
-                          fontWeight:
-                              isSelected ? FontWeight.w600 : FontWeight.w500,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(
-                            color: isSelected
-                                ? const Color(0xFF007AFF).withOpacity(0.3)
-                                : Colors.grey.shade200,
-                          ),
-                        ),
-                        showCheckmark: false,
                       ),
-                    );
-                  }).toList(),
+                    ],
+                  ),
                 ),
-              ),
-            ),
 
-            const SizedBox(height: 16),
+                // Filter chips
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: _filters.map((filter) {
+                        final isSelected = _selectedFilter == filter;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: FilterChip(
+                            label: Text(filter),
+                            selected: isSelected,
+                            onSelected: (selected) {
+                              setState(() {
+                                _selectedFilter = filter;
+                              });
+                            },
+                            backgroundColor: Colors.white,
+                            selectedColor: const Color(
+                              0xFF007AFF,
+                            ).withOpacity(0.1),
+                            labelStyle: TextStyle(
+                              color: isSelected
+                                  ? const Color(0xFF007AFF)
+                                  : Colors.grey.shade700,
+                              fontWeight: isSelected
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(
+                                color: isSelected
+                                    ? const Color(0xFF007AFF).withOpacity(0.3)
+                                    : Colors.grey.shade200,
+                              ),
+                            ),
+                            showCheckmark: false,
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
 
-            // Employee list
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                itemCount: _filteredEmployees.length,
-                itemBuilder: (context, index) {
-                  final employee = _filteredEmployees[index];
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _EmployeeCard(employee: employee),
-                  );
-                },
-              ),
-            ),
-          ],
+                const SizedBox(height: 16),
+
+                // Employee list
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    itemCount: employees.length,
+                    itemBuilder: (context, index) {
+                      final employee = employees[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _EmployeeCard(
+                          employee: employee,
+                          onDelete: _deleteEmployee,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          // Add employee logic
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Add employee functionality'),
-              behavior: SnackBarBehavior.floating,
-            ),
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const AddEmployeePage()),
           );
         },
         backgroundColor: const Color(0xFF007AFF),
@@ -198,6 +227,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
 }
 
 class Employee {
+  final String id;
   final String name;
   final String role;
   final String department;
@@ -206,6 +236,7 @@ class Employee {
   final Color color;
 
   Employee({
+    required this.id,
     required this.name,
     required this.role,
     required this.department,
@@ -217,8 +248,12 @@ class Employee {
 
 class _EmployeeCard extends StatelessWidget {
   final Employee employee;
+  final Future<void> Function(String id)? onDelete;
 
-  const _EmployeeCard({required this.employee});
+  const _EmployeeCard({
+    required this.employee,
+    this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -307,10 +342,7 @@ class _EmployeeCard extends StatelessWidget {
 
               // Action button
               IconButton(
-                icon: Icon(
-                  Icons.more_vert,
-                  color: Colors.grey.shade400,
-                ),
+                icon: Icon(Icons.more_vert, color: Colors.grey.shade400),
                 onPressed: () {
                   _showEmployeeOptions(context);
                 },
@@ -354,14 +386,22 @@ class _EmployeeCard extends StatelessWidget {
               color: const Color(0xFF34C759),
             ),
             _BottomSheetOption(
-              icon: Icons.email_rounded,
-              label: 'Send Message',
-              color: const Color(0xFFFF9500),
-            ),
-            _BottomSheetOption(
               icon: Icons.delete_rounded,
               label: 'Remove Employee',
               color: const Color(0xFFFF3B30),
+              onPressed: () async {
+                Navigator.pop(context);
+                await onDelete?.call(employee.id);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('${employee.name} removed'),
+                      behavior: SnackBarBehavior.floating,
+                      backgroundColor: const Color(0xFF34C759),
+                    ),
+                  );
+                }
+              },
             ),
             const SizedBox(height: 20),
           ],
@@ -375,10 +415,7 @@ class _StatusBadge extends StatelessWidget {
   final String status;
   final bool isActive;
 
-  const _StatusBadge({
-    required this.status,
-    required this.isActive,
-  });
+  const _StatusBadge({required this.status, required this.isActive});
 
   @override
   Widget build(BuildContext context) {
@@ -407,8 +444,7 @@ class _StatusBadge extends StatelessWidget {
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color:
-                  isActive ? const Color(0xFF34C759) : Colors.grey.shade700,
+              color: isActive ? const Color(0xFF34C759) : Colors.grey.shade700,
             ),
           ),
         ],
@@ -421,24 +457,30 @@ class _BottomSheetOption extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
+  final VoidCallback? onPressed;
 
   const _BottomSheetOption({
     required this.icon,
     required this.label,
     required this.color,
+    this.onPressed,
   });
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: () {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$label functionality'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        if (onPressed != null) {
+          onPressed!();
+        } else {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$label functionality'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),

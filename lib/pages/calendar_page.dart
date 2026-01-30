@@ -70,6 +70,33 @@ class _CalendarPageState extends State<CalendarPage> {
   DateTime? _selectionStartDate;
   String? _selectionEndRoom;
   DateTime? _selectionEndDate;
+  static const List<String> statusOptions = [
+    'Confirmed',
+    'Pending',
+    'Cancelled',
+    'Paid',
+    'Unpaid',
+  ];
+
+  static Color _statusColor(String status) {
+    switch (status) {
+      case 'Confirmed':
+        return const Color(0xFF34C759);
+      case 'Pending':
+        return const Color(0xFFFF9500);
+      case 'Cancelled':
+        return const Color(0xFFFF3B30);
+      case 'Paid':
+        return const Color(0xFF007AFF);
+      case 'Unpaid':
+        return const Color(0xFF8E8E93);
+      default:
+        return Colors.grey;
+    }
+  }
+
+  int amountOfMoneyPaid = 0;
+  List<String> paymentMethods = ['Cash', 'Card', 'Bank Transfer', 'Other'];
   bool _isSelecting = false;
   List<int> _preselectedRoomsIndex = [];
   final GlobalKey _gridKey = GlobalKey();
@@ -83,6 +110,14 @@ class _CalendarPageState extends State<CalendarPage> {
         .collection('bookings')
         .doc(bookingId)
         .delete();
+  }
+
+  Future<void> _updateBooking(BookingModel booking) async {
+    if (booking.id == null || booking.id!.isEmpty) return;
+    await FirebaseFirestore.instance
+        .collection('bookings')
+        .doc(booking.id)
+        .update(booking.toFirestore());
   }
 
   @override
@@ -882,235 +917,242 @@ class _CalendarPageState extends State<CalendarPage> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(16),
                   child: Stack(
-                  children: [
-                    // Main scrollable grid
-                    Positioned.fill(
-                      child: Padding(
-                        padding: EdgeInsets.only(top: _headerHeight),
-                        child: GestureDetector(
-                          key: _gridKey,
-                          onPanStart: (details) {
-                            final cell = _getCellFromPosition(
-                              details.localPosition,
-                            );
-                            if (cell != null) {
-                              // Only start selection on empty cells
-                              if (_getBooking(cell['room']!, cell['date']!) ==
-                                  null) {
-                                _startSelection(cell['room']!, cell['date']!);
-                              }
-                            }
-                          },
-                          onPanUpdate: (details) {
-                            if (_isSelecting) {
+                    children: [
+                      // Main scrollable grid
+                      Positioned.fill(
+                        child: Padding(
+                          padding: EdgeInsets.only(top: _headerHeight),
+                          child: GestureDetector(
+                            key: _gridKey,
+                            onPanStart: (details) {
                               final cell = _getCellFromPosition(
                                 details.localPosition,
                               );
                               if (cell != null) {
-                                // Allow selection to continue even over booked cells
-                                _updateSelection(cell['room']!, cell['date']!);
+                                // Only start selection on empty cells
+                                if (_getBooking(cell['room']!, cell['date']!) ==
+                                    null) {
+                                  _startSelection(cell['room']!, cell['date']!);
+                                }
                               }
-                            }
-                          },
-                          onPanEnd: (details) {
-                            if (_isSelecting) {
-                              _endSelection();
-                            }
-                          },
-                          onPanCancel: () {
-                            if (_isSelecting) {
-                              setState(() {
-                                _isSelecting = false;
-                                _selectionStartRoom = null;
-                                _selectionStartDate = null;
-                                _selectionEndRoom = null;
-                                _selectionEndDate = null;
-                              });
-                            }
-                          },
-                          child: SingleChildScrollView(
-                            controller: _verticalScrollController,
-                            scrollDirection: Axis.vertical,
-                            padding: EdgeInsets.zero,
+                            },
+                            onPanUpdate: (details) {
+                              if (_isSelecting) {
+                                final cell = _getCellFromPosition(
+                                  details.localPosition,
+                                );
+                                if (cell != null) {
+                                  // Allow selection to continue even over booked cells
+                                  _updateSelection(
+                                    cell['room']!,
+                                    cell['date']!,
+                                  );
+                                }
+                              }
+                            },
+                            onPanEnd: (details) {
+                              if (_isSelecting) {
+                                _endSelection();
+                              }
+                            },
+                            onPanCancel: () {
+                              if (_isSelecting) {
+                                setState(() {
+                                  _isSelecting = false;
+                                  _selectionStartRoom = null;
+                                  _selectionStartDate = null;
+                                  _selectionEndRoom = null;
+                                  _selectionEndDate = null;
+                                });
+                              }
+                            },
                             child: SingleChildScrollView(
-                              controller: _horizontalScrollController,
-                              scrollDirection: Axis.horizontal,
+                              controller: _verticalScrollController,
+                              scrollDirection: Axis.vertical,
                               padding: EdgeInsets.zero,
+                              child: SingleChildScrollView(
+                                controller: _horizontalScrollController,
+                                scrollDirection: Axis.horizontal,
+                                padding: EdgeInsets.zero,
+                                child: Column(
+                                  children: _dates.map((date) {
+                                    final isToday = isSameDay(
+                                      date,
+                                      DateTime.now(),
+                                    );
+                                    return _buildDayRow(date, isToday);
+                                  }).toList(),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // Sticky room headers at the top
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: _headerHeight,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF9F9F9),
+                            border: Border(
+                              bottom: BorderSide(
+                                color: Colors.grey.shade300,
+                                width: 1,
+                              ),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.05),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              // Empty corner cell (fixed)
+                              Container(
+                                width: _dayLabelWidth,
+                                height: _headerHeight,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEFEFF4),
+                                  border: Border(
+                                    right: BorderSide(
+                                      color: Colors.grey.shade300,
+                                    ),
+                                  ),
+                                ),
+                                child: Center(
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(
+                                        Icons.hotel_rounded,
+                                        size: 14,
+                                        color: Color(0xFF007AFF),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Text(
+                                        'Rooms',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                          color: Color(0xFF007AFF),
+                                          letterSpacing: 0.2,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              // Room headers (scrollable horizontally)
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  controller: _roomHeadersScrollController,
+                                  scrollDirection: Axis.horizontal,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  child: Row(
+                                    children: _rooms.map((room) {
+                                      return Container(
+                                        width: _roomColumnWidth,
+                                        height: 50,
+                                        decoration: BoxDecoration(
+                                          border: Border(
+                                            right: BorderSide(
+                                              color: Colors.white,
+                                              width: 1,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Center(
+                                          child: Text(
+                                            'Room $room',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 13,
+                                              color: Colors.black87,
+                                              letterSpacing: 0.3,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // Sticky day labels on the left
+                      Positioned(
+                        top: _headerHeight,
+                        left: 0,
+                        bottom: 0,
+                        width: _dayLabelWidth,
+                        child: Container(
+                          color: Colors.white,
+                          child: ScrollConfiguration(
+                            behavior: ScrollConfiguration.of(
+                              context,
+                            ).copyWith(scrollbars: false),
+                            child: SingleChildScrollView(
+                              controller: _stickyDayLabelsScrollController,
+                              scrollDirection: Axis.vertical,
+                              physics: const NeverScrollableScrollPhysics(),
                               child: Column(
                                 children: _dates.map((date) {
                                   final isToday = isSameDay(
                                     date,
                                     DateTime.now(),
                                   );
-                                  return _buildDayRow(date, isToday);
+                                  return _buildStickyDayLabel(date, isToday);
                                 }).toList(),
                               ),
                             ),
                           ),
                         ),
                       ),
-                    ),
 
-                    // Sticky room headers at the top
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: _headerHeight,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF9F9F9),
-                          border: Border(
-                            bottom: BorderSide(
-                              color: Colors.grey.shade300,
-                              width: 1,
-                            ),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
+                      // Red line overlay for today's date
+                      if (_dates.any((date) => isSameDay(date, DateTime.now())))
+                        AnimatedBuilder(
+                          animation: _verticalScrollController,
+                          builder: (context, _) {
+                            final todayIndex = _dates.indexWhere(
+                              (date) => isSameDay(date, DateTime.now()),
+                            );
+                            if (todayIndex == -1)
+                              return const SizedBox.shrink();
+
+                            final scrollOffset =
+                                _verticalScrollController.hasClients
+                                ? _verticalScrollController.offset
+                                : 0.0;
+                            // Position line on the top border of today's row (above the row, not inside)
+                            final lineY =
+                                _headerHeight +
+                                (todayIndex * _dayRowHeight) -
+                                scrollOffset;
+
+                            return Positioned(
+                              top: lineY,
+                              left: _dayLabelWidth, // Start after date column
+                              right: 0,
+                              height: 2,
+                              child: const ColoredBox(color: Colors.red),
+                            );
+                          },
                         ),
-                        child: Row(
-                          children: [
-                            // Empty corner cell (fixed)
-                            Container(
-                              width: _dayLabelWidth,
-                              height: _headerHeight,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFEFEFF4),
-                                border: Border(
-                                  right: BorderSide(
-                                    color: Colors.grey.shade300,
-                                  ),
-                                ),
-                              ),
-                              child: Center(
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(
-                                      Icons.hotel_rounded,
-                                      size: 14,
-                                      color: Color(0xFF007AFF),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    const Text(
-                                      'Rooms',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 12,
-                                        color: Color(0xFF007AFF),
-                                        letterSpacing: 0.2,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            // Room headers (scrollable horizontally)
-                            Expanded(
-                              child: SingleChildScrollView(
-                                controller: _roomHeadersScrollController,
-                                scrollDirection: Axis.horizontal,
-                                physics: const NeverScrollableScrollPhysics(),
-                                child: Row(
-                                  children: _rooms.map((room) {
-                                    return Container(
-                                      width: _roomColumnWidth,
-                                      height: 50,
-                                      decoration: BoxDecoration(
-                                        border: Border(
-                                          right: BorderSide(
-                                            color: Colors.white,
-                                            width: 1,
-                                          ),
-                                        ),
-                                      ),
-                                      child: Center(
-                                        child: Text(
-                                          'Room $room',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 13,
-                                            color: Colors.black87,
-                                            letterSpacing: 0.3,
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  }).toList(),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    // Sticky day labels on the left
-                    Positioned(
-                      top: _headerHeight,
-                      left: 0,
-                      bottom: 0,
-                      width: _dayLabelWidth,
-                      child: Container(
-                        color: Colors.white,
-                        child: ScrollConfiguration(
-                          behavior: ScrollConfiguration.of(context).copyWith(
-                            scrollbars: false,
-                          ),
-                          child: SingleChildScrollView(
-                            controller: _stickyDayLabelsScrollController,
-                            scrollDirection: Axis.vertical,
-                            physics: const NeverScrollableScrollPhysics(),
-                            child: Column(
-                              children: _dates.map((date) {
-                                final isToday = isSameDay(date, DateTime.now());
-                                return _buildStickyDayLabel(date, isToday);
-                              }).toList(),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    // Red line overlay for today's date
-                    if (_dates.any((date) => isSameDay(date, DateTime.now())))
-                      AnimatedBuilder(
-                        animation: _verticalScrollController,
-                        builder: (context, _) {
-                          final todayIndex = _dates.indexWhere(
-                            (date) => isSameDay(date, DateTime.now()),
-                          );
-                          if (todayIndex == -1) return const SizedBox.shrink();
-
-                          final scrollOffset =
-                              _verticalScrollController.hasClients
-                              ? _verticalScrollController.offset
-                              : 0.0;
-                          // Position line on the top border of today's row (above the row, not inside)
-                          final lineY =
-                              _headerHeight +
-                              (todayIndex * _dayRowHeight) -
-                              scrollOffset;
-
-                          return Positioned(
-                            top: lineY,
-                            left: _dayLabelWidth, // Start after date column
-                            right: 0,
-                            height: 2,
-                            child: const ColoredBox(color: Colors.red),
-                          );
-                        },
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
             ),
             const SizedBox(height: 24),
           ],
@@ -1365,10 +1407,11 @@ class _CalendarPageState extends State<CalendarPage> {
     DateTime date,
     Booking booking,
   ) {
+    final bookingId = booking.bookingId;
     showDialog(
       context: context,
       barrierDismissible: true,
-      builder: (context) => Dialog(
+      builder: (dialogContext) => Dialog(
         backgroundColor: Colors.transparent,
         elevation: 0,
         child: Container(
@@ -1384,158 +1427,116 @@ class _CalendarPageState extends State<CalendarPage> {
               ),
             ],
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 24),
-              Text(
-                'Booking Details',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 17,
-                      color: Colors.black,
-                    ),
-              ),
-              const SizedBox(height: 20),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  children: [
-                    _buildDetailRow(
-                      Icons.person_rounded,
-                      'Guest',
-                      booking.guestName,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildDetailRow(
-                      Icons.hotel_rounded,
-                      'Room',
-                      room,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildDetailRow(
-                      Icons.calendar_today_rounded,
-                      'Date',
-                      DateFormat('MMM d, yyyy').format(date),
-                    ),
-                    const SizedBox(height: 12),
-                    _buildDetailRow(
-                      Icons.nightlight_round,
-                      'Duration',
-                      '${booking.totalNights} ${booking.totalNights == 1 ? 'night' : 'nights'}',
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  children: [
-                    // Edit Button
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          final fullBooking =
-                              _bookingModelsById[booking.bookingId];
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => AddBookingPage(
-                                existingBooking: fullBooking,
-                                preselectedRoom:
-                                    fullBooking == null ? room : null,
-                                preselectedStartDate:
-                                    fullBooking?.checkIn ?? date,
-                                preselectedEndDate: fullBooking?.checkOut ??
-                                    date.add(
-                                      Duration(days: booking.totalNights),
-                                    ),
-                                preselectedNumberOfRooms:
-                                    fullBooking?.numberOfRooms ??
-                                        booking.totalNights,
-                              ),
-                            ),
-                          ).then((bookingCreated) {
-                            if (bookingCreated == true) {
-                              _subscribeToBookings();
-                            }
-                          });
-                        },
-                        icon: const Icon(Icons.edit_rounded, size: 18),
-                        label: const Text('Edit Booking'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF007AFF),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          elevation: 0,
+          child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance
+                .collection('bookings')
+                .doc(bookingId)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Padding(
+                  padding: EdgeInsets.all(48),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              final doc = snapshot.data!;
+              if (!doc.exists) {
+                return Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Booking removed',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Text('Close'),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    // Delete Button
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          Navigator.pop(context);
-                          final confirm = await _showDeleteConfirmation(context);
-                          if (confirm != true) return;
-
-                          try {
-                            _showLoadingDialog(context);
-                            await _deleteBooking(booking.bookingId);
-                            if (mounted) Navigator.pop(context);
-                          } catch (e) {
-                            if (mounted) Navigator.pop(context);
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Failed to delete: $e'),
-                                backgroundColor: Colors.red,
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
-                          }
-                        },
-                        icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                        label: const Text('Delete Booking'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red,
-                          side: const BorderSide(color: Colors.red),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
+                    ],
+                  ),
+                );
+              }
+              final fullBooking =
+                  BookingModel.fromFirestore(doc.data()!, doc.id);
+              return _BookingDetailsForm(
+                key: ValueKey(fullBooking.id),
+                fullBooking: fullBooking,
+                room: room,
+                date: date,
+                bookingId: bookingId,
+                statusOptions: statusOptions,
+                getStatusColor: _statusColor,
+                paymentMethods: paymentMethods,
+                buildDetailRow: _buildDetailRow,
+                buildStatusRowWithStatus: _buildStatusRowWithStatus,
+                onSave: (updated) async {
+                  await _updateBooking(updated);
+                  if (dialogContext.mounted) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      const SnackBar(
+                        content: Text('Booking updated'),
+                        behavior: SnackBarBehavior.floating,
+                        backgroundColor: Color(0xFF34C759),
+                      ),
+                    );
+                  }
+                },
+                onDelete: () async {
+                  final navigator = Navigator.of(dialogContext);
+                  final messenger = ScaffoldMessenger.of(dialogContext);
+                  final confirm =
+                      await _showDeleteConfirmation(dialogContext);
+                  if (confirm != true) return;
+                  if (!mounted) return;
+                  try {
+                    _showLoadingDialog(dialogContext);
+                    await _deleteBooking(bookingId);
+                    if (!mounted) return;
+                    navigator.pop();
+                    navigator.pop();
+                  } catch (e) {
+                    if (!mounted) return;
+                    navigator.pop();
+                    navigator.pop();
+                    messenger.showSnackBar(
+                      SnackBar(
+                        content: Text('Failed to delete: $e'),
+                        backgroundColor: Colors.red,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+                },
+                onEditFull: () {
+                  final navigator = Navigator.of(dialogContext);
+                  navigator.pop();
+                  navigator
+                      .push(
+                        MaterialPageRoute(
+                          builder: (context) => AddBookingPage(
+                            existingBooking: fullBooking,
+                            preselectedRoom: room,
+                            preselectedStartDate: fullBooking.checkIn,
+                            preselectedEndDate: fullBooking.checkOut,
+                            preselectedNumberOfRooms: fullBooking.numberOfRooms,
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    // Close Button
-                    SizedBox(
-                      width: double.infinity,
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFF007AFF),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                        child: const Text('Close'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
+                      )
+                      .then((bookingCreated) {
+                    if (bookingCreated == true) {
+                      _subscribeToBookings();
+                    }
+                  });
+                },
+                onClose: () => Navigator.pop(dialogContext),
+              );
+            },
           ),
         ),
       ),
@@ -1557,11 +1558,7 @@ class _CalendarPageState extends State<CalendarPage> {
               color: const Color(0xFF007AFF).withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(
-              icon,
-              size: 20,
-              color: const Color(0xFF007AFF),
-            ),
+            child: Icon(icon, size: 20, color: const Color(0xFF007AFF)),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1570,10 +1567,7 @@ class _CalendarPageState extends State<CalendarPage> {
               children: [
                 Text(
                   label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -1582,6 +1576,63 @@ class _CalendarPageState extends State<CalendarPage> {
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
                     color: Colors.black87,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusRowWithStatus(String status) {
+    final color = _statusColor(status);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(Icons.info_outline_rounded, size: 20, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Status',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: color.withOpacity(0.4)),
+                  ),
+                  child: Text(
+                    status,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
                   ),
                 ),
               ],
@@ -1632,20 +1683,17 @@ class _CalendarPageState extends State<CalendarPage> {
               Text(
                 'Delete Booking?',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 17,
-                      color: Colors.black,
-                    ),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 17,
+                  color: Colors.black,
+                ),
               ),
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Text(
                   'This will permanently delete the booking. This action cannot be undone.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey.shade600,
-                  ),
+                  style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -1725,10 +1773,7 @@ class _CalendarPageState extends State<CalendarPage> {
               SizedBox(height: 16),
               Text(
                 'Please wait...',
-                style: TextStyle(
-                  fontSize: 15,
-                  color: Colors.black87,
-                ),
+                style: TextStyle(fontSize: 15, color: Colors.black87),
               ),
             ],
           ),
@@ -1774,6 +1819,345 @@ class _CalendarPageState extends State<CalendarPage> {
     final dateA = DateTime(a.year, a.month, a.day);
     final dateB = DateTime(b.year, b.month, b.day);
     return dateA.isAtSameMomentAs(dateB);
+  }
+}
+
+class _BookingDetailsForm extends StatefulWidget {
+  final BookingModel fullBooking;
+  final String room;
+  final DateTime date;
+  final String bookingId;
+  final List<String> statusOptions;
+  final Color Function(String) getStatusColor;
+  final List<String> paymentMethods;
+  final Widget Function(IconData, String, String) buildDetailRow;
+  final Widget Function(String) buildStatusRowWithStatus;
+  final Future<void> Function(BookingModel) onSave;
+  final Future<void> Function() onDelete;
+  final VoidCallback onEditFull;
+  final VoidCallback onClose;
+
+  const _BookingDetailsForm({
+    super.key,
+    required this.fullBooking,
+    required this.room,
+    required this.date,
+    required this.bookingId,
+    required this.statusOptions,
+    required this.getStatusColor,
+    required this.paymentMethods,
+    required this.buildDetailRow,
+    required this.buildStatusRowWithStatus,
+    required this.onSave,
+    required this.onDelete,
+    required this.onEditFull,
+    required this.onClose,
+  });
+
+  @override
+  State<_BookingDetailsForm> createState() => _BookingDetailsFormState();
+}
+
+class _BookingDetailsFormState extends State<_BookingDetailsForm> {
+  late String _status;
+  late TextEditingController _amountController;
+  late String _paymentMethod;
+  late TextEditingController _notesController;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncFromBooking(widget.fullBooking);
+  }
+
+  void _syncFromBooking(BookingModel b) {
+    _status = widget.statusOptions.contains(b.status)
+        ? b.status
+        : widget.statusOptions.first;
+    _amountController = TextEditingController(
+      text: b.amountOfMoneyPaid > 0 ? b.amountOfMoneyPaid.toString() : '',
+    );
+    _paymentMethod = widget.paymentMethods.contains(b.paymentMethod)
+        ? b.paymentMethod
+        : widget.paymentMethods.first;
+    _notesController = TextEditingController(text: b.notes ?? '');
+  }
+
+  @override
+  void didUpdateWidget(covariant _BookingDetailsForm oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.fullBooking.id != widget.fullBooking.id ||
+        oldWidget.fullBooking.status != widget.fullBooking.status ||
+        oldWidget.fullBooking.amountOfMoneyPaid !=
+            widget.fullBooking.amountOfMoneyPaid ||
+        oldWidget.fullBooking.paymentMethod !=
+            widget.fullBooking.paymentMethod ||
+        oldWidget.fullBooking.notes != widget.fullBooking.notes) {
+      _amountController.dispose();
+      _notesController.dispose();
+      _syncFromBooking(widget.fullBooking);
+    }
+  }
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final b = widget.fullBooking;
+    final totalNights = b.numberOfNights;
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 24),
+          Text(
+            'Booking Details',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 17,
+                  color: Colors.black,
+                ),
+          ),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              children: [
+                widget.buildDetailRow(
+                  Icons.person_rounded,
+                  'Guest',
+                  b.userName,
+                ),
+                const SizedBox(height: 12),
+                widget.buildDetailRow(Icons.hotel_rounded, 'Room', widget.room),
+                const SizedBox(height: 12),
+                widget.buildDetailRow(
+                  Icons.calendar_today_rounded,
+                  'Date',
+                  DateFormat('MMM d, yyyy').format(widget.date),
+                ),
+                const SizedBox(height: 12),
+                widget.buildDetailRow(
+                  Icons.nightlight_round,
+                  'Duration',
+                  '$totalNights ${totalNights == 1 ? 'night' : 'nights'}',
+                ),
+                const SizedBox(height: 16),
+                // Editable: Status
+                Text(
+                  'Status',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<String>(
+                  value: _status,
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                  ),
+                  items: widget.statusOptions
+                      .map((s) => DropdownMenuItem(
+                            value: s,
+                            child: Text(
+                              s,
+                              style: TextStyle(
+                                color: widget.getStatusColor(s),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ))
+                      .toList(),
+                  onChanged: (v) => setState(() => _status = v ?? _status),
+                ),
+                const SizedBox(height: 12),
+                // Editable: Amount paid
+                TextFormField(
+                  controller: _amountController,
+                  decoration: InputDecoration(
+                    labelText: 'Amount paid',
+                    hintText: '0',
+                    filled: true,
+                    fillColor: Colors.white,
+                    prefixIcon: const Icon(Icons.payments_rounded),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                  ),
+                  keyboardType: TextInputType.number,
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 12),
+                // Editable: Payment method
+                DropdownButtonFormField<String>(
+                  value: widget.paymentMethods.contains(_paymentMethod)
+                      ? _paymentMethod
+                      : widget.paymentMethods.first,
+                  decoration: InputDecoration(
+                    labelText: 'Payment method',
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                  ),
+                  items: widget.paymentMethods
+                      .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                      .toList(),
+                  onChanged: (v) =>
+                      setState(() => _paymentMethod = v ?? widget.paymentMethods.first),
+                ),
+                const SizedBox(height: 12),
+                // Editable: Notes
+                TextFormField(
+                  controller: _notesController,
+                  decoration: InputDecoration(
+                    labelText: 'Notes',
+                    hintText: 'Optional notes...',
+                    filled: true,
+                    fillColor: Colors.white,
+                    alignLabelWithHint: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                  ),
+                  maxLines: 2,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () async {
+                      final amount = int.tryParse(
+                            _amountController.text.trim(),
+                          ) ??
+                          0;
+                      final updated = b.copyWith(
+                        status: _status,
+                        amountOfMoneyPaid: amount,
+                        paymentMethod: _paymentMethod,
+                        notes: _notesController.text.trim().isEmpty
+                            ? null
+                            : _notesController.text.trim(),
+                      );
+                      await widget.onSave(updated);
+                    },
+                    icon: const Icon(Icons.save_rounded, size: 18),
+                    label: const Text('Save changes'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF34C759),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      elevation: 0,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: widget.onEditFull,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF007AFF),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.edit_rounded, size: 18),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            'Edit full booking (dates, rooms, guest)',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () async => await widget.onDelete(),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    label: const Text('Delete Booking'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: widget.onClose,
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF007AFF),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text('Close'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
   }
 }
 

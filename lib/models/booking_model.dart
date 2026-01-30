@@ -10,9 +10,26 @@ class BookingModel {
   final bool nextToEachOther;
   final List<String>? selectedRooms; // Room numbers if specific rooms selected
   final int numberOfGuests;
-  final String status; // Confirmed, Pending, Cancelled
+  final String status; // Confirmed, Pending, Cancelled, Paid, Unpaid
   final String? notes;
   final DateTime createdAt;
+  final int amountOfMoneyPaid;
+  final String paymentMethod;
+
+  static const List<String> statusOptions = [
+    'Confirmed',
+    'Pending',
+    'Cancelled',
+    'Paid',
+    'Unpaid',
+  ];
+
+  static const List<String> paymentMethods = [
+    'Cash',
+    'Card',
+    'Bank Transfer',
+    'Other',
+  ];
 
   BookingModel({
     this.id,
@@ -29,6 +46,8 @@ class BookingModel {
     required this.status,
     this.notes,
     DateTime? createdAt,
+    this.amountOfMoneyPaid = 0,
+    this.paymentMethod = '',
   }) : createdAt = createdAt ?? DateTime.now();
 
   int get numberOfNights {
@@ -51,6 +70,8 @@ class BookingModel {
       'status': status,
       'notes': notes,
       'createdAt': createdAt.toIso8601String(),
+      'amountOfMoneyPaid': amountOfMoneyPaid,
+      'paymentMethod': paymentMethod,
     };
   }
 
@@ -75,6 +96,10 @@ class BookingModel {
       createdAt: data['createdAt'] != null
           ? DateTime.parse(data['createdAt'])
           : DateTime.now(),
+      amountOfMoneyPaid: (data['amountOfMoneyPaid'] is int)
+          ? data['amountOfMoneyPaid'] as int
+          : int.tryParse(data['amountOfMoneyPaid']?.toString() ?? '0') ?? 0,
+      paymentMethod: data['paymentMethod']?.toString() ?? '',
     );
   }
 
@@ -94,6 +119,8 @@ class BookingModel {
     String? status,
     String? notes,
     DateTime? createdAt,
+    int? amountOfMoneyPaid,
+    String? paymentMethod,
   }) {
     return BookingModel(
       id: id ?? this.id,
@@ -110,6 +137,8 @@ class BookingModel {
       status: status ?? this.status,
       notes: notes ?? this.notes,
       createdAt: createdAt ?? this.createdAt,
+      amountOfMoneyPaid: amountOfMoneyPaid ?? this.amountOfMoneyPaid,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
     );
   }
 }

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import '../models/user_model.dart';
 import '../models/booking_model.dart';
+import '../models/employer_model.dart';
 
 class FirebaseService {
   FirebaseFirestore? _firestore;
@@ -27,14 +28,20 @@ class FirebaseService {
     }
   }
 
-  // User operations
+  // User operations (clients/guests stored in Firestore 'users' collection)
+  /// Creates a new user (client/guest) in Firestore and returns the document ID.
+  /// Throws if Firebase is not initialized or if name/phone are empty.
   Future<String> createUser(UserModel user) async {
     if (!isInitialized) {
       throw Exception(
         'Firebase is not initialized. Please configure Firebase first.',
       );
     }
-    final docRef = await firestore.collection('users').add(user.toFirestore());
+    if (user.name.trim().isEmpty || user.phone.trim().isEmpty) {
+      throw ArgumentError('User name and phone are required.');
+    }
+    final data = user.toFirestore();
+    final docRef = await firestore.collection('users').add(data);
     return docRef.id;
   }
 
@@ -197,5 +204,69 @@ class FirebaseService {
   Future<void> deleteBooking(String bookingId) async {
     if (!isInitialized) return;
     await firestore.collection('bookings').doc(bookingId).delete();
+  }
+
+  // Employer operations
+  Future<String> createEmployer(EmployerModel employer) async {
+    if (!isInitialized) {
+      throw Exception(
+        'Firebase is not initialized. Please configure Firebase first.',
+      );
+    }
+    final docRef = await firestore
+        .collection('employers')
+        .add(employer.toFirestore());
+    return docRef.id;
+  }
+
+  // Roles and departments (custom "Other" values saved for dropdowns)
+  Future<List<String>> getRoles() async {
+    if (!isInitialized) return [];
+    final snapshot = await firestore.collection('roles').get();
+    final list = snapshot.docs
+        .map((d) => d.data()['name'] as String? ?? '')
+        .where((s) => s.isNotEmpty)
+        .toList();
+    list.sort();
+    return list;
+  }
+
+  Future<List<String>> getDepartments() async {
+    if (!isInitialized) return [];
+    final snapshot = await firestore.collection('departments').get();
+    final list = snapshot.docs
+        .map((d) => d.data()['name'] as String? ?? '')
+        .where((s) => s.isNotEmpty)
+        .toList();
+    list.sort();
+    return list;
+  }
+
+  /// Saves a custom role to the DB so it appears in the dropdown next time.
+  Future<void> addRole(String name) async {
+    if (!isInitialized || name.trim().isEmpty) return;
+    final trimmed = name.trim();
+    final existing = await firestore
+        .collection('roles')
+        .where('name', isEqualTo: trimmed)
+        .limit(1)
+        .get();
+    if (existing.docs.isEmpty) {
+      await firestore.collection('roles').add({'name': trimmed});
+    }
+  }
+
+  /// Saves a custom department to the DB so it appears in the dropdown next time.
+  Future<void> addDepartment(String name) async {
+    if (!isInitialized || name.trim().isEmpty) return;
+    final trimmed = name.trim();
+    final existing = await firestore
+        .collection('departments')
+        .where('name', isEqualTo: trimmed)
+        .limit(1)
+        .get();
+    if (existing.docs.isEmpty) {
+      await firestore.collection('departments').add({'name': trimmed});
+    }
   }
 }
