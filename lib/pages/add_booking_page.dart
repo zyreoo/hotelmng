@@ -408,6 +408,8 @@ class _AddBookingPageState extends State<AddBookingPage> {
 
   @override
   Widget build(BuildContext context) {
+    final horizontalPadding = MediaQuery.of(context).size.width >= 768 ? 24.0 : 16.0;
+    
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F7),
       body: SafeArea(
@@ -418,7 +420,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
               // Page Title
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.all(24.0),
+                  padding: EdgeInsets.all(horizontalPadding),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -468,7 +470,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                 ),
               ),
               SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
+                padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                 sliver: SliverToBoxAdapter(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

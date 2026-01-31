@@ -37,62 +37,104 @@ class DashboardPage extends StatelessWidget {
               ),
             ),
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              padding: EdgeInsets.symmetric(
+                horizontal: MediaQuery.of(context).size.width >= 768 ? 24 : 16,
+              ),
               sliver: SliverToBoxAdapter(
-                child: Column(
-                  children: [
-                    // Stats Cards Row
-                    Row(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isMobile = constraints.maxWidth < 600;
+                    
+                    return Column(
                       children: [
-                        Expanded(
-                          child: _StatCard(
+                        // Stats Cards Grid
+                        if (isMobile) ...[
+                          // Mobile: 2 columns, stacked vertically
+                          _StatCard(
                             title: 'Total Rooms',
                             value: '125',
                             icon: Icons.hotel_rounded,
                             color: const Color(0xFF007AFF),
                             trend: '+5%',
                           ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _StatCard(
+                          const SizedBox(height: 12),
+                          _StatCard(
                             title: 'Occupied',
                             value: '98',
                             icon: Icons.check_circle_rounded,
                             color: const Color(0xFF34C759),
                             trend: '+12%',
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _StatCard(
+                          const SizedBox(height: 12),
+                          _StatCard(
                             title: 'Check-ins',
                             value: '23',
                             icon: Icons.login_rounded,
                             color: const Color(0xFFFF9500),
                             trend: 'Today',
                           ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _StatCard(
+                          const SizedBox(height: 12),
+                          _StatCard(
                             title: 'Revenue',
                             value: '\$12.5k',
                             icon: Icons.attach_money_rounded,
                             color: const Color(0xFF5856D6),
                             trend: '+8%',
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
+                        ] else ...[
+                          // Desktop: 2x2 grid
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _StatCard(
+                                  title: 'Total Rooms',
+                                  value: '125',
+                                  icon: Icons.hotel_rounded,
+                                  color: const Color(0xFF007AFF),
+                                  trend: '+5%',
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: _StatCard(
+                                  title: 'Occupied',
+                                  value: '98',
+                                  icon: Icons.check_circle_rounded,
+                                  color: const Color(0xFF34C759),
+                                  trend: '+12%',
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _StatCard(
+                                  title: 'Check-ins',
+                                  value: '23',
+                                  icon: Icons.login_rounded,
+                                  color: const Color(0xFFFF9500),
+                                  trend: 'Today',
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: _StatCard(
+                                  title: 'Revenue',
+                                  value: '\$12.5k',
+                                  icon: Icons.attach_money_rounded,
+                                  color: const Color(0xFF5856D6),
+                                  trend: '+8%',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 24),
 
-                    // Occupancy Chart
-                    Card(
+                        // Occupancy Chart
+                        Card(
                       child: Padding(
                         padding: const EdgeInsets.all(20),
                         child: Column(
@@ -294,9 +336,11 @@ class DashboardPage extends StatelessWidget {
                           ],
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 24),
-                  ],
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),

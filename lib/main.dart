@@ -86,81 +86,112 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width >= 768;
+
     return Scaffold(
-      body: Row(
-        children: [
-          // Left Sidebar Navigation
-          Container(
-            width: 240,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(2, 0),
-                ),
-              ],
-            ),
-            child: SafeArea(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // App Logo/Title
-                  Padding(
-                    padding: const EdgeInsets.all(24.0),
+      body: isDesktop
+          ? Row(
+              children: [
+                // Left Sidebar Navigation (Desktop)
+                Container(
+                  width: 240,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(2, 0),
+                      ),
+                    ],
+                  ),
+                  child: SafeArea(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF007AFF),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(
-                            Icons.hotel_rounded,
-                            color: Colors.white,
-                            size: 24,
+                        // App Logo/Title
+                        Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF007AFF),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(
+                                  Icons.hotel_rounded,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'Hotel Management',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Hotel Management',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
+                        const Divider(height: 1),
+                        const SizedBox(height: 8),
+
+                        // Navigation Items
+                        Expanded(
+                          child: ListView.builder(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            itemCount: _navItems.length,
+                            itemBuilder: (context, index) {
+                              return _buildNavItem(_navItems[index], index);
+                            },
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const Divider(height: 1),
-                  const SizedBox(height: 8),
+                ),
 
-                  // Navigation Items
-                  Expanded(
-                    child: ListView.builder(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      itemCount: _navItems.length,
-                      itemBuilder: (context, index) {
-                        return _buildNavItem(_navItems[index], index);
-                      },
-                    ),
+                // Main Content Area
+                Expanded(child: _pages[_selectedIndex]),
+              ],
+            )
+          : _pages[_selectedIndex], // Mobile: full screen
+      // Bottom Navigation Bar (Mobile)
+      bottomNavigationBar: isDesktop
+          ? null
+          : Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, -2),
                   ),
                 ],
               ),
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: List.generate(
+                      _navItems.length,
+                      (index) => _buildBottomNavItem(_navItems[index], index),
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
-
-          // Main Content Area
-          Expanded(child: _pages[_selectedIndex]),
-        ],
-      ),
     );
   }
 
@@ -197,6 +228,42 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                     ? const Color(0xFF007AFF)
                     : Colors.grey.shade700,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomNavItem(_NavItem item, int index) {
+    final isSelected = _selectedIndex == index;
+    return InkWell(
+      onTap: () => setState(() => _selectedIndex = index),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              item.icon,
+              color: isSelected
+                  ? const Color(0xFF007AFF)
+                  : Colors.grey.shade600,
+              size: 24,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              item.label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                color: isSelected
+                    ? const Color(0xFF007AFF)
+                    : Colors.grey.shade600,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),

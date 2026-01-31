@@ -103,6 +103,8 @@ class _EmployeesPageState extends State<EmployeesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final horizontalPadding = MediaQuery.of(context).size.width >= 768 ? 24.0 : 16.0;
+    
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F7),
       body: SafeArea(
@@ -127,7 +129,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
             return Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.all(24.0),
+                  padding: EdgeInsets.all(horizontalPadding),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -151,7 +153,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                   child: EmployeeSearchWidget(
                     onEmployeeSelected: (employer) {
                       setState(() {
@@ -165,7 +167,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
 
                 // Filter chips
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
@@ -214,7 +216,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
                 // Employee list
                 Expanded(
                   child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                     itemCount: employees.length,
                     itemBuilder: (context, index) {
                       final employee = employees[index];

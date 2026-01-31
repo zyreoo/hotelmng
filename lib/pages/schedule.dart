@@ -13,11 +13,11 @@ class SchedulePage extends StatefulWidget {
 }
 
 class _SchedulePageState extends State<SchedulePage> {
-  static const double _headerHeight = 50.0;
-  static const double _employeeLabelWidth = 150.0;
-
-  final double _dayColumnWidth = 120.0;
-  final double _employeeRowHeight = 50.0;
+  /// Header needs two lines: weekday name + date
+  static const double _headerHeight = 56.0;
+  double get _employeeLabelWidth => MediaQuery.of(context).size.width >= 768 ? 150.0 : 100.0;
+  double get _dayColumnWidth => MediaQuery.of(context).size.width >= 768 ? 120.0 : 80.0;
+  double get _employeeRowHeight => MediaQuery.of(context).size.width >= 768 ? 50.0 : 45.0;
 
   // Days of the week
   final List<String> _daysOfWeek = [
@@ -29,6 +29,12 @@ class _SchedulePageState extends State<SchedulePage> {
     'Saturday',
     'Sunday',
   ];
+
+  /// Dates for the current week (Mon..Sun), same order as _daysOfWeek.
+  List<DateTime> get _currentWeekDates => List.generate(
+    7,
+    (i) => _currentWeekStart.add(Duration(days: i)),
+  );
 
   // Real-time Firestore synchronization
   StreamSubscription<QuerySnapshot>? _employeesSubscription;
@@ -295,9 +301,12 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Map<String, dynamic>? _getCellFromPosition(Offset position) {
-    final employeeIndex =
-        (position.dy / _employeeRowHeight).floor();
-    final dayIndex = (position.dx / _dayColumnWidth).floor();
+    // Grid has left padding of _employeeLabelWidth so day columns align with header
+    final dayColumnX = position.dx - _employeeLabelWidth;
+    if (dayColumnX < 0) return null;
+
+    final employeeIndex = (position.dy / _employeeRowHeight).floor();
+    final dayIndex = (dayColumnX / _dayColumnWidth).floor();
 
     if (employeeIndex >= 0 &&
         employeeIndex < _employees.length &&
@@ -311,241 +320,97 @@ class _SchedulePageState extends State<SchedulePage> {
     return null;
   }
 
-  void _showShiftDialog(List<String> employeeIds, List<int> days) {
-    TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
-    TimeOfDay endTime = const TimeOfDay(hour: 17, minute: 0);
-    String role = 'Regular Shift';
+  Future<List<ShiftPreset>> _loadShiftPresets() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('shift_presets')
+          .get();
+      final fromFirestore = snapshot.docs.map((doc) {
+        final d = doc.data();
+        return ShiftPreset(
+          id: doc.id,
+          name: d['name'] ?? '',
+          startTime: d['startTime'] ?? '09:00',
+          endTime: d['endTime'] ?? '17:00',
+          role: d['role'] ?? 'Regular Shift',
+        );
+      }).toList();
+      fromFirestore.sort((a, b) => a.name.compareTo(b.name));
+      return fromFirestore;
+    } catch (_) {
+      return [];
+    }
+  }
 
+  Future<void> _saveShiftPreset(ShiftPreset preset) async {
+    await FirebaseFirestore.instance.collection('shift_presets').add({
+      'name': preset.name,
+      'startTime': preset.startTime,
+      'endTime': preset.endTime,
+      'role': preset.role,
+    });
+  }
+
+  Future<void> _updateShiftPreset(ShiftPreset preset) async {
+    if (preset.id == null || preset.id!.isEmpty) return;
+    await FirebaseFirestore.instance.collection('shift_presets').doc(preset.id).update({
+      'name': preset.name,
+      'startTime': preset.startTime,
+      'endTime': preset.endTime,
+      'role': preset.role,
+    });
+  }
+
+  Future<void> _deleteShiftPreset(String presetId) async {
+    await FirebaseFirestore.instance.collection('shift_presets').doc(presetId).delete();
+  }
+
+  void _showShiftDialog(List<String> employeeIds, List<int> days) {
     showDialog(
       context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 340),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF2F2F7),
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.15),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: StatefulBuilder(
-            builder: (context, setModalState) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 24),
-                Text(
-                  'Add Shift',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 20,
-                        color: Colors.black,
-                      ),
-                ),
-                const SizedBox(height: 20),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    children: [
-                      // Start Time
-                      InkWell(
-                        onTap: () async {
-                          final picked = await showTimePicker(
-                            context: context,
-                            initialTime: startTime,
-                          );
-                          if (picked != null) {
-                            setModalState(() => startTime = picked);
-                          }
-                        },
-                        borderRadius: BorderRadius.circular(10),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.grey.shade300),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.access_time_rounded,
-                                size: 20,
-                                color: Colors.grey.shade600,
-                              ),
-                              const SizedBox(width: 12),
-                              const Text(
-                                'Start Time',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                              const Spacer(),
-                              Text(
-                                startTime.format(context),
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Icon(
-                                Icons.chevron_right_rounded,
-                                size: 22,
-                                color: Colors.grey.shade400,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      // End Time
-                      InkWell(
-                        onTap: () async {
-                          final picked = await showTimePicker(
-                            context: context,
-                            initialTime: endTime,
-                          );
-                          if (picked != null) {
-                            setModalState(() => endTime = picked);
-                          }
-                        },
-                        borderRadius: BorderRadius.circular(10),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.grey.shade300),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.access_time_filled_rounded,
-                                size: 20,
-                                color: Colors.grey.shade600,
-                              ),
-                              const SizedBox(width: 12),
-                              const Text(
-                                'End Time',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                              const Spacer(),
-                              Text(
-                                endTime.format(context),
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Icon(
-                                Icons.chevron_right_rounded,
-                                size: 22,
-                                color: Colors.grey.shade400,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      // Role
-                      TextFormField(
-                        initialValue: role,
-                        decoration: InputDecoration(
-                          labelText: 'Role',
-                          filled: true,
-                          fillColor: Colors.white,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                        onChanged: (value) => role = value,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    children: [
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: () async {
-                            Navigator.pop(ctx);
-                            await _createShifts(
-                              employeeIds,
-                              days,
-                              startTime,
-                              endTime,
-                              role,
-                            );
-                          },
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF34C759),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: const Text('Create Shifts'),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: TextButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          style: TextButton.styleFrom(
-                            foregroundColor: const Color(0xFF007AFF),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          child: const Text('Cancel'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-              ],
-            ),
-          ),
-        ),
+      builder: (ctx) => _AddShiftDialog(
+        employeeIds: employeeIds,
+        days: days,
+        loadPresets: _loadShiftPresets,
+        savePreset: _saveShiftPreset,
+        updatePreset: _updateShiftPreset,
+        deletePreset: _deleteShiftPreset,
+        isValidTime: _isValidTimeString,
+        normalizeTime: _normalizeTimeString,
+        onCreateShifts: _createShifts,
       ),
     );
+  }
+
+  /// Validates time string in HH:mm or H:mm format (24h).
+  bool _isValidTimeString(String s) {
+    final parts = s.split(':');
+    if (parts.length != 2) return false;
+    final h = int.tryParse(parts[0].trim());
+    final m = int.tryParse(parts[1].trim());
+    if (h == null || m == null) return false;
+    return h >= 0 && h <= 23 && m >= 0 && m <= 59;
+  }
+
+  /// Normalizes time string to HH:mm.
+  String _normalizeTimeString(String s) {
+    final parts = s.split(':');
+    if (parts.length != 2) return s;
+    final h = int.tryParse(parts[0].trim());
+    final m = int.tryParse(parts[1].trim());
+    if (h == null || m == null) return s;
+    return '${h.clamp(0, 23).toString().padLeft(2, '0')}:${m.clamp(0, 59).toString().padLeft(2, '0')}';
   }
 
   Future<void> _createShifts(
     List<String> employeeIds,
     List<int> days,
-    TimeOfDay startTime,
-    TimeOfDay endTime,
+    String startTimeStr,
+    String endTimeStr,
     String role,
   ) async {
+    final startTime = _normalizeTimeString(startTimeStr);
+    final endTime = _normalizeTimeString(endTimeStr);
     final batch = FirebaseFirestore.instance.batch();
 
     for (final employeeId in employeeIds) {
@@ -554,8 +419,8 @@ class _SchedulePageState extends State<SchedulePage> {
         final shift = ShiftModel(
           employeeId: employeeId,
           date: date,
-          startTime: '${startTime.hour}:${startTime.minute.toString().padLeft(2, '0')}',
-          endTime: '${endTime.hour}:${endTime.minute.toString().padLeft(2, '0')}',
+          startTime: startTime,
+          endTime: endTime,
           role: role,
         );
 
@@ -1097,11 +962,18 @@ class _SchedulePageState extends State<SchedulePage> {
                                 controller: _horizontalScrollController,
                                 scrollDirection: Axis.horizontal,
                                 padding: EdgeInsets.zero,
-                                child: Column(
-                                  children: _employees
-                                      .map((employee) =>
-                                          _buildEmployeeRow(employee))
-                                      .toList(),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Left spacer so grid columns align with day headers
+                                    SizedBox(width: _employeeLabelWidth),
+                                    Column(
+                                      children: _employees
+                                          .map((employee) =>
+                                              _buildEmployeeRow(employee))
+                                          .toList(),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -1169,38 +1041,56 @@ class _SchedulePageState extends State<SchedulePage> {
                                   ),
                                 ),
                               ),
-                              // Day headers (scrollable horizontally)
+                              // Day headers (scrollable horizontally) – weekday + date
                               Expanded(
                                 child: SingleChildScrollView(
                                   controller: _employeeHeadersScrollController,
                                   scrollDirection: Axis.horizontal,
                                   physics: const NeverScrollableScrollPhysics(),
                                   child: Row(
-                                    children: _daysOfWeek.map((day) {
+                                    children: List.generate(7, (i) {
+                                      final dayName = _daysOfWeek[i];
+                                      final date = _currentWeekDates[i];
                                       return Container(
                                         width: _dayColumnWidth,
-                                        height: 50,
+                                        height: _headerHeight,
                                         decoration: BoxDecoration(
                                           border: Border(
                                             right: BorderSide(
-                                              color: Colors.white,
+                                              color: Colors.grey.shade200,
                                               width: 1,
                                             ),
                                           ),
                                         ),
                                         child: Center(
-                                          child: Text(
-                                            day,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 13,
-                                              color: Colors.black87,
-                                              letterSpacing: 0.3,
-                                            ),
+                                          child: Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Text(
+                                                dayName,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 12,
+                                                  color: Colors.black87,
+                                                  letterSpacing: 0.2,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                DateFormat('MMM d').format(date),
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.grey.shade600,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       );
-                                    }).toList(),
+                                    }),
                                   ),
                                 ),
                               ),
@@ -1286,6 +1176,1012 @@ class _SchedulePageState extends State<SchedulePage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Preset for quick shift selection (Morning, Night shift, Midnight, or custom saved).
+class ShiftPreset {
+  final String? id;
+  final String name;
+  final String startTime;
+  final String endTime;
+  final String role;
+
+  ShiftPreset({
+    this.id,
+    required this.name,
+    required this.startTime,
+    required this.endTime,
+    required this.role,
+  });
+}
+
+/// Apple-style dialog: preset name only (Save as preset).
+class _PresetNameDialog extends StatefulWidget {
+  final String title;
+  final String hint;
+  final String submitLabel;
+
+  const _PresetNameDialog({
+    required this.title,
+    required this.hint,
+    required this.submitLabel,
+  });
+
+  @override
+  State<_PresetNameDialog> createState() => _PresetNameDialogState();
+}
+
+class _PresetNameDialogState extends State<_PresetNameDialog> {
+  final _controller = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 340),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF2F2F7),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 28),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  widget.title,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: TextFormField(
+                  controller: _controller,
+                  decoration: InputDecoration(
+                    labelText: 'Preset name',
+                    hintText: widget.hint,
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                  ),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Enter a name' : null,
+                  onFieldSubmitted: (v) {
+                    if (_formKey.currentState!.validate()) {
+                      Navigator.pop(context, v.trim());
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            if (_formKey.currentState!.validate()) {
+                              Navigator.pop(context, _controller.text.trim());
+                            }
+                          },
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF34C759),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Center(
+                              child: Text(
+                                widget.submitLabel,
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => Navigator.pop(context),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            child: const Center(
+                              child: Text(
+                                'Cancel',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF007AFF),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Apple-style dialog: edit preset (name, start, end, role) with Save, Delete, Cancel.
+class _EditPresetDialog extends StatefulWidget {
+  final ShiftPreset preset;
+  final bool Function(String) isValidTime;
+  final String Function(String) normalizeTime;
+  final Future<void> Function() onDelete;
+
+  const _EditPresetDialog({
+    required this.preset,
+    required this.isValidTime,
+    required this.normalizeTime,
+    required this.onDelete,
+  });
+
+  @override
+  State<_EditPresetDialog> createState() => _EditPresetDialogState();
+}
+
+class _EditPresetDialogState extends State<_EditPresetDialog> {
+  late TextEditingController _nameController;
+  late TextEditingController _startController;
+  late TextEditingController _endController;
+  late TextEditingController _roleController;
+  final _formKey = GlobalKey<FormState>();
+  bool _deleting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.preset.name);
+    _startController = TextEditingController(text: widget.preset.startTime);
+    _endController = TextEditingController(text: widget.preset.endTime);
+    _roleController = TextEditingController(text: widget.preset.role);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _startController.dispose();
+    _endController.dispose();
+    _roleController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleDelete() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 300),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF2F2F7),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 24),
+              Text(
+                'Delete Preset?',
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  'This preset will be removed. This action cannot be undone.',
+                  style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => Navigator.pop(ctx, true),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFF3B30),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Center(
+                              child: Text(
+                                'Delete',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => Navigator.pop(ctx, false),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            child: const Center(
+                              child: Text(
+                                'Cancel',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF007AFF),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    setState(() => _deleting = true);
+    await widget.onDelete();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 360),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF2F2F7),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 28),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    'Edit Preset',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    children: [
+                      TextFormField(
+                        controller: _nameController,
+                        decoration: InputDecoration(
+                          labelText: 'Preset name',
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                        ),
+                        validator: (v) =>
+                            (v == null || v.trim().isEmpty) ? 'Enter a name' : null,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _startController,
+                        decoration: InputDecoration(
+                          labelText: 'Start time',
+                          hintText: 'e.g. 09:00',
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                        ),
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) return 'Enter start time';
+                          if (!widget.isValidTime(v.trim())) return 'Use HH:mm';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _endController,
+                        decoration: InputDecoration(
+                          labelText: 'End time',
+                          hintText: 'e.g. 17:00',
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                        ),
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) return 'Enter end time';
+                          if (!widget.isValidTime(v.trim())) return 'Use HH:mm';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _roleController,
+                        decoration: InputDecoration(
+                          labelText: 'Role',
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        width: double.infinity,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _deleting
+                                ? null
+                                : () async {
+                                    if (!_formKey.currentState!.validate()) return;
+                                    final updated = ShiftPreset(
+                                      id: widget.preset.id,
+                                      name: _nameController.text.trim(),
+                                      startTime: widget.normalizeTime(
+                                          _startController.text.trim()),
+                                      endTime: widget.normalizeTime(
+                                          _endController.text.trim()),
+                                      role: _roleController.text.trim().isEmpty
+                                          ? 'Regular Shift'
+                                          : _roleController.text.trim(),
+                                    );
+                                    Navigator.pop(context, updated);
+                                  },
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF34C759),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  'Save',
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _deleting ? null : _handleDelete,
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFFFF3B30)),
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  'Delete Preset',
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFFFF3B30),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => Navigator.pop(context),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              child: const Center(
+                                child: Text(
+                                  'Cancel',
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF007AFF),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Add Shift dialog: choose preset or custom times, optionally save as preset.
+class _AddShiftDialog extends StatefulWidget {
+  final List<String> employeeIds;
+  final List<int> days;
+  final Future<List<ShiftPreset>> Function() loadPresets;
+  final Future<void> Function(ShiftPreset) savePreset;
+  final Future<void> Function(ShiftPreset) updatePreset;
+  final Future<void> Function(String presetId) deletePreset;
+  final bool Function(String) isValidTime;
+  final String Function(String) normalizeTime;
+  final Future<void> Function(
+    List<String> employeeIds,
+    List<int> days,
+    String startTime,
+    String endTime,
+    String role,
+  ) onCreateShifts;
+
+  const _AddShiftDialog({
+    required this.employeeIds,
+    required this.days,
+    required this.loadPresets,
+    required this.savePreset,
+    required this.updatePreset,
+    required this.deletePreset,
+    required this.isValidTime,
+    required this.normalizeTime,
+    required this.onCreateShifts,
+  });
+
+  @override
+  State<_AddShiftDialog> createState() => _AddShiftDialogState();
+}
+
+class _AddShiftDialogState extends State<_AddShiftDialog> {
+  late TextEditingController _startController;
+  late TextEditingController _endController;
+  late TextEditingController _roleController;
+  final _formKey = GlobalKey<FormState>();
+  List<ShiftPreset> _presets = [];
+  bool _presetsLoading = true;
+  ShiftPreset? _selectedPreset;
+
+  @override
+  void initState() {
+    super.initState();
+    _startController = TextEditingController(text: '09:00');
+    _endController = TextEditingController(text: '17:00');
+    _roleController = TextEditingController(text: 'Regular Shift');
+    _loadPresets();
+  }
+
+  Future<void> _loadPresets() async {
+    final list = await widget.loadPresets();
+    if (mounted) setState(() {
+      _presets = list;
+      _presetsLoading = false;
+    });
+  }
+
+  void _applyPreset(ShiftPreset preset) {
+    setState(() {
+      _selectedPreset = preset;
+      _startController.text = preset.startTime;
+      _endController.text = preset.endTime;
+      _roleController.text = preset.role;
+    });
+  }
+
+  Future<void> _saveAsPreset() async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => _PresetNameDialog(
+        title: 'Save as Preset',
+        hint: 'e.g. Evening shift',
+        submitLabel: 'Save',
+      ),
+    );
+    if (name == null || name.isEmpty || !mounted) return;
+    final start = widget.normalizeTime(_startController.text.trim());
+    final end = widget.normalizeTime(_endController.text.trim());
+    final role = _roleController.text.trim().isEmpty ? 'Regular Shift' : _roleController.text.trim();
+    await widget.savePreset(ShiftPreset(name: name, startTime: start, endTime: end, role: role));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Preset saved'),
+        backgroundColor: Color(0xFF34C759),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    _loadPresets();
+  }
+
+  Future<void> _editPreset(ShiftPreset preset) async {
+    if (preset.id == null) return;
+    final result = await showDialog<ShiftPreset?>(
+      context: context,
+      builder: (ctx) => _EditPresetDialog(
+        preset: preset,
+        isValidTime: widget.isValidTime,
+        normalizeTime: widget.normalizeTime,
+        onDelete: () async {
+          await widget.deletePreset(preset.id!);
+          if (!mounted) return;
+          Navigator.pop(ctx, null);
+        },
+      ),
+    );
+    if (result != null && mounted) {
+      await widget.updatePreset(result);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Preset updated'),
+          backgroundColor: Color(0xFF34C759),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      _loadPresets();
+      _applyPreset(result);
+    } else if (result == null && mounted) {
+      _loadPresets();
+    }
+  }
+
+  @override
+  void dispose() {
+    _startController.dispose();
+    _endController.dispose();
+    _roleController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 380),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF2F2F7),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.15),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 24),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 20),
+                    child: Text(
+                      'Add Shift',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 20,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Presets section
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Text(
+                      'Presets',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (_presetsLoading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      child: Center(child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )),
+                    )
+                  else if (_presets.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      child: Text(
+                        'No presets yet. Enter times below and tap "Save as preset" to add one.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                          height: 1.35,
+                        ),
+                      ),
+                    )
+                  else
+                    SizedBox(
+                      height: 64,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        itemCount: _presets.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final p = _presets[index];
+                          final isSelected = _selectedPreset != null &&
+                              _selectedPreset!.name == p.name &&
+                              _selectedPreset!.startTime == p.startTime &&
+                              _selectedPreset!.endTime == p.endTime;
+                          final isSavedPreset = p.id != null && p.id!.isNotEmpty;
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: () => _applyPreset(p),
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? const Color(0xFF007AFF).withOpacity(0.15)
+                                          : Colors.white,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: isSelected
+                                            ? const Color(0xFF007AFF)
+                                            : Colors.grey.shade300,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          p.name,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                            color: isSelected ? const Color(0xFF007AFF) : Colors.black87,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          '${p.startTime} – ${p.endTime}',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (isSavedPreset) ...[
+                                const SizedBox(width: 4),
+                                Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    onTap: () => _editPreset(p),
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade100,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(
+                                        Icons.edit_outlined,
+                                        size: 18,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  // Times and role
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Column(
+                      children: [
+                        TextFormField(
+                          controller: _startController,
+                          decoration: InputDecoration(
+                            labelText: 'Start time',
+                            hintText: 'e.g. 09:00',
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                          ),
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty) return 'Enter start time';
+                            if (!widget.isValidTime(v.trim())) return 'Use HH:mm (e.g. 09:00)';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _endController,
+                          decoration: InputDecoration(
+                            labelText: 'End time',
+                            hintText: 'e.g. 17:00',
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                          ),
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty) return 'Enter end time';
+                            if (!widget.isValidTime(v.trim())) return 'Use HH:mm (e.g. 17:00)';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _roleController,
+                          decoration: InputDecoration(
+                            labelText: 'Role',
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: () async {
+                              if (!_formKey.currentState!.validate()) return;
+                              Navigator.pop(context);
+                              await widget.onCreateShifts(
+                                widget.employeeIds,
+                                widget.days,
+                                widget.normalizeTime(_startController.text.trim()),
+                                widget.normalizeTime(_endController.text.trim()),
+                                _roleController.text.trim().isEmpty
+                                    ? 'Regular Shift'
+                                    : _roleController.text.trim(),
+                              );
+                            },
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF34C759),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              elevation: 0,
+                            ),
+                            child: const Text('Create Shifts'),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: TextButton.icon(
+                            onPressed: _saveAsPreset,
+                            icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                            label: const Text('Save as preset'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF007AFF),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF007AFF),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            child: const Text('Cancel'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
+          ),
+        ),
     );
   }
 }

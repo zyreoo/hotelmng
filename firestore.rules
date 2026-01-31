@@ -30,5 +30,10 @@ service cloud.firestore {
     match /shifts/{shiftId} {
       allow read, write: if true;
     }
+
+    // Shift presets (Morning, Night shift, etc.) – saved for quick selection
+    match /shift_presets/{presetId} {
+      allow read, write: if true;
+    }
   }
 }
