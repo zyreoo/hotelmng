@@ -25,5 +25,10 @@ service cloud.firestore {
     match /departments/{departmentId} {
       allow read, write: if true;
     }
+
+    // Employee shifts/schedule
+    match /shifts/{shiftId} {
+      allow read, write: if true;
+    }
   }
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/employer_model.dart';
 import '../services/firebase_service.dart';
+import '../widgets/employeer_search_widget.dart';
 import 'add_employee_page.dart';
 
 class EmployeesPage extends StatefulWidget {
@@ -15,6 +16,8 @@ class EmployeesPage extends StatefulWidget {
 class _EmployeesPageState extends State<EmployeesPage> {
   String _selectedFilter = 'All';
   List<String> _filters = ['All', 'Reception', 'Housekeeping', 'Management'];
+  /// When set, list shows only this employee (from search widget).
+  String? _searchSelectedEmployerId;
 
   static const List<String> _defaultDepartments = [
     'Reception',
@@ -107,9 +110,15 @@ class _EmployeesPageState extends State<EmployeesPage> {
           stream: _employerstream(),
           builder: (context, snapshot) {
             final all = snapshot.data ?? [];
-            final filtered = _selectedFilter == 'All'
+            var filtered = _selectedFilter == 'All'
                 ? all
                 : all.where((e) => e.department == _selectedFilter).toList();
+            if (_searchSelectedEmployerId != null &&
+                _searchSelectedEmployerId!.isNotEmpty) {
+              filtered = filtered
+                  .where((e) => e.id == _searchSelectedEmployerId)
+                  .toList();
+            }
             final employees = List.generate(
               filtered.length,
               (i) => _employerToEmployee(filtered[i], i),
@@ -141,6 +150,18 @@ class _EmployeesPageState extends State<EmployeesPage> {
                     ],
                   ),
                 ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: EmployeeSearchWidget(
+                    onEmployeeSelected: (employer) {
+                      setState(() {
+                        _searchSelectedEmployerId =
+                            employer.name.isEmpty ? null : employer.id;
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
 
                 // Filter chips
                 Padding(

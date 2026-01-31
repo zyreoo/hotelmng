@@ -775,7 +775,7 @@ class _CalendarPageState extends State<CalendarPage> {
             _bookings[nightDate]![room] = Booking(
               bookingId: bookingModel.id ?? '',
               guestName: bookingModel.userName,
-              color: Colors.blueAccent,
+              color: _statusColor(bookingModel.status),
               isFirstNight: i == 0,
               isLastNight: i == totalNights - 1,
               totalNights: totalNights,
@@ -1462,8 +1462,10 @@ class _CalendarPageState extends State<CalendarPage> {
                   ),
                 );
               }
-              final fullBooking =
-                  BookingModel.fromFirestore(doc.data()!, doc.id);
+              final fullBooking = BookingModel.fromFirestore(
+                doc.data()!,
+                doc.id,
+              );
               return _BookingDetailsForm(
                 key: ValueKey(fullBooking.id),
                 fullBooking: fullBooking,
@@ -1490,8 +1492,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 onDelete: () async {
                   final navigator = Navigator.of(dialogContext);
                   final messenger = ScaffoldMessenger.of(dialogContext);
-                  final confirm =
-                      await _showDeleteConfirmation(dialogContext);
+                  final confirm = await _showDeleteConfirmation(dialogContext);
                   if (confirm != true) return;
                   if (!mounted) return;
                   try {
@@ -1529,10 +1530,10 @@ class _CalendarPageState extends State<CalendarPage> {
                         ),
                       )
                       .then((bookingCreated) {
-                    if (bookingCreated == true) {
-                      _subscribeToBookings();
-                    }
-                  });
+                        if (bookingCreated == true) {
+                          _subscribeToBookings();
+                        }
+                      });
                 },
                 onClose: () => Navigator.pop(dialogContext),
               );
@@ -1864,6 +1865,13 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
   late String _paymentMethod;
   late TextEditingController _notesController;
 
+  /// Initial values when the dialog opened (or last synced from Firestore).
+  /// Used to detect unsaved changes.
+  late String _initialStatus;
+  late int _initialAmount;
+  late String _initialPaymentMethod;
+  late String _initialNotes;
+
   @override
   void initState() {
     super.initState();
@@ -1881,6 +1889,77 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
         ? b.paymentMethod
         : widget.paymentMethods.first;
     _notesController = TextEditingController(text: b.notes ?? '');
+
+    _initialStatus = _status;
+    _initialAmount = b.amountOfMoneyPaid;
+    _initialPaymentMethod = _paymentMethod;
+    _initialNotes = b.notes ?? '';
+  }
+
+  /// True if any editable field differs from the initial/saved state.
+  bool get _hasChanges {
+    final currentAmount = int.tryParse(_amountController.text.trim()) ?? 0;
+    final currentNotes = _notesController.text.trim();
+    return _status != _initialStatus ||
+        currentAmount != _initialAmount ||
+        _paymentMethod != _initialPaymentMethod ||
+        currentNotes != _initialNotes;
+  }
+
+  Future<void> _handleClose() async {
+    if (!_hasChanges) {
+      widget.onClose();
+      return;
+    }
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Unsaved changes'),
+        content: const Text(
+          'You have unsaved changes. Do you want to save before closing?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'cancel'),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'discard'),
+            child: Text(
+              'Discard changes',
+              style: TextStyle(color: Colors.red.shade700),
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, 'save'),
+            child: const Text('Save and close'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    switch (result) {
+      case 'save':
+        final amount = int.tryParse(_amountController.text.trim()) ?? 0;
+        final updated = widget.fullBooking.copyWith(
+          status: _status,
+          amountOfMoneyPaid: amount,
+          paymentMethod: _paymentMethod,
+          notes: _notesController.text.trim().isEmpty
+              ? null
+              : _notesController.text.trim(),
+        );
+        await widget.onSave(updated);
+        if (!mounted) return;
+        widget.onClose();
+        break;
+      case 'discard':
+        widget.onClose();
+        break;
+      case 'cancel':
+      default:
+        break;
+    }
   }
 
   @override
@@ -1918,10 +1997,10 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
           Text(
             'Booking Details',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 17,
-                  color: Colors.black,
-                ),
+              fontWeight: FontWeight.w600,
+              fontSize: 17,
+              color: Colors.black,
+            ),
           ),
           const SizedBox(height: 20),
           Padding(
@@ -1934,7 +2013,15 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                   b.userName,
                 ),
                 const SizedBox(height: 12),
-                widget.buildDetailRow(Icons.hotel_rounded, 'Room', widget.room),
+                widget.buildDetailRow(
+                  Icons.hotel_rounded,
+                  b.selectedRooms != null && b.selectedRooms!.length > 1
+                      ? 'Rooms'
+                      : 'Room',
+                  b.selectedRooms != null && b.selectedRooms!.isNotEmpty
+                      ? b.selectedRooms!.join(', ')
+                      : widget.room,
+                ),
                 const SizedBox(height: 12),
                 widget.buildDetailRow(
                   Icons.calendar_today_rounded,
@@ -1972,16 +2059,18 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                     ),
                   ),
                   items: widget.statusOptions
-                      .map((s) => DropdownMenuItem(
-                            value: s,
-                            child: Text(
-                              s,
-                              style: TextStyle(
-                                color: widget.getStatusColor(s),
-                                fontWeight: FontWeight.w600,
-                              ),
+                      .map(
+                        (s) => DropdownMenuItem(
+                          value: s,
+                          child: Text(
+                            s,
+                            style: TextStyle(
+                              color: widget.getStatusColor(s),
+                              fontWeight: FontWeight.w600,
                             ),
-                          ))
+                          ),
+                        ),
+                      )
                       .toList(),
                   onChanged: (v) => setState(() => _status = v ?? _status),
                 ),
@@ -2027,8 +2116,9 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                   items: widget.paymentMethods
                       .map((m) => DropdownMenuItem(value: m, child: Text(m)))
                       .toList(),
-                  onChanged: (v) =>
-                      setState(() => _paymentMethod = v ?? widget.paymentMethods.first),
+                  onChanged: (v) => setState(
+                    () => _paymentMethod = v ?? widget.paymentMethods.first,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 // Editable: Notes
@@ -2062,10 +2152,8 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                   width: double.infinity,
                   child: FilledButton.icon(
                     onPressed: () async {
-                      final amount = int.tryParse(
-                            _amountController.text.trim(),
-                          ) ??
-                          0;
+                      final amount =
+                          int.tryParse(_amountController.text.trim()) ?? 0;
                       final updated = b.copyWith(
                         status: _status,
                         amountOfMoneyPaid: amount,
@@ -2076,7 +2164,6 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                       );
                       await widget.onSave(updated);
                     },
-                    icon: const Icon(Icons.save_rounded, size: 18),
                     label: const Text('Save changes'),
                     style: FilledButton.styleFrom(
                       backgroundColor: const Color(0xFF34C759),
@@ -2107,7 +2194,6 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                       mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.edit_rounded, size: 18),
                         const SizedBox(width: 8),
                         Flexible(
                           child: Text(
@@ -2140,7 +2226,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                 SizedBox(
                   width: double.infinity,
                   child: TextButton(
-                    onPressed: widget.onClose,
+                    onPressed: _handleClose,
                     style: TextButton.styleFrom(
                       foregroundColor: const Color(0xFF007AFF),
                       padding: const EdgeInsets.symmetric(vertical: 14),

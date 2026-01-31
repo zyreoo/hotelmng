@@ -207,6 +207,21 @@ class FirebaseService {
   }
 
   // Employer operations
+  Future<List<EmployerModel>> searchEmployers(String query) async {
+    if (!isInitialized || query.trim().isEmpty) return [];
+    final q = query.trim().toLowerCase();
+    final snapshot =
+        await firestore.collection('employers').limit(100).get();
+    return snapshot.docs
+        .map((d) => EmployerModel.fromFirestore(d.data(), d.id))
+        .where((e) =>
+            e.name.toLowerCase().contains(q) ||
+            e.phone.contains(query.trim()) ||
+            e.role.toLowerCase().contains(q) ||
+            e.email.toLowerCase().contains(q))
+        .toList();
+  }
+
   Future<String> createEmployer(EmployerModel employer) async {
     if (!isInitialized) {
       throw Exception(

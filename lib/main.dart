@@ -5,6 +5,7 @@ import 'pages/dashboard_page.dart';
 import 'pages/calendar_page.dart';
 import 'pages/employees_page.dart';
 import 'pages/add_booking_page.dart';
+import 'pages/schedule.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -72,6 +73,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     AddBookingPage(),
     CalendarPage(),
     EmployeesPage(),
+    SchedulePage(),
   ];
 
   final List<_NavItem> _navItems = const [
@@ -79,6 +81,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     _NavItem(Icons.add_circle_outline_rounded, 'Add Booking'),
     _NavItem(Icons.calendar_month_rounded, 'Calendar'),
     _NavItem(Icons.people_rounded, 'Employees'),
+    _NavItem(Icons.schedule_rounded, 'Schedule'),
   ];
 
   @override
