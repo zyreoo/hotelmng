@@ -234,6 +234,15 @@ class FirebaseService {
     return docRef.id;
   }
 
+  Future<void> updateEmployer(EmployerModel employer) async {
+    if (!isInitialized || employer.id == null || employer.id!.isEmpty) {
+      throw Exception('Cannot update employer: missing id.');
+    }
+    final data = employer.toFirestore();
+    data['updatedAt'] = DateTime.now().toIso8601String();
+    await firestore.collection('employers').doc(employer.id!).update(data);
+  }
+
   // Roles and departments (custom "Other" values saved for dropdowns)
   Future<List<String>> getRoles() async {
     if (!isInitialized) return [];

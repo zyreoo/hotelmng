@@ -4,7 +4,10 @@ import '../models/employer_model.dart';
 import '../services/firebase_service.dart';
 
 class AddEmployeePage extends StatefulWidget {
-  const AddEmployeePage({super.key});
+  /// When provided, the form is in edit mode for this employee.
+  final EmployerModel? employee;
+
+  const AddEmployeePage({super.key, this.employee});
 
   @override
   State<AddEmployeePage> createState() => _AddEmployeePageState();
@@ -58,10 +61,25 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
     'Other',
   ];
 
+  bool get _isEditMode => widget.employee != null;
+
   @override
   void initState() {
     super.initState();
     _loadRolesAndDepartments();
+    if (_isEditMode) {
+      final e = widget.employee!;
+      _nameController.text = e.name;
+      _phoneController.text = e.phone;
+      _emailController.text = e.email;
+      _status = e.status;
+      _role = _defaultRoleOptions.contains(e.role) ? e.role : 'Other';
+      if (_role == 'Other') _roleController.text = e.role;
+      _department = _defaultDepartmentOptions.contains(e.department)
+          ? e.department
+          : 'Other';
+      if (_department == 'Other') _departmentController.text = e.department;
+    }
   }
 
   Future<void> _loadRolesAndDepartments() async {
@@ -162,38 +180,69 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
       final departmentValue = _department == 'Other'
           ? _departmentController.text.trim()
           : _department;
-      final employer = EmployerModel(
-        name: _nameController.text.trim(),
-        phone: _phoneController.text.trim(),
-        email: _emailController.text.trim().isEmpty
-            ? ''
-            : _emailController.text.trim(),
-        role: roleValue.isEmpty ? _role : roleValue,
-        department: departmentValue.isEmpty ? _department : departmentValue,
-        status: _status,
-      );
+      final name = _nameController.text.trim();
+      final phone = _phoneController.text.trim();
+      final email = _emailController.text.trim().isEmpty
+          ? ''
+          : _emailController.text.trim();
+      final roleFinal = roleValue.isEmpty ? _role : roleValue;
+      final departmentFinal =
+          departmentValue.isEmpty ? _department : departmentValue;
 
-      await _firebaseService.createEmployer(employer);
-
-      // Save custom "Other" role/department to DB so they appear in dropdowns next time
-      if (_role == 'Other' && roleValue.isNotEmpty) {
-        await _firebaseService.addRole(roleValue);
-      }
-      if (_department == 'Other' && departmentValue.isNotEmpty) {
-        await _firebaseService.addDepartment(departmentValue);
-      }
-
-      if (mounted) Navigator.pop(context);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Employee ${employer.name} added'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFF34C759),
-          ),
+      if (_isEditMode) {
+        final employer = widget.employee!.copyWith(
+          name: name,
+          phone: phone,
+          email: email,
+          role: roleFinal,
+          department: departmentFinal,
+          status: _status,
+          updatedAt: DateTime.now(),
         );
-        Navigator.pop(context, true);
+        await _firebaseService.updateEmployer(employer);
+        if (_role == 'Other' && roleValue.isNotEmpty) {
+          await _firebaseService.addRole(roleValue);
+        }
+        if (_department == 'Other' && departmentValue.isNotEmpty) {
+          await _firebaseService.addDepartment(departmentValue);
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${employer.name} updated'),
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: const Color(0xFF34C759),
+            ),
+          );
+          Navigator.pop(context, employer);
+        }
+      } else {
+        final employer = EmployerModel(
+          name: name,
+          phone: phone,
+          email: email,
+          role: roleFinal,
+          department: departmentFinal,
+          status: _status,
+        );
+        await _firebaseService.createEmployer(employer);
+        if (_role == 'Other' && roleValue.isNotEmpty) {
+          await _firebaseService.addRole(roleValue);
+        }
+        if (_department == 'Other' && departmentValue.isNotEmpty) {
+          await _firebaseService.addDepartment(departmentValue);
+        }
+        if (mounted) Navigator.pop(context);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Employee ${employer.name} added'),
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: const Color(0xFF34C759),
+            ),
+          );
+          Navigator.pop(context, true);
+        }
       }
     } catch (e) {
       if (mounted) Navigator.pop(context);
@@ -201,7 +250,8 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error adding employee: $e'),
+            content: Text(
+                _isEditMode ? 'Error updating employee: $e' : 'Error adding employee: $e'),
             behavior: SnackBarBehavior.floating,
             backgroundColor: Colors.red,
           ),
@@ -244,7 +294,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'New Employee',
+                                  _isEditMode ? 'Edit Employee' : 'New Employee',
                                   style: Theme.of(context)
                                       .textTheme
                                       .headlineLarge
@@ -255,7 +305,9 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'Add a new team member',
+                                  _isEditMode
+                                      ? 'Update employee information'
+                                      : 'Add a new team member',
                                   style: Theme.of(context).textTheme.bodyLarge
                                       ?.copyWith(color: Colors.grey.shade600),
                                 ),

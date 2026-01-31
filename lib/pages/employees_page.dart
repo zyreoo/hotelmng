@@ -5,6 +5,7 @@ import '../models/employer_model.dart';
 import '../services/firebase_service.dart';
 import '../widgets/employeer_search_widget.dart';
 import 'add_employee_page.dart';
+import 'user_page.dart';
 
 class EmployeesPage extends StatefulWidget {
   const EmployeesPage({super.key});
@@ -220,10 +221,12 @@ class _EmployeesPageState extends State<EmployeesPage> {
                     itemCount: employees.length,
                     itemBuilder: (context, index) {
                       final employee = employees[index];
+                      final employerModel = filtered[index];
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: _EmployeeCard(
                           employee: employee,
+                          employerModel: employerModel,
                           onDelete: _deleteEmployee,
                         ),
                       );
@@ -271,10 +274,12 @@ class Employee {
 
 class _EmployeeCard extends StatelessWidget {
   final Employee employee;
+  final EmployerModel employerModel;
   final Future<void> Function(String id)? onDelete;
 
   const _EmployeeCard({
     required this.employee,
+    required this.employerModel,
     this.onDelete,
   });
 
@@ -283,7 +288,12 @@ class _EmployeeCard extends StatelessWidget {
     return Card(
       child: InkWell(
         onTap: () {
-          // Navigate to employee details
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => UserPage(employee: employerModel),
+            ),
+          );
         },
         borderRadius: BorderRadius.circular(16),
         child: Padding(

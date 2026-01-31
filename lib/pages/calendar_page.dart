@@ -15,9 +15,12 @@ class CalendarPage extends StatefulWidget {
 
 class _CalendarPageState extends State<CalendarPage> {
   static const double _headerHeight = 50.0;
-  double get _dayLabelWidth => MediaQuery.of(context).size.width >= 768 ? 100.0 : 80.0;
-  double get _roomColumnWidth => MediaQuery.of(context).size.width >= 768 ? 120.0 : 90.0;
-  double get _dayRowHeight => MediaQuery.of(context).size.width >= 768 ? 50.0 : 45.0;
+  double get _dayLabelWidth =>
+      MediaQuery.of(context).size.width >= 768 ? 100.0 : 80.0;
+  double get _roomColumnWidth =>
+      MediaQuery.of(context).size.width >= 768 ? 120.0 : 90.0;
+  double get _dayRowHeight =>
+      MediaQuery.of(context).size.width >= 768 ? 50.0 : 45.0;
 
   // Sliding window: bounded date range to avoid unbounded widget growth
   DateTime _earliestDate = DateTime.now();
