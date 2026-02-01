@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../models/employer_model.dart';
+import '../services/hotel_provider.dart';
 import 'add_employee_page.dart';
 
 class UserPage extends StatefulWidget {
@@ -22,13 +23,13 @@ class _UserPageState extends State<UserPage> {
   late EmployerModel _employee;
 
   @override
-  void initState() {
-    super.initState();
-    _employee = widget.employee;
-    _loadShifts();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final hotelId = HotelProvider.of(context).hotelId;
+    if (hotelId != null) _loadShifts(hotelId);
   }
 
-  Future<void> _loadShifts() async {
+  Future<void> _loadShifts(String hotelId) async {
     if (_employee.id == null || _employee.id!.isEmpty) {
       setState(() => _loading = false);
       return;
@@ -40,6 +41,8 @@ class _UserPageState extends State<UserPage> {
       final twoMonthsAhead = now.add(const Duration(days: 60));
 
       final snapshot = await FirebaseFirestore.instance
+          .collection('hotels')
+          .doc(hotelId)
           .collection('shifts')
           .where('employeeId', isEqualTo: _employee.id)
           .where(
@@ -168,137 +171,105 @@ class _UserPageState extends State<UserPage> {
           ? const Center(child: CircularProgressIndicator())
           : CustomScrollView(
               slivers: [
-                // Header with back button and employee info
-                SliverAppBar(
-                  expandedHeight: 200,
-                  floating: false,
-                  pinned: true,
-                  backgroundColor: Colors.white,
-                  elevation: 0,
-                  leading: IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_rounded),
-                    onPressed: () => Navigator.pop(context),
-                    color: const Color(0xFF007AFF),
-                  ),
-                  actions: [
-                    IconButton(
-                      icon: const Icon(Icons.edit_outlined),
-                      onPressed: () async {
-                        final updated = await Navigator.push<EmployerModel>(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                AddEmployeePage(employee: _employee),
-                          ),
-                        );
-                        if (updated != null && mounted) {
-                          setState(() => _employee = updated);
-                        }
-                      },
-                      color: const Color(0xFF007AFF),
-                    ),
-                  ],
-                  flexibleSpace: FlexibleSpaceBar(
-                    titlePadding: const EdgeInsets.only(
-                      left: 0,
-                      right: 0,
-                      bottom: 14,
-                    ),
-                    title: Text(
-                      _employee.name,
-                      style: const TextStyle(
-                        color: Colors.black87,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 20,
-                      ),
-                    ),
-                    centerTitle: true,
-                    background: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final h = constraints.maxHeight;
-                        // Use conservative heights (text line height ~1.2x fontSize)
-                        const avatarH = 80.0;
-                        const nameRoleH =
-                            12.0 +
-                            30.0 +
-                            4.0 +
-                            20.0; // gaps + name line + gap + role line
-                        const bottomPad =
-                            48.0; // space so pfp/title don't overlap
-                        const expandedContent = avatarH + nameRoleH + bottomPad;
-                        final showNameRole = h >= expandedContent + 56;
-                        final avatarSize = showNameRole
-                            ? 80.0
-                            : (h - 32).clamp(32.0, 80.0);
-                        final contentHeight = showNameRole
-                            ? expandedContent
-                            : (avatarSize + bottomPad);
-                        final topPadding = (h - contentHeight).clamp(0.0, 80.0);
-                        return Container(
-                          color: Colors.white,
-                          padding: EdgeInsets.fromLTRB(
-                            horizontalPadding,
-                            topPadding,
-                            horizontalPadding,
-                            bottomPad,
-                          ),
-                          child: ClipRect(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: avatarSize,
-                                  height: avatarSize,
-                                  decoration: BoxDecoration(
-                                    color: const Color(
-                                      0xFF007AFF,
-                                    ).withOpacity(0.1),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      _employee.name.isNotEmpty
-                                          ? _employee.name[0].toUpperCase()
-                                          : '?',
-                                      style: TextStyle(
-                                        fontSize: avatarSize * 0.4,
-                                        fontWeight: FontWeight.w600,
-                                        color: const Color(0xFF007AFF),
-                                      ),
-                                    ),
+                // Header like Add Booking: back + title + subtitle + Edit
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.all(horizontalPadding),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            if (Navigator.canPop(context))
+                              IconButton(
+                                icon: const Icon(Icons.arrow_back_ios_rounded),
+                                onPressed: () => Navigator.pop(context),
+                                color: const Color(0xFF007AFF),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                              ),
+                            if (Navigator.canPop(context))
+                              const SizedBox(width: 8),
+                            Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF007AFF).withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  _employee.name.isNotEmpty
+                                      ? _employee.name[0].toUpperCase()
+                                      : '?',
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF007AFF),
                                   ),
                                 ),
-                                if (showNameRole) ...[
-                                  const SizedBox(height: 12),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
                                   Text(
                                     _employee.name,
-                                    style: const TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black87,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.center,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineLarge
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 34,
+                                        ),
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
                                     _employee.role,
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.center,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyLarge
+                                        ?.copyWith(
+                                          color: Colors.grey.shade600,
+                                        ),
                                   ),
                                 ],
-                              ],
+                              ),
                             ),
-                          ),
-                        );
-                      },
+                            TextButton.icon(
+                              onPressed: () async {
+                                final updated =
+                                    await Navigator.push<EmployerModel>(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        AddEmployeePage(employee: _employee),
+                                  ),
+                                );
+                                if (updated != null && mounted) {
+                                  setState(() => _employee = updated);
+                                }
+                              },
+                              icon: const Icon(
+                                Icons.edit_outlined,
+                                size: 18,
+                                color: Color(0xFF007AFF),
+                              ),
+                              label: const Text(
+                                'Edit',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF007AFF),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                      ],
                     ),
                   ),
                 ),

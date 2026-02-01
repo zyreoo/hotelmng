@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/employer_model.dart';
 import '../services/firebase_service.dart';
+import '../services/hotel_provider.dart';
 import '../widgets/employeer_search_widget.dart';
 import 'add_employee_page.dart';
 import 'user_page.dart';
@@ -17,6 +18,7 @@ class EmployeesPage extends StatefulWidget {
 class _EmployeesPageState extends State<EmployeesPage> {
   String _selectedFilter = 'All';
   List<String> _filters = ['All', 'Reception', 'Housekeeping', 'Management'];
+
   /// When set, list shows only this employee (from search widget).
   String? _searchSelectedEmployerId;
 
@@ -27,14 +29,15 @@ class _EmployeesPageState extends State<EmployeesPage> {
   ];
 
   @override
-  void initState() {
-    super.initState();
-    _loadFilters();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final hotelId = HotelProvider.of(context).hotelId;
+    if (hotelId != null) _loadFilters(hotelId);
   }
 
-  Future<void> _loadFilters() async {
+  Future<void> _loadFilters(String hotelId) async {
     try {
-      final fromDb = await FirebaseService().getDepartments();
+      final fromDb = await FirebaseService().getDepartments(hotelId);
       if (!mounted) return;
       setState(() {
         final seen = _defaultDepartments.toSet();
@@ -53,8 +56,11 @@ class _EmployeesPageState extends State<EmployeesPage> {
     }
   }
 
-  Stream<List<EmployerModel>> _employerstream() {
+  Stream<List<EmployerModel>> _employerstream(String? hotelId) {
+    if (hotelId == null) return Stream.value([]);
     return FirebaseFirestore.instance
+        .collection('hotels')
+        .doc(hotelId)
         .collection('employers')
         .snapshots()
         .map(
@@ -64,8 +70,10 @@ class _EmployeesPageState extends State<EmployeesPage> {
         );
   }
 
-  Future<void> _deleteEmployee(String employeeId) async {
+  Future<void> _deleteEmployee(String hotelId, String employeeId) async {
     await FirebaseFirestore.instance
+        .collection('hotels')
+        .doc(hotelId)
         .collection('employers')
         .doc(employeeId)
         .delete();
@@ -104,13 +112,16 @@ class _EmployeesPageState extends State<EmployeesPage> {
 
   @override
   Widget build(BuildContext context) {
-    final horizontalPadding = MediaQuery.of(context).size.width >= 768 ? 24.0 : 16.0;
-    
+    final horizontalPadding = MediaQuery.of(context).size.width >= 768
+        ? 24.0
+        : 16.0;
+    final hotelId = HotelProvider.of(context).hotelId;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F7),
       body: SafeArea(
         child: StreamBuilder<List<EmployerModel>>(
-          stream: _employerstream(),
+          stream: _employerstream(hotelId),
           builder: (context, snapshot) {
             final all = snapshot.data ?? [];
             var filtered = _selectedFilter == 'All'
@@ -156,10 +167,12 @@ class _EmployeesPageState extends State<EmployeesPage> {
                 Padding(
                   padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                   child: EmployeeSearchWidget(
+                    hotelId: hotelId,
                     onEmployeeSelected: (employer) {
                       setState(() {
-                        _searchSelectedEmployerId =
-                            employer.name.isEmpty ? null : employer.id;
+                        _searchSelectedEmployerId = employer.name.isEmpty
+                            ? null
+                            : employer.id;
                       });
                     },
                   ),
@@ -217,7 +230,9 @@ class _EmployeesPageState extends State<EmployeesPage> {
                 // Employee list
                 Expanded(
                   child: ListView.builder(
-                    padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: horizontalPadding,
+                    ),
                     itemCount: employees.length,
                     itemBuilder: (context, index) {
                       final employee = employees[index];
@@ -227,7 +242,9 @@ class _EmployeesPageState extends State<EmployeesPage> {
                         child: _EmployeeCard(
                           employee: employee,
                           employerModel: employerModel,
-                          onDelete: _deleteEmployee,
+                          onDelete: hotelId != null
+                              ? (id) => _deleteEmployee(hotelId, id)
+                              : null,
                         ),
                       );
                     },

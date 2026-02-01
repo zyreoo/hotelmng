@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/employer_model.dart';
 import '../services/firebase_service.dart';
+import '../services/hotel_provider.dart';
 
 class AddEmployeePage extends StatefulWidget {
   /// When provided, the form is in edit mode for this employee.
@@ -64,9 +65,15 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
   bool get _isEditMode => widget.employee != null;
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final hotelId = HotelProvider.of(context).hotelId;
+    if (hotelId != null) _loadRolesAndDepartments(hotelId);
+  }
+
+  @override
   void initState() {
     super.initState();
-    _loadRolesAndDepartments();
     if (_isEditMode) {
       final e = widget.employee!;
       _nameController.text = e.name;
@@ -82,10 +89,10 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
     }
   }
 
-  Future<void> _loadRolesAndDepartments() async {
+  Future<void> _loadRolesAndDepartments(String hotelId) async {
     try {
-      final roles = await _firebaseService.getRoles();
-      final departments = await _firebaseService.getDepartments();
+      final roles = await _firebaseService.getRoles(hotelId);
+      final departments = await _firebaseService.getDepartments(hotelId);
       if (!mounted) return;
       setState(() {
         _roleOptions = _mergeOptions(_defaultRoleOptions, roles);
@@ -199,12 +206,14 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
           status: _status,
           updatedAt: DateTime.now(),
         );
-        await _firebaseService.updateEmployer(employer);
+        final hotelId = HotelProvider.of(context).hotelId;
+        if (hotelId == null) return;
+        await _firebaseService.updateEmployer(hotelId, employer);
         if (_role == 'Other' && roleValue.isNotEmpty) {
-          await _firebaseService.addRole(roleValue);
+          await _firebaseService.addRole(hotelId, roleValue);
         }
         if (_department == 'Other' && departmentValue.isNotEmpty) {
-          await _firebaseService.addDepartment(departmentValue);
+          await _firebaseService.addDepartment(hotelId, departmentValue);
         }
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -225,12 +234,14 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
           department: departmentFinal,
           status: _status,
         );
-        await _firebaseService.createEmployer(employer);
+        final hotelId = HotelProvider.of(context).hotelId;
+        if (hotelId == null) return;
+        await _firebaseService.createEmployer(hotelId, employer);
         if (_role == 'Other' && roleValue.isNotEmpty) {
-          await _firebaseService.addRole(roleValue);
+          await _firebaseService.addRole(hotelId, roleValue);
         }
         if (_department == 'Other' && departmentValue.isNotEmpty) {
-          await _firebaseService.addDepartment(departmentValue);
+          await _firebaseService.addDepartment(hotelId, departmentValue);
         }
         if (mounted) Navigator.pop(context);
         if (mounted) {

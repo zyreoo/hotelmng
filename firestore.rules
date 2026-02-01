@@ -3,37 +3,34 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users (clients/guests)
-    match /users/{userId} {
+    // Hotels (top-level). Each hotel is owned by an account (ownerId).
+    match /hotels/{hotelId} {
       allow read, write: if true;
-    }
-
-    // Bookings
-    match /bookings/{bookingId} {
-      allow read, write: if true;
-    }
-
-    // Employers (employees)
-    match /employers/{employerId} {
-      allow read, write: if true;
-    }
-
-    // Custom roles and departments (saved when user selects "Other")
-    match /roles/{roleId} {
-      allow read, write: if true;
-    }
-    match /departments/{departmentId} {
-      allow read, write: if true;
-    }
-
-    // Employee shifts/schedule
-    match /shifts/{shiftId} {
-      allow read, write: if true;
-    }
-
-    // Shift presets (Morning, Night shift, etc.) – saved for quick selection
-    match /shift_presets/{presetId} {
-      allow read, write: if true;
+      // Subcollections: all data is scoped to the hotel
+      match /users/{userId} {
+        allow read, write: if true;
+      }
+      match /bookings/{bookingId} {
+        allow read, write: if true;
+      }
+      match /employers/{employerId} {
+        allow read, write: if true;
+      }
+      match /roles/{roleId} {
+        allow read, write: if true;
+      }
+      match /departments/{departmentId} {
+        allow read, write: if true;
+      }
+      match /services/{serviceId} {
+        allow read, write: if true;
+      }
+      match /shifts/{shiftId} {
+        allow read, write: if true;
+      }
+      match /shift_presets/{presetId} {
+        allow read, write: if true;
+      }
     }
   }
 }

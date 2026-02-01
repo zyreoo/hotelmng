@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/user_model.dart';
 import '../models/booking_model.dart';
+import '../models/service_model.dart';
 import '../services/firebase_service.dart';
+import '../services/hotel_provider.dart';
 import '../widgets/client_search_widget.dart';
+import 'services_page.dart';
 
 class AddBookingPage extends StatefulWidget {
   /// When set, opens in edit mode: form pre-filled and save updates this document.
@@ -35,6 +38,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
   final _firebaseService = FirebaseService();
   final _notesController = TextEditingController();
   final _amountPaidController = TextEditingController();
+  final _pricePerNightController = TextEditingController();
 
   // Client form controllers
   final _clientNameController = TextEditingController();
@@ -48,11 +52,19 @@ class _AddBookingPageState extends State<AddBookingPage> {
   DateTime? _checkOutDate;
   int _numberOfGuests = 1;
   int _numberOfRooms = 1;
-  List<int> _preselectedRoomsIndex = [];
   String _bookingStatus = 'Confirmed';
   String _paymentMethod = 'Cash';
+  String _advancePaymentMethod = 'Cash';
   bool _wantsSpecificRoom = false;
+  int? _advancePercent;
+  String _advanceStatus = 'not_required'; // not_required, pending, received
+  final _advancePercentController = TextEditingController();
+  final _advanceAmountPaidController = TextEditingController();
   bool _roomsNextToEachOther = false;
+
+  // Add-on services (loaded from Firestore, selected for this booking)
+  List<ServiceModel> _availableServices = [];
+  List<BookingServiceItem> _selectedServices = [];
 
   // Sample rooms
   final List<String> _rooms = [
@@ -97,9 +109,30 @@ class _AddBookingPageState extends State<AddBookingPage> {
       _amountPaidController.text = b.amountOfMoneyPaid > 0
           ? b.amountOfMoneyPaid.toString()
           : '';
+      _pricePerNightController.text =
+          b.pricePerNight != null && b.pricePerNight! > 0
+              ? b.pricePerNight.toString()
+              : '';
       _paymentMethod = b.paymentMethod.isNotEmpty
           ? b.paymentMethod
           : BookingModel.paymentMethods.first;
+      _advancePercent = b.advancePercent;
+      _advancePercentController.text =
+          b.advancePercent != null ? b.advancePercent.toString() : '';
+      _advanceAmountPaidController.text =
+          b.advanceAmountPaid > 0 ? b.advanceAmountPaid.toString() : '';
+      _advancePaymentMethod = (b.advancePaymentMethod != null &&
+              b.advancePaymentMethod!.isNotEmpty)
+          ? b.advancePaymentMethod!
+          : BookingModel.paymentMethods.first;
+      _advanceStatus = (b.advanceStatus != null &&
+              BookingModel.advanceStatusOptions.contains(b.advanceStatus))
+          ? b.advanceStatus!
+          : (b.advancePercent != null && b.advancePercent! > 0
+              ? (b.advanceAmountPaid >= (b.calculatedTotal * b.advancePercent! / 100).round()
+                  ? 'received'
+                  : 'pending')
+              : 'not_required');
       _notesController.text = b.notes ?? '';
       _wantsSpecificRoom =
           b.selectedRooms != null && b.selectedRooms!.isNotEmpty;
@@ -110,6 +143,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
       while (_selectedRooms.length < _numberOfRooms) {
         _selectedRooms.add('');
       }
+      _selectedServices = b.selectedServices != null
+          ? List<BookingServiceItem>.from(b.selectedServices!)
+          : <BookingServiceItem>[];
     } else {
       if (widget.preselectedRoom != null) {
         _selectedRooms = [widget.preselectedRoom!];
@@ -147,9 +183,87 @@ class _AddBookingPageState extends State<AddBookingPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final hotelId = HotelProvider.of(context).hotelId;
+    if (hotelId != null) _loadServices(hotelId);
+  }
+
+  Future<void> _loadServices(String hotelId) async {
+    final list = await _firebaseService.getServices(hotelId);
+    if (mounted) setState(() => _availableServices = list);
+  }
+
+  int get _servicesSubtotal =>
+      _selectedServices.fold(0, (sum, s) => sum + s.lineTotal);
+
+  int get _pricePerNight =>
+      int.tryParse(_pricePerNightController.text.trim()) ?? 0;
+
+  int get _roomSubtotal =>
+      _numberOfNights * _numberOfRooms * _pricePerNight;
+
+  int get _suggestedTotal => _roomSubtotal + _servicesSubtotal;
+
+  int get _advanceAmountRequired =>
+      _advancePercent != null && _advancePercent! > 0 && _suggestedTotal > 0
+          ? (_suggestedTotal * _advancePercent! / 100).round()
+          : 0;
+
+  int get _advanceAmountPaid =>
+      int.tryParse(_advanceAmountPaidController.text.trim()) ?? 0;
+
+  /// Derived status for display (paid/waiting/not_required). Stored status is _advanceStatus (not_required/pending/received).
+  String get _advanceDisplayStatus {
+    if (_advancePercent == null || _advancePercent! <= 0) return 'not_required';
+    if (_advanceStatus == 'received') return 'paid';
+    if (_advanceAmountPaid >= _advanceAmountRequired) return 'paid';
+    return 'waiting';
+  }
+
+  int get _remainingBalance =>
+      (_suggestedTotal - _advanceAmountPaid).clamp(0, _suggestedTotal);
+
+  void _updateAmountFromSuggested() {
+    final suggested = _suggestedTotal;
+    if (suggested > 0 &&
+        (int.tryParse(_amountPaidController.text.trim()) ?? 0) == 0) {
+      _amountPaidController.text = suggested.toString();
+    }
+  }
+
+  void _setServiceQuantity(ServiceModel service, int quantity) {
+    setState(() {
+      _selectedServices.removeWhere((s) => s.serviceId == service.id);
+      if (quantity > 0 && service.id != null) {
+        _selectedServices.add(BookingServiceItem(
+          serviceId: service.id!,
+          name: service.name,
+          unitPrice: service.price,
+          quantity: quantity,
+        ));
+      }
+      _updateAmountFromSuggested();
+    });
+  }
+
+  int _getServiceQuantity(ServiceModel service) {
+    try {
+      return _selectedServices
+          .firstWhere((s) => s.serviceId == service.id)
+          .quantity;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  @override
   void dispose() {
     _notesController.dispose();
     _amountPaidController.dispose();
+    _pricePerNightController.dispose();
+    _advancePercentController.dispose();
+    _advanceAmountPaidController.dispose();
     _clientNameController.dispose();
     _clientPhoneController.dispose();
     _clientEmailController.dispose();
@@ -307,8 +421,18 @@ class _AddBookingPageState extends State<AddBookingPage> {
           userId = clientToUse.id!;
           userToUse = clientToUse;
         } else {
+          final hotelId = HotelProvider.of(context).hotelId;
+          if (hotelId == null) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('No hotel selected')),
+              );
+            }
+            return;
+          }
           // User doesn't have an ID, check if they exist by phone
           final existingUser = await _firebaseService.getUserByPhone(
+            hotelId,
             clientToUse.phone,
           );
 
@@ -323,7 +447,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
             });
           } else {
             // User doesn't exist, create new user in Firebase
-            userId = await _firebaseService.createUser(clientToUse);
+            userId = await _firebaseService.createUser(hotelId, clientToUse);
             // Create user object with the new ID
             userToUse = clientToUse.copyWith(id: userId);
             // Update selected client for future use
@@ -357,13 +481,35 @@ class _AddBookingPageState extends State<AddBookingPage> {
           createdAt: widget.existingBooking?.createdAt,
           amountOfMoneyPaid: amountPaid,
           paymentMethod: _paymentMethod,
+          pricePerNight: _pricePerNight > 0 ? _pricePerNight : null,
+          selectedServices: _selectedServices.isEmpty
+              ? null
+              : List<BookingServiceItem>.from(_selectedServices),
+          advancePercent: () {
+            final p =
+                int.tryParse(_advancePercentController.text.trim());
+            return p != null && p > 0 ? p : null;
+          }(),
+          advanceAmountPaid:
+              int.tryParse(_advanceAmountPaidController.text.trim()) ?? 0,
+          advancePaymentMethod: _advancePaymentMethod,
+          advanceStatus: _advanceStatus,
         );
 
         // Step 3: Update or create in Firebase
+        final hotelId = HotelProvider.of(context).hotelId;
+        if (hotelId == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No hotel selected')),
+            );
+          }
+          return;
+        }
         if (widget.existingBooking != null) {
-          await _firebaseService.updateBooking(booking);
+          await _firebaseService.updateBooking(hotelId, booking);
         } else {
-          await _firebaseService.createBooking(booking);
+          await _firebaseService.createBooking(hotelId, booking);
         }
 
         // Close loading dialog
@@ -1205,13 +1351,551 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   });
                                 },
                               ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Price section (room + services + total) — last above Additional Notes
+                      Text(
+                        'Price',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 22,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Price per night
+                              Text(
+                                'Price per night (per room)',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              TextFormField(
+                                controller: _pricePerNightController,
+                                decoration: InputDecoration(
+                                  hintText: 'e.g. 100',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.grey.shade50,
+                                  prefixIcon: const Icon(Icons.euro_rounded),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 14,
+                                  ),
+                                ),
+                                keyboardType: TextInputType.number,
+                                onChanged: (_) {
+                                  setState(() {});
+                                  _updateAmountFromSuggested();
+                                },
+                              ),
+                              if (_numberOfNights > 0 && _pricePerNight > 0) ...[
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.nights_stay_rounded,
+                                      size: 18,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        '$_numberOfNights night${_numberOfNights == 1 ? '' : 's'} × $_numberOfRooms room${_numberOfRooms == 1 ? '' : 's'} × $_pricePerNight = $_roomSubtotal',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.grey.shade700,
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      '$_roomSubtotal',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF007AFF),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              const SizedBox(height: 20),
+                              const Divider(height: 1),
                               const SizedBox(height: 16),
-                              // Amount paid
+                              // Services
+                              Row(
+                                children: [
+                                  Text(
+                                    'Services',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  TextButton.icon(
+                                    onPressed: () async {
+                                      await Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              const ServicesPage(),
+                                        ),
+                                      );
+                                      final hid = HotelProvider.of(context).hotelId;
+                                      if (hid != null) _loadServices(hid);
+                                    },
+                                    icon: const Icon(Icons.add_circle_outline,
+                                        size: 18),
+                                    label: const Text('Add more services'),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: const Color(0xFF007AFF),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (_availableServices.isEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8,
+                                  ),
+                                  child: Text(
+                                    'No services yet. Tap "Add more services" to add breakfast, spa, sauna, etc.',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                )
+                              else
+                                ..._availableServices.map((service) {
+                                  final qty = _getServiceQuantity(service);
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                service.name,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 15,
+                                                ),
+                                              ),
+                                              Text(
+                                                '${service.price} per unit',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              icon: const Icon(
+                                                  Icons.remove_circle_outline),
+                                              onPressed: qty > 0
+                                                  ? () => _setServiceQuantity(
+                                                        service,
+                                                        qty - 1,
+                                                      )
+                                                  : null,
+                                              color: const Color(0xFF007AFF),
+                                            ),
+                                            SizedBox(
+                                              width: 28,
+                                              child: Text(
+                                                '$qty',
+                                                textAlign: TextAlign.center,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 15,
+                                                ),
+                                              ),
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(
+                                                  Icons.add_circle_outline),
+                                              onPressed: () =>
+                                                  _setServiceQuantity(
+                                                service,
+                                                qty + 1,
+                                              ),
+                                              color: const Color(0xFF007AFF),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }),
+                              if (_selectedServices.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                ..._selectedServices.map((s) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 4),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            '${s.name} — ${s.quantity} × ${s.unitPrice}',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: Colors.grey.shade700,
+                                            ),
+                                          ),
+                                          Text(
+                                            '${s.lineTotal}',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w500,
+                                              color: Colors.grey.shade800,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Services subtotal',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                    Text(
+                                      '$_servicesSubtotal',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 15,
+                                        color: Color(0xFF007AFF),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              const SizedBox(height: 20),
+                              const Divider(height: 1),
+                              const SizedBox(height: 16),
+                              // Suggested total
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Suggested total (room + services)',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 15,
+                                      color: Colors.grey.shade800,
+                                    ),
+                                  ),
+                                  Text(
+                                    '$_suggestedTotal',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 17,
+                                      color: Color(0xFF007AFF),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+                              const Divider(height: 1),
+                              const SizedBox(height: 16),
+                              // Advance payment
+                              Text(
+                                'Advance payment',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    flex: 2,
+                                    child: TextFormField(
+                                      controller: _advancePercentController,
+                                      decoration: InputDecoration(
+                                        labelText: 'Advance %',
+                                        hintText: 'e.g. 30',
+                                        border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        filled: true,
+                                        fillColor: Colors.grey.shade50,
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 14,
+                                        ),
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      onChanged: (_) {
+                                        setState(() {
+                                          final p =
+                                              int.tryParse(
+                                                      _advancePercentController
+                                                          .text.trim()) ??
+                                                  0;
+                                          _advancePercent =
+                                              p > 0 ? p : null;
+                                          if (p > 0 &&
+                                              _advanceStatus == 'not_required') {
+                                            _advanceStatus = 'pending';
+                                          }
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    flex: 2,
+                                    child: TextFormField(
+                                      controller:
+                                          _advanceAmountPaidController,
+                                      decoration: InputDecoration(
+                                        labelText: 'Advance paid',
+                                        hintText: '0',
+                                        border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        filled: true,
+                                        fillColor: Colors.grey.shade50,
+                                        prefixIcon: const Icon(
+                                            Icons.payments_rounded,
+                                            size: 20),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 14,
+                                        ),
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      onChanged: (_) {
+                                        setState(() {
+                                          // From advance paid, calculate and update the %
+                                          final paid = int.tryParse(
+                                                  _advanceAmountPaidController
+                                                      .text
+                                                      .trim()) ??
+                                              0;
+                                          if (_suggestedTotal > 0 &&
+                                              paid >= 0) {
+                                            final p = (paid * 100 /
+                                                    _suggestedTotal)
+                                                .round();
+                                            _advancePercent =
+                                                p > 0 ? p : null;
+                                            _advancePercentController.text =
+                                                p > 0 ? p.toString() : '';
+                                          }
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (_advancePercent != null &&
+                                  _advancePercent! > 0 &&
+                                  _suggestedTotal > 0) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Required: $_advanceAmountRequired ($_advancePercent% of total $_suggestedTotal)',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 12),
+                              DropdownButtonFormField<String>(
+                                value: BookingModel.paymentMethods
+                                        .contains(_advancePaymentMethod)
+                                    ? _advancePaymentMethod
+                                    : BookingModel.paymentMethods.first,
+                                decoration: InputDecoration(
+                                  labelText: 'Advance payment method',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.grey.shade50,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 14,
+                                  ),
+                                ),
+                                items: BookingModel.paymentMethods
+                                    .map((m) => DropdownMenuItem(
+                                          value: m,
+                                          child: Text(m),
+                                        ))
+                                    .toList(),
+                                onChanged: (v) => setState(() {
+                                      _advancePaymentMethod =
+                                          v ?? BookingModel.paymentMethods.first;
+                                    }),
+                              ),
+                              const SizedBox(height: 12),
+                              // Advance status: received or pending (when advance is used)
+                              if (_advancePercent != null &&
+                                  _advancePercent! > 0) ...[
+                                Text(
+                                  'Advance received?',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    ChoiceChip(
+                                      label: const Text('Pending'),
+                                      selected: _advanceStatus == 'pending',
+                                      onSelected: (v) => setState(() {
+                                            _advanceStatus = 'pending';
+                                          }),
+                                      selectedColor: const Color(0xFFFF9500)
+                                          .withOpacity(0.3),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ChoiceChip(
+                                      label: const Text('Received'),
+                                      selected: _advanceStatus == 'received',
+                                      onSelected: (v) => setState(() {
+                                            _advanceStatus = 'received';
+                                          }),
+                                      selectedColor: const Color(0xFF34C759)
+                                          .withOpacity(0.3),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+                              // Remaining balance (they owe you)
+                              if (_suggestedTotal > 0) ...[
+                                Row(
+                                  children: [
+                                    Icon(Icons.account_balance_wallet_rounded,
+                                        size: 18,
+                                        color: Colors.grey.shade700),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'They owe you: $_remainingBalance',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: _remainingBalance > 0
+                                            ? const Color(0xFFFF9500)
+                                            : Colors.grey.shade800,
+                                      ),
+                                    ),
+                                    Text(
+                                      ' (total $_suggestedTotal − advance $_advanceAmountPaid)',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+                              Builder(
+                                builder: (context) {
+                                  if (_advanceDisplayStatus == 'not_required') {
+                                    return Row(
+                                      children: [
+                                        Icon(Icons.info_outline_rounded,
+                                            size: 18,
+                                            color: Colors.grey.shade600),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'No advance required',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey.shade700,
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  }
+                                  if (_advanceDisplayStatus == 'paid') {
+                                    return Row(
+                                      children: [
+                                        Icon(Icons.check_circle_rounded,
+                                            size: 18,
+                                            color: const Color(0xFF34C759)),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Advance paid ($_advanceAmountPaid) — $_advancePaymentMethod',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey.shade800,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  }
+                                  return Row(
+                                    children: [
+                                      Icon(Icons.schedule_rounded,
+                                          size: 18,
+                                          color: const Color(0xFFFF9500)),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Waiting for advance: $_advanceAmountPaid / $_advanceAmountRequired ($_advancePercent%)',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.grey.shade800,
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              // Amount paid (total)
                               TextFormField(
                                 controller: _amountPaidController,
                                 decoration: InputDecoration(
-                                  labelText: 'Amount paid',
-                                  hintText: '0',
+                                  labelText: 'Amount paid (total)',
+                                  hintText: '0 or same as suggested total',
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),

@@ -3,6 +3,7 @@ import '../models/employer_model.dart';
 import '../services/firebase_service.dart';
 
 class EmployeeSearchWidget extends StatefulWidget {
+  final String? hotelId;
   final Function(EmployerModel) onEmployeeSelected;
   final EmployerModel? initialEmployee;
 
@@ -10,6 +11,7 @@ class EmployeeSearchWidget extends StatefulWidget {
     super.key,
     required this.onEmployeeSelected,
     this.initialEmployee,
+    this.hotelId,
   });
 
   @override
@@ -40,7 +42,7 @@ class _EmployeeSearchWidgetState extends State<EmployeeSearchWidget> {
   }
 
   Future<void> _searchEmployees(String query) async {
-    if (query.trim().length < 2) {
+    if (query.trim().length < 2 || widget.hotelId == null) {
       setState(() {
         _searchResults = [];
         _isSearching = false;
@@ -51,7 +53,10 @@ class _EmployeeSearchWidgetState extends State<EmployeeSearchWidget> {
     setState(() => _isSearching = true);
 
     try {
-      final results = await _firebaseService.searchEmployers(query.trim());
+      final results = await _firebaseService.searchEmployers(
+        widget.hotelId!,
+        query.trim(),
+      );
       if (!mounted) return;
       setState(() {
         _searchResults = results;
@@ -208,9 +213,10 @@ class _EmployeeSearchWidgetState extends State<EmployeeSearchWidget> {
       ),
     );
 
-    if (result != null) {
+    if (result != null && widget.hotelId != null) {
       try {
-        final employerId = await _firebaseService.createEmployer(result);
+        final employerId =
+            await _firebaseService.createEmployer(widget.hotelId!, result);
         final created = result.copyWith(id: employerId);
         _selectEmployee(created);
         if (!mounted) return;
@@ -276,103 +282,7 @@ class _EmployeeSearchWidgetState extends State<EmployeeSearchWidget> {
           style: const TextStyle(fontSize: 16),
           onChanged: _searchEmployees,
         ),
-
-        if (_searchResults.isNotEmpty)
-          Container(
-            margin: const EdgeInsets.only(top: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade200),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            constraints: const BoxConstraints(maxHeight: 200),
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: _searchResults.length,
-              itemBuilder: (context, index) {
-                final employee = _searchResults[index];
-                return InkWell(
-                  onTap: () => _selectEmployee(employee),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF007AFF).withOpacity(0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: Text(
-                              employee.name.isNotEmpty
-                                  ? employee.name[0].toUpperCase()
-                                  : '?',
-                              style: const TextStyle(
-                                color: Color(0xFF007AFF),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                employee.name,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                employee.phone,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                              if (employee.role.isNotEmpty)
-                                Text(
-                                  employee.role,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade500,
-                                  ),
-                                ),
-                              if (employee.email.isNotEmpty)
-                                Text(
-                                  employee.email,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade500,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-      ],
+      ],  
     );
   }
 }

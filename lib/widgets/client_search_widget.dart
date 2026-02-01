@@ -3,6 +3,7 @@ import '../models/user_model.dart';
 import '../services/firebase_service.dart';
 
 class ClientSearchWidget extends StatefulWidget {
+  final String? hotelId;
   final Function(UserModel) onClientSelected;
   final UserModel? initialClient;
 
@@ -10,6 +11,7 @@ class ClientSearchWidget extends StatefulWidget {
     super.key,
     required this.onClientSelected,
     this.initialClient,
+    this.hotelId,
   });
 
   @override
@@ -39,7 +41,7 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
   }
 
   Future<void> _searchClients(String query) async {
-    if (query.length < 2) {
+    if (query.length < 2 || widget.hotelId == null) {
       setState(() {
         _searchResults = [];
         _isSearching = false;
@@ -52,7 +54,7 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
     });
 
     try {
-      final results = await _firebaseService.searchUsers(query);
+      final results = await _firebaseService.searchUsers(widget.hotelId!, query);
       setState(() {
         _searchResults = results;
         _isSearching = false;
@@ -166,10 +168,11 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
       ),
     );
 
-    if (result != null) {
+    if (result != null && widget.hotelId != null) {
       try {
         // Create client in Firebase
-        final userId = await _firebaseService.createUser(result);
+        final userId =
+            await _firebaseService.createUser(widget.hotelId!, result);
         final createdClient = result.copyWith(id: userId);
         _selectClient(createdClient);
       } catch (e) {

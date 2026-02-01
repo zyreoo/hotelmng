@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'services_page.dart';
 
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
@@ -20,17 +21,62 @@ class DashboardPage extends StatelessWidget {
                     const SizedBox(height: 8),
                     Text(
                       'Dashboard',
-                      style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 34,
-                          ),
+                      style: Theme.of(context).textTheme.headlineLarge
+                          ?.copyWith(fontWeight: FontWeight.bold, fontSize: 34),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       'Overview of your hotel',
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: Colors.grey.shade600,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    InkWell(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ServicesPage(),
                           ),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF007AFF).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.room_service_rounded,
+                              color: const Color(0xFF007AFF),
+                              size: 22,
+                            ),
+                            const SizedBox(width: 10),
+                            const Text(
+                              'Manage services',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF007AFF),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              size: 12,
+                              color: const Color(0xFF007AFF).withOpacity(0.8),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -44,7 +90,7 @@ class DashboardPage extends StatelessWidget {
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final isMobile = constraints.maxWidth < 600;
-                    
+
                     return Column(
                       children: [
                         // Stats Cards Grid
@@ -135,207 +181,221 @@ class DashboardPage extends StatelessWidget {
 
                         // Occupancy Chart
                         Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  'Weekly Occupancy',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleLarge
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.w600,
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Weekly Occupancy',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 6,
                                       ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(
+                                          0xFF007AFF,
+                                        ).withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Text(
+                                        '78%',
+                                        style: TextStyle(
+                                          color: Color(0xFF007AFF),
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF007AFF)
-                                        .withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Text(
-                                    '78%',
-                                    style: TextStyle(
-                                      color: Color(0xFF007AFF),
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
+                                const SizedBox(height: 24),
+                                SizedBox(
+                                  height: 200,
+                                  child: LineChart(
+                                    LineChartData(
+                                      gridData: FlGridData(
+                                        show: true,
+                                        drawVerticalLine: false,
+                                        horizontalInterval: 25,
+                                        getDrawingHorizontalLine: (value) {
+                                          return FlLine(
+                                            color: Colors.grey.shade200,
+                                            strokeWidth: 1,
+                                          );
+                                        },
+                                      ),
+                                      titlesData: FlTitlesData(
+                                        show: true,
+                                        rightTitles: const AxisTitles(
+                                          sideTitles: SideTitles(
+                                            showTitles: false,
+                                          ),
+                                        ),
+                                        topTitles: const AxisTitles(
+                                          sideTitles: SideTitles(
+                                            showTitles: false,
+                                          ),
+                                        ),
+                                        bottomTitles: AxisTitles(
+                                          sideTitles: SideTitles(
+                                            showTitles: true,
+                                            reservedSize: 30,
+                                            getTitlesWidget: (value, meta) {
+                                              const days = [
+                                                'Mon',
+                                                'Tue',
+                                                'Wed',
+                                                'Thu',
+                                                'Fri',
+                                                'Sat',
+                                                'Sun',
+                                              ];
+                                              if (value.toInt() >= 0 &&
+                                                  value.toInt() < days.length) {
+                                                return Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                        top: 8.0,
+                                                      ),
+                                                  child: Text(
+                                                    days[value.toInt()],
+                                                    style: TextStyle(
+                                                      color:
+                                                          Colors.grey.shade600,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                );
+                                              }
+                                              return const Text('');
+                                            },
+                                          ),
+                                        ),
+                                        leftTitles: AxisTitles(
+                                          sideTitles: SideTitles(
+                                            showTitles: true,
+                                            reservedSize: 40,
+                                            getTitlesWidget: (value, meta) {
+                                              return Text(
+                                                '${value.toInt()}%',
+                                                style: TextStyle(
+                                                  color: Colors.grey.shade600,
+                                                  fontSize: 12,
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                      borderData: FlBorderData(show: false),
+                                      minX: 0,
+                                      maxX: 6,
+                                      minY: 0,
+                                      maxY: 100,
+                                      lineBarsData: [
+                                        LineChartBarData(
+                                          spots: const [
+                                            FlSpot(0, 75),
+                                            FlSpot(1, 82),
+                                            FlSpot(2, 78),
+                                            FlSpot(3, 85),
+                                            FlSpot(4, 80),
+                                            FlSpot(5, 90),
+                                            FlSpot(6, 88),
+                                          ],
+                                          isCurved: true,
+                                          color: const Color(0xFF007AFF),
+                                          barWidth: 3,
+                                          isStrokeCapRound: true,
+                                          dotData: FlDotData(
+                                            show: true,
+                                            getDotPainter:
+                                                (
+                                                  spot,
+                                                  percent,
+                                                  barData,
+                                                  index,
+                                                ) {
+                                                  return FlDotCirclePainter(
+                                                    radius: 4,
+                                                    color: Colors.white,
+                                                    strokeWidth: 2,
+                                                    strokeColor: const Color(
+                                                      0xFF007AFF,
+                                                    ),
+                                                  );
+                                                },
+                                          ),
+                                          belowBarData: BarAreaData(
+                                            show: true,
+                                            color: const Color(
+                                              0xFF007AFF,
+                                            ).withOpacity(0.1),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 24),
-                            SizedBox(
-                              height: 200,
-                              child: LineChart(
-                                LineChartData(
-                                  gridData: FlGridData(
-                                    show: true,
-                                    drawVerticalLine: false,
-                                    horizontalInterval: 25,
-                                    getDrawingHorizontalLine: (value) {
-                                      return FlLine(
-                                        color: Colors.grey.shade200,
-                                        strokeWidth: 1,
-                                      );
-                                    },
-                                  ),
-                                  titlesData: FlTitlesData(
-                                    show: true,
-                                    rightTitles: const AxisTitles(
-                                      sideTitles: SideTitles(showTitles: false),
-                                    ),
-                                    topTitles: const AxisTitles(
-                                      sideTitles: SideTitles(showTitles: false),
-                                    ),
-                                    bottomTitles: AxisTitles(
-                                      sideTitles: SideTitles(
-                                        showTitles: true,
-                                        reservedSize: 30,
-                                        getTitlesWidget: (value, meta) {
-                                          const days = [
-                                            'Mon',
-                                            'Tue',
-                                            'Wed',
-                                            'Thu',
-                                            'Fri',
-                                            'Sat',
-                                            'Sun'
-                                          ];
-                                          if (value.toInt() >= 0 &&
-                                              value.toInt() < days.length) {
-                                            return Padding(
-                                              padding: const EdgeInsets.only(top: 8.0),
-                                              child: Text(
-                                                days[value.toInt()],
-                                                style: TextStyle(
-                                                  color: Colors.grey.shade600,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                            );
-                                          }
-                                          return const Text('');
-                                        },
-                                      ),
-                                    ),
-                                    leftTitles: AxisTitles(
-                                      sideTitles: SideTitles(
-                                        showTitles: true,
-                                        reservedSize: 40,
-                                        getTitlesWidget: (value, meta) {
-                                          return Text(
-                                            '${value.toInt()}%',
-                                            style: TextStyle(
-                                              color: Colors.grey.shade600,
-                                              fontSize: 12,
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                  borderData: FlBorderData(show: false),
-                                  minX: 0,
-                                  maxX: 6,
-                                  minY: 0,
-                                  maxY: 100,
-                                  lineBarsData: [
-                                    LineChartBarData(
-                                      spots: const [
-                                        FlSpot(0, 75),
-                                        FlSpot(1, 82),
-                                        FlSpot(2, 78),
-                                        FlSpot(3, 85),
-                                        FlSpot(4, 80),
-                                        FlSpot(5, 90),
-                                        FlSpot(6, 88),
-                                      ],
-                                      isCurved: true,
-                                      color: const Color(0xFF007AFF),
-                                      barWidth: 3,
-                                      isStrokeCapRound: true,
-                                      dotData: FlDotData(
-                                        show: true,
-                                        getDotPainter:
-                                            (spot, percent, barData, index) {
-                                          return FlDotCirclePainter(
-                                            radius: 4,
-                                            color: Colors.white,
-                                            strokeWidth: 2,
-                                            strokeColor: const Color(0xFF007AFF),
-                                          );
-                                        },
-                                      ),
-                                      belowBarData: BarAreaData(
-                                        show: true,
-                                        color: const Color(0xFF007AFF)
-                                            .withOpacity(0.1),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
+                        const SizedBox(height: 24),
 
-                    // Recent Activity
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Recent Activity',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                        // Recent Activity
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Recent Activity',
+                                  style: Theme.of(context).textTheme.titleLarge
+                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                ),
+                                const SizedBox(height: 16),
+                                _ActivityItem(
+                                  icon: Icons.check_circle,
+                                  color: const Color(0xFF34C759),
+                                  title: 'Room 205 checked in',
+                                  time: '10 minutes ago',
+                                ),
+                                _ActivityItem(
+                                  icon: Icons.exit_to_app,
+                                  color: const Color(0xFFFF9500),
+                                  title: 'Room 312 checked out',
+                                  time: '1 hour ago',
+                                ),
+                                _ActivityItem(
+                                  icon: Icons.cleaning_services,
+                                  color: const Color(0xFF007AFF),
+                                  title: 'Room 408 cleaning completed',
+                                  time: '2 hours ago',
+                                ),
+                                _ActivityItem(
+                                  icon: Icons.warning_rounded,
+                                  color: const Color(0xFFFF3B30),
+                                  title: 'Maintenance request - Room 501',
+                                  time: '3 hours ago',
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 16),
-                            _ActivityItem(
-                              icon: Icons.check_circle,
-                              color: const Color(0xFF34C759),
-                              title: 'Room 205 checked in',
-                              time: '10 minutes ago',
-                            ),
-                            _ActivityItem(
-                              icon: Icons.exit_to_app,
-                              color: const Color(0xFFFF9500),
-                              title: 'Room 312 checked out',
-                              time: '1 hour ago',
-                            ),
-                            _ActivityItem(
-                              icon: Icons.cleaning_services,
-                              color: const Color(0xFF007AFF),
-                              title: 'Room 408 cleaning completed',
-                              time: '2 hours ago',
-                            ),
-                            _ActivityItem(
-                              icon: Icons.warning_rounded,
-                              color: const Color(0xFFFF3B30),
-                              title: 'Maintenance request - Room 501',
-                              time: '3 hours ago',
-                            ),
-                          ],
-                        ),
-                      ),
+                          ),
                         ),
                         const SizedBox(height: 24),
                       ],
@@ -398,16 +458,16 @@ class _StatCard extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               value,
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
             Text(
               title,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey.shade600,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
             ),
           ],
         ),
@@ -458,10 +518,7 @@ class _ActivityItem extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   time,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
               ],
             ),

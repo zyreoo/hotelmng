@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
+import 'services/auth_provider.dart';
+import 'services/hotel_provider.dart';
+import 'pages/login_page.dart';
+import 'pages/hotel_setup_page.dart';
 import 'pages/dashboard_page.dart';
 import 'pages/calendar_page.dart';
 import 'pages/employees_page.dart';
@@ -29,32 +33,86 @@ class HotelManagementApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Hotel Management',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFFF5F5F7),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF007AFF),
-          brightness: Brightness.light,
-        ),
-        // Material 3 uses clean default typography - no need to override
-        cardTheme: const CardThemeData(
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(16)),
+    return AuthProvider(
+      child: _WrapHotelWhenLoggedIn(
+        child: MaterialApp(
+          title: 'Hotel Management',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            useMaterial3: true,
+            scaffoldBackgroundColor: const Color(0xFFF5F5F7),
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFF007AFF),
+              brightness: Brightness.light,
+            ),
+            cardTheme: const CardThemeData(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(16)),
+              ),
+              color: Colors.white,
+            ),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Color(0xFFF5F5F7),
+              elevation: 0,
+              centerTitle: false,
+            ),
           ),
-          color: Colors.white,
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFFF5F5F7),
-          elevation: 0,
-          centerTitle: false,
+          home: const _AuthGate(),
         ),
       ),
-      home: const MainNavigationScreen(),
     );
+  }
+}
+
+/// When user is logged in, wraps [child] (MaterialApp) with [HotelProvider] so
+/// all routes (including pushed pages like AddEmployeePage) have access to it.
+class _WrapHotelWhenLoggedIn extends StatelessWidget {
+  const _WrapHotelWhenLoggedIn({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = AuthScopeData.of(context);
+    if (auth.authChecked && auth.user != null) {
+      return HotelProvider(child: child);
+    }
+    return child;
+  }
+}
+
+/// Shows login when not signed in; when signed in, shows hotel gate or main app.
+class _AuthGate extends StatelessWidget {
+  const _AuthGate();
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = AuthScopeData.of(context);
+    if (!auth.authChecked) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFF5F5F7),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (auth.user == null) {
+      return const LoginPage();
+    }
+    return const _HotelGate();
+  }
+}
+
+/// Shows hotel setup when no hotel is selected; otherwise shows main app.
+class _HotelGate extends StatelessWidget {
+  const _HotelGate();
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = HotelProvider.of(context);
+    final hotel = scope.currentHotel;
+    if (hotel == null) {
+      return const HotelSetupPage();
+    }
+    return const MainNavigationScreen();
   }
 }
 
@@ -155,6 +213,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                             },
                           ),
                         ),
+                        const Divider(height: 1),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          child: _SignOutTile(),
+                        ),
                       ],
                     ),
                   ),
@@ -165,6 +231,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               ],
             )
           : _pages[_selectedIndex], // Mobile: full screen
+      drawer: isDesktop ? null : const Drawer(child: _SignOutDrawer()),
       // Bottom Navigation Bar (Mobile)
       bottomNavigationBar: isDesktop
           ? null
@@ -277,4 +344,59 @@ class _NavItem {
   final String label;
 
   const _NavItem(this.icon, this.label);
+}
+
+class _SignOutTile extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final auth = AuthScopeData.of(context);
+    return ListTile(
+      leading: Icon(Icons.logout_rounded, color: Colors.grey.shade600, size: 24),
+      title: Text(
+        'Sign out',
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
+          color: Colors.grey.shade700,
+        ),
+      ),
+      onTap: () async {
+        await auth.signOut();
+      },
+    );
+  }
+}
+
+class _SignOutDrawer extends StatelessWidget {
+  const _SignOutDrawer();
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = AuthScopeData.of(context);
+    return SafeArea(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'Account',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.logout_rounded),
+            title: const Text('Sign out'),
+            onTap: () async {
+              Navigator.of(context).pop();
+              await auth.signOut();
+            },
+          ),
+        ],
+      ),
+    );
+  }
 }
