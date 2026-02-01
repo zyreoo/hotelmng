@@ -25,6 +25,9 @@ service cloud.firestore {
       match /services/{serviceId} {
         allow read, write: if true;
       }
+      match /rooms/{roomId} {
+        allow read, write: if true;
+      }
       match /shifts/{shiftId} {
         allow read, write: if true;
       }

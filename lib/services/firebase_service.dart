@@ -4,6 +4,7 @@ import '../models/user_model.dart';
 import '../models/booking_model.dart';
 import '../models/employer_model.dart';
 import '../models/service_model.dart';
+import '../models/room_model.dart';
 
 class FirebaseService {
   FirebaseFirestore? _firestore;
@@ -42,6 +43,41 @@ class FirebaseService {
       firestore.collection('hotels').doc(hotelId).collection('departments');
   CollectionReference<Map<String, dynamic>> _servicesRef(String hotelId) =>
       firestore.collection('hotels').doc(hotelId).collection('services');
+  CollectionReference<Map<String, dynamic>> _roomsRef(String hotelId) =>
+      firestore.collection('hotels').doc(hotelId).collection('rooms');
+
+  // ─── Room operations ─────────────────────────────────────────────────────
+  Future<List<RoomModel>> getRooms(String hotelId) async {
+    if (!isInitialized) return [];
+    final snapshot = await _roomsRef(hotelId).orderBy('name').get();
+    return snapshot.docs
+        .map((d) => RoomModel.fromFirestore(d.data(), d.id))
+        .toList();
+  }
+
+  Stream<List<RoomModel>> roomsSnapshot(String hotelId) {
+    if (!isInitialized) return Stream.value([]);
+    return _roomsRef(hotelId).orderBy('name').snapshots().map((snap) =>
+        snap.docs.map((d) => RoomModel.fromFirestore(d.data(), d.id)).toList());
+  }
+
+  Future<String> createRoom(String hotelId, String name) async {
+    if (!isInitialized) throw Exception('Firebase not initialized.');
+    if (name.trim().isEmpty) throw ArgumentError('Room name is required.');
+    final ref = await _roomsRef(hotelId).add({'name': name.trim()});
+    return ref.id;
+  }
+
+  Future<void> updateRoom(String hotelId, String roomId, String name) async {
+    if (!isInitialized) throw Exception('Firebase not initialized.');
+    if (name.trim().isEmpty) throw ArgumentError('Room name is required.');
+    await _roomsRef(hotelId).doc(roomId).update({'name': name.trim()});
+  }
+
+  Future<void> deleteRoom(String hotelId, String roomId) async {
+    if (!isInitialized) throw Exception('Firebase not initialized.');
+    await _roomsRef(hotelId).doc(roomId).delete();
+  }
 
   // ─── User operations (clients/guests) ─────────────────────────────────────
   Future<String> createUser(String hotelId, UserModel user) async {

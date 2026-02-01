@@ -66,25 +66,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
   List<ServiceModel> _availableServices = [];
   List<BookingServiceItem> _selectedServices = [];
 
-  // Sample rooms
-  final List<String> _rooms = [
-    '101',
-    '102',
-    '103',
-    '104',
-    '105',
-    '201',
-    '202',
-    '203',
-    '204',
-    '205',
-    '301',
-    '302',
-    '303',
-    '304',
-    '305',
-    'none',
-  ];
+  // Rooms loaded from Firestore (hotel-specific)
+  List<String> _roomNames = [];
+  List<int>? _pendingPreselectedRoomIndexes;
 
   @override
   void initState() {
@@ -172,12 +156,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
           _numberOfRooms = widget.preselectedRoomsIndex!.length;
         }
         _selectedRooms = List.generate(_numberOfRooms, (_) => '');
-        for (var i = 0; i < widget.preselectedRoomsIndex!.length; i++) {
-          final roomIndex = widget.preselectedRoomsIndex![i];
-          if (roomIndex >= 0 && roomIndex < _rooms.length) {
-            _selectedRooms[i] = _rooms[roomIndex];
-          }
-        }
+        _pendingPreselectedRoomIndexes = widget.preselectedRoomsIndex;
       }
     }
   }
@@ -186,12 +165,100 @@ class _AddBookingPageState extends State<AddBookingPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final hotelId = HotelProvider.of(context).hotelId;
-    if (hotelId != null) _loadServices(hotelId);
+    if (hotelId != null) {
+      _loadServices(hotelId);
+      _loadRooms(hotelId);
+    }
   }
 
   Future<void> _loadServices(String hotelId) async {
     final list = await _firebaseService.getServices(hotelId);
     if (mounted) setState(() => _availableServices = list);
+  }
+
+  Future<void> _loadRooms(String hotelId) async {
+    final list = await _firebaseService.getRooms(hotelId);
+    if (!mounted) return;
+    final names = list.map((r) => r.name).toList();
+    List<int>? pending = _pendingPreselectedRoomIndexes;
+    if (pending != null && pending.isNotEmpty && names.isNotEmpty) {
+      _pendingPreselectedRoomIndexes = null;
+      while (_selectedRooms.length < _numberOfRooms) {
+        _selectedRooms.add('');
+      }
+      for (var i = 0; i < pending.length && i < _selectedRooms.length; i++) {
+        final roomIndex = pending[i];
+        if (roomIndex >= 0 && roomIndex < names.length) {
+          _selectedRooms[i] = names[roomIndex];
+        }
+      }
+    }
+    setState(() => _roomNames = names);
+  }
+
+  /// Finds N available rooms for [checkIn, checkOut). Returns room names to assign, or null if not enough space.
+  /// When [roomsNextToEachOther] is true, returns the first contiguous block of N rooms in _roomNames order.
+  Future<List<String>?> _findAvailableRooms(String hotelId) async {
+    if (_checkInDate == null || _checkOutDate == null || _roomNames.isEmpty) return null;
+    final checkIn = DateTime(_checkInDate!.year, _checkInDate!.month, _checkInDate!.day);
+    final checkOut = DateTime(_checkOutDate!.year, _checkOutDate!.month, _checkOutDate!.day);
+    if (!checkOut.isAfter(checkIn)) return null;
+
+    // Fetch bookings that might overlap the range (wide window)
+    final start = checkIn.subtract(const Duration(days: 60));
+    final end = checkOut.add(const Duration(days: 60));
+    final all = await _firebaseService.getBookings(hotelId, startDate: start, endDate: end);
+    final overlapping = all.where((b) {
+      if (b.status == 'Cancelled') return false;
+      if (widget.existingBooking != null && b.id == widget.existingBooking!.id) return false;
+      final bStart = DateTime(b.checkIn.year, b.checkIn.month, b.checkIn.day);
+      final bEnd = DateTime(b.checkOut.year, b.checkOut.month, b.checkOut.day);
+      return bStart.isBefore(checkOut) && bEnd.isAfter(checkIn);
+    }).toList();
+
+    // For each night in [checkIn, checkOut), which rooms are occupied?
+    final occupiedByNight = <DateTime, Set<String>>{};
+    for (var d = checkIn; d.isBefore(checkOut); d = d.add(const Duration(days: 1))) {
+      occupiedByNight[d] = {};
+      for (final b in overlapping) {
+        if (b.selectedRooms == null || b.selectedRooms!.isEmpty) continue;
+        final bStart = DateTime(b.checkIn.year, b.checkIn.month, b.checkIn.day);
+        final bEnd = DateTime(b.checkOut.year, b.checkOut.month, b.checkOut.day);
+        if (!d.isBefore(bStart) && d.isBefore(bEnd)) {
+          for (final r in b.selectedRooms!) {
+            occupiedByNight[d]!.add(r);
+          }
+        }
+      }
+    }
+
+    // Rooms that are free for every night in the range
+    final available = <String>[];
+    for (final room in _roomNames) {
+      var free = true;
+      for (var d = checkIn; d.isBefore(checkOut); d = d.add(const Duration(days: 1))) {
+        if (occupiedByNight[d]!.contains(room)) {
+          free = false;
+          break;
+        }
+      }
+      if (free) available.add(room);
+    }
+
+    final n = _numberOfRooms;
+    if (available.length < n) return null;
+
+    if (_roomsNextToEachOther && n >= 2) {
+      // First contiguous block of N in _roomNames order
+      for (var i = 0; i <= _roomNames.length - n; i++) {
+        final block = _roomNames.sublist(i, i + n);
+        if (block.every((r) => available.contains(r))) return block;
+      }
+      return null;
+    }
+
+    // First N available (in _roomNames order)
+    return available.take(n).toList();
   }
 
   int get _servicesSubtotal =>
@@ -411,6 +478,17 @@ class _AddBookingPageState extends State<AddBookingPage> {
       );
 
       try {
+        final hotelId = HotelProvider.of(context).hotelId;
+        if (hotelId == null) {
+          if (mounted) {
+            Navigator.pop(context);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No hotel selected')),
+            );
+          }
+          return;
+        }
+
         // Step 1: Create or get user in Firebase
         String userId;
         UserModel userToUse;
@@ -421,15 +499,6 @@ class _AddBookingPageState extends State<AddBookingPage> {
           userId = clientToUse.id!;
           userToUse = clientToUse;
         } else {
-          final hotelId = HotelProvider.of(context).hotelId;
-          if (hotelId == null) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('No hotel selected')),
-              );
-            }
-            return;
-          }
           // User doesn't have an ID, check if they exist by phone
           final existingUser = await _firebaseService.getUserByPhone(
             hotelId,
@@ -458,10 +527,30 @@ class _AddBookingPageState extends State<AddBookingPage> {
           }
         }
 
-        // Step 2: Build booking with user information
-        final selectedRoomNumbers = _wantsSpecificRoom
-            ? _selectedRooms.where((room) => room.isNotEmpty).toList()
-            : null;
+        // Step 2: Resolve room assignment (specific rooms or auto-assign where there is space)
+        List<String>? selectedRoomNumbers;
+        if (_wantsSpecificRoom) {
+          selectedRoomNumbers = _selectedRooms.where((room) => room.isNotEmpty).toList();
+        } else {
+          final assigned = await _findAvailableRooms(hotelId);
+          if (assigned == null || assigned.length != _numberOfRooms) {
+            if (mounted) {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Not enough rooms available for this period. Try different dates or fewer rooms, or select specific rooms.',
+                  ),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+            return;
+          }
+          selectedRoomNumbers = assigned;
+        }
+
+        // Step 3: Build booking with user information
 
         final amountPaid = int.tryParse(_amountPaidController.text.trim()) ?? 0;
         final booking = BookingModel(
@@ -496,16 +585,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
           advanceStatus: _advanceStatus,
         );
 
-        // Step 3: Update or create in Firebase
-        final hotelId = HotelProvider.of(context).hotelId;
-        if (hotelId == null) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('No hotel selected')),
-            );
-          }
-          return;
-        }
+        // Step 4: Update or create in Firebase
         if (widget.existingBooking != null) {
           await _firebaseService.updateBooking(hotelId, booking);
         } else {
@@ -515,14 +595,17 @@ class _AddBookingPageState extends State<AddBookingPage> {
         // Close loading dialog
         if (mounted) Navigator.pop(context);
 
-        // Show success
+        // Show success (include assigned rooms when auto-assigned)
         if (mounted) {
+          final roomInfo = selectedRoomNumbers.isNotEmpty
+              ? ' (${selectedRoomNumbers.join(', ')})'
+              : '';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
                 widget.existingBooking != null
                     ? 'Booking updated for ${userToUse.name}'
-                    : 'Booking created for ${userToUse.name}',
+                    : 'Booking created for ${userToUse.name}$roomInfo',
               ),
               behavior: SnackBarBehavior.floating,
               backgroundColor: const Color(0xFF34C759),
@@ -1104,7 +1187,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                             color: Colors.black87,
                                           ),
                                           dropdownColor: Colors.white,
-                                          items: _rooms
+                                          items: _roomNames
                                               .where(
                                                 (room) =>
                                                     !_selectedRooms.contains(

@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/booking_model.dart';
+import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import 'add_booking_page.dart';
+import 'room_management_page.dart';
 
 class CalendarPage extends StatefulWidget {
   const CalendarPage({super.key});
@@ -36,24 +38,10 @@ class _CalendarPageState extends State<CalendarPage> {
   Timer? _debounceTimer;
   static const Duration _debounceDuration = Duration(milliseconds: 100);
 
-  // Sample rooms
-  final List<String> _rooms = [
-    '101',
-    '102',
-    '103',
-    '104',
-    '105',
-    '201',
-    '202',
-    '203',
-    '204',
-    '205',
-    '301',
-    '302',
-    '303',
-    '304',
-    '305',
-  ];
+  // Rooms loaded from Firestore (hotel-specific)
+  List<String> _roomNames = [];
+  final FirebaseService _firebaseService = FirebaseService();
+  bool _roomNamesLoaded = false;
 
   // Sample bookings - each booking represents a night stay
   // Key: DateTime (the night), Value: Map of room -> booking info
@@ -137,6 +125,36 @@ class _CalendarPageState extends State<CalendarPage> {
         .collection('bookings')
         .doc(booking.id)
         .update(booking.toFirestore());
+  }
+
+  Future<void> _loadRooms() async {
+    final hotelId = HotelProvider.of(context).hotelId;
+    if (hotelId == null) return;
+    try {
+      final list = await _firebaseService.getRooms(hotelId);
+      if (mounted) {
+        setState(() {
+          _roomNames = list.map((r) => r.name).toList();
+          _roomNamesLoaded = true;
+        });
+        _subscribeToBookings();
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _roomNames = [];
+          _roomNamesLoaded = true;
+        });
+      }
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_roomNamesLoaded) {
+      _loadRooms();
+    }
   }
 
   @override
@@ -494,11 +512,11 @@ class _CalendarPageState extends State<CalendarPage> {
       return false;
     }
 
-    final startRoomIndex = _rooms.indexOf(_selectionStartRoom!);
+    final startRoomIndex = _roomNames.indexOf(_selectionStartRoom!);
     final endRoomIndex = _selectionEndRoom != null
-        ? _rooms.indexOf(_selectionEndRoom!)
+        ? _roomNames.indexOf(_selectionEndRoom!)
         : startRoomIndex;
-    final currentRoomIndex = _rooms.indexOf(room);
+    final currentRoomIndex = _roomNames.indexOf(room);
 
     if (currentRoomIndex == -1 || startRoomIndex == -1) return false;
 
@@ -565,8 +583,8 @@ class _CalendarPageState extends State<CalendarPage> {
 
         // update how many rooms are currently spanned horizontally
         if (_selectionStartRoom != null) {
-          final startIndex = _rooms.indexOf(_selectionStartRoom!);
-          final endIndex = _rooms.indexOf(_selectionEndRoom!);
+          final startIndex = _roomNames.indexOf(_selectionStartRoom!);
+          final endIndex = _roomNames.indexOf(_selectionEndRoom!);
           if (startIndex != -1 && endIndex != -1) {
             final minIndex = startIndex < endIndex ? startIndex : endIndex;
             final maxIndex = startIndex > endIndex ? startIndex : endIndex;
@@ -587,7 +605,7 @@ class _CalendarPageState extends State<CalendarPage> {
       if (selectedRooms.isNotEmpty && selectedDates.isNotEmpty) {
         _roomsNextToEachOther = _areSelectedRoomsNextToEachOther(selectedRooms);
         _preselectedRoomsIndex = selectedRooms
-            .map((room) => _rooms.indexOf(room))
+            .map((room) => _roomNames.indexOf(room))
             .where((index) => index != -1)
             .toList();
         _showBookingDialog(
@@ -613,15 +631,15 @@ class _CalendarPageState extends State<CalendarPage> {
   List<String> _getSelectedRooms() {
     if (_selectionStartRoom == null) return [];
 
-    final startIndex = _rooms.indexOf(_selectionStartRoom!);
+    final startIndex = _roomNames.indexOf(_selectionStartRoom!);
     final endIndex = _selectionEndRoom != null
-        ? _rooms.indexOf(_selectionEndRoom!)
+        ? _roomNames.indexOf(_selectionEndRoom!)
         : startIndex;
 
     final minIndex = startIndex < endIndex ? startIndex : endIndex;
     final maxIndex = startIndex > endIndex ? startIndex : endIndex;
 
-    return _rooms.sublist(minIndex, maxIndex + 1);
+    return _roomNames.sublist(minIndex, maxIndex + 1);
   }
 
   List<DateTime> _getSelectedDates() {
@@ -658,7 +676,7 @@ class _CalendarPageState extends State<CalendarPage> {
   bool _areSelectedRoomsNextToEachOther(List<String> rooms) {
     if (rooms.length < 2) return false;
 
-    final indices = rooms.map((room) => _rooms.indexOf(room)).toList();
+    final indices = rooms.map((room) => _roomNames.indexOf(room)).toList();
     if (indices.any((index) => index == -1)) return false;
 
     indices.sort();
@@ -692,7 +710,7 @@ class _CalendarPageState extends State<CalendarPage> {
     if (adjustedX < _dayLabelWidth) return null;
 
     final roomIndex = ((adjustedX - _dayLabelWidth) / _roomColumnWidth).floor();
-    if (roomIndex < 0 || roomIndex >= _rooms.length) return null;
+    if (roomIndex < 0 || roomIndex >= _roomNames.length) return null;
 
     // Position is already relative to the gesture detector which is below the header
     final localY = position.dy;
@@ -702,7 +720,7 @@ class _CalendarPageState extends State<CalendarPage> {
     final dayIndex = ((localY + scrollY) / _dayRowHeight).floor();
     if (dayIndex < 0 || dayIndex >= _dates.length) return null;
 
-    return {'room': _rooms[roomIndex], 'date': _dates[dayIndex]};
+    return {'room': _roomNames[roomIndex], 'date': _dates[dayIndex]};
   }
 
   void _subscribeToBookings() {
@@ -774,7 +792,7 @@ class _CalendarPageState extends State<CalendarPage> {
       final totalNights = bookingModel.numberOfNights;
 
       for (final room in rooms) {
-        if (!_rooms.contains(room)) continue;
+        if (!_roomNames.contains(room)) continue;
 
         for (int i = 0; i < totalNights; i++) {
           final nightDate = bookingStart.add(Duration(days: i));
@@ -891,6 +909,22 @@ class _CalendarPageState extends State<CalendarPage> {
                   ),
                   Row(
                     children: [
+                      TextButton.icon(
+                        onPressed: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (_) => const RoomManagementPage(),
+                            ),
+                          );
+                          _loadRooms();
+                        },
+                        icon: const Icon(Icons.meeting_room_rounded, size: 20),
+                        label: const Text('Manage rooms'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF007AFF),
+                        ),
+                      ),
                       const SizedBox(width: 8),
                       Container(
                         decoration: BoxDecoration(
@@ -924,9 +958,69 @@ class _CalendarPageState extends State<CalendarPage> {
               ),
             ),
 
-            // Calendar Grid
+            // Calendar Grid or empty rooms state
             Expanded(
-              child: Container(
+              child: !_roomNamesLoaded
+                  ? const Center(child: CircularProgressIndicator())
+                  : _roomNames.isEmpty
+                      ? Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 24),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.08),
+                                blurRadius: 16,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.meeting_room_rounded,
+                                  size: 64,
+                                  color: Colors.grey.shade400,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No rooms yet',
+                                  style: Theme.of(context).textTheme.titleLarge,
+                                ),
+                                const SizedBox(height: 8),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 48),
+                                  child: Text(
+                                    'Add rooms to see the calendar and assign bookings to rooms.',
+                                    style: TextStyle(color: Colors.grey.shade600),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                                FilledButton.icon(
+                                  onPressed: () async {
+                                    await Navigator.push(
+                                      context,
+                                      MaterialPageRoute<void>(
+                                        builder: (_) => const RoomManagementPage(),
+                                      ),
+                                    );
+                                    _loadRooms();
+                                  },
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('Manage rooms'),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: const Color(0xFF007AFF),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : Container(
                 margin: const EdgeInsets.symmetric(horizontal: 24),
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -1081,7 +1175,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                   scrollDirection: Axis.horizontal,
                                   physics: const NeverScrollableScrollPhysics(),
                                   child: Row(
-                                    children: _rooms.map((room) {
+                                    children: _roomNames.map((room) {
                                       return Container(
                                         width: _roomColumnWidth,
                                         height: 50,
@@ -1234,7 +1328,7 @@ class _CalendarPageState extends State<CalendarPage> {
           SizedBox(width: _dayLabelWidth),
           // Room cells
           Row(
-            children: _rooms.map((room) {
+            children: _roomNames.map((room) {
               final booking = _getBooking(room, date);
               return _buildRoomCell(room, date, booking);
             }).toList(),
