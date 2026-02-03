@@ -5,6 +5,7 @@ import '../models/booking_model.dart';
 import '../models/employer_model.dart';
 import '../models/service_model.dart';
 import '../models/room_model.dart';
+import '../models/shift_model.dart';
 
 class FirebaseService {
   FirebaseFirestore? _firestore;
@@ -45,6 +46,18 @@ class FirebaseService {
       firestore.collection('hotels').doc(hotelId).collection('services');
   CollectionReference<Map<String, dynamic>> _roomsRef(String hotelId) =>
       firestore.collection('hotels').doc(hotelId).collection('rooms');
+  CollectionReference<Map<String, dynamic>> _shiftsRef(String hotelId) =>
+      firestore.collection('hotels').doc(hotelId).collection('shifts');
+
+  // ─── Shift operations ────────────────────────────────────────────────────
+  Future<String> createShift(String hotelId, ShiftModel shift) async {
+    if (!isInitialized) throw Exception('Firebase not initialized.');
+    if (shift.employeeId.trim().isEmpty) {
+      throw ArgumentError('Employee is required.');
+    }
+    final ref = await _shiftsRef(hotelId).add(shift.toFirestore());
+    return ref.id;
+  }
 
   // ─── Room operations ─────────────────────────────────────────────────────
   Future<List<RoomModel>> getRooms(String hotelId) async {

@@ -20,7 +20,14 @@ class _UserPageState extends State<UserPage> {
   bool _loading = true;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
+
   late EmployerModel _employee;
+
+  @override
+  void initState() {
+    super.initState();
+    _employee = widget.employee;
+  }
 
   @override
   void didChangeDependencies() {

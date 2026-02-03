@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/employer_model.dart';
+import '../models/shift_model.dart';
 import '../services/hotel_provider.dart';
 
 class SchedulePage extends StatefulWidget {
@@ -602,12 +603,19 @@ class _SchedulePageState extends State<SchedulePage> {
         .delete();
   }
 
-  void _showShiftDialog(List<String> employeeIds, List<int> days) {
+  void _showShiftDialog(
+    List<String> employeeIds,
+    List<int> days, {
+    List<EmployerModel>? employees,
+    DateTime? weekStart,
+  }) {
     showDialog(
       context: context,
       builder: (ctx) => _AddShiftDialog(
         employeeIds: employeeIds,
         days: days,
+        employees: employees,
+        weekStart: weekStart,
         loadPresets: _loadShiftPresets,
         savePreset: _saveShiftPreset,
         updatePreset: _updateShiftPreset,
@@ -1023,10 +1031,21 @@ class _SchedulePageState extends State<SchedulePage> {
     );
   }
 
+  void _openAddShiftFromFab() {
+    _showShiftDialog([], [], employees: _employees, weekStart: _currentWeekStart);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F7),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _hotelId == null ? null : _openAddShiftFromFab,
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Add shift'),
+        backgroundColor: const Color(0xFF34C759),
+        foregroundColor: Colors.white,
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -2011,9 +2030,12 @@ class _EditPresetDialogState extends State<_EditPresetDialog> {
 }
 
 /// Add Shift dialog: choose preset or custom times, optionally save as preset.
+/// When employeeIds/days are empty, pass employees and weekStart to pick in-dialog.
 class _AddShiftDialog extends StatefulWidget {
   final List<String> employeeIds;
   final List<int> days;
+  final List<EmployerModel>? employees;
+  final DateTime? weekStart;
   final Future<List<ShiftPreset>> Function() loadPresets;
   final Future<void> Function(ShiftPreset) savePreset;
   final Future<void> Function(ShiftPreset) updatePreset;
@@ -2031,6 +2053,8 @@ class _AddShiftDialog extends StatefulWidget {
   const _AddShiftDialog({
     required this.employeeIds,
     required this.days,
+    this.employees,
+    this.weekStart,
     required this.loadPresets,
     required this.savePreset,
     required this.updatePreset,
@@ -2052,6 +2076,15 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
   List<ShiftPreset> _presets = [];
   bool _presetsLoading = true;
   ShiftPreset? _selectedPreset;
+  /// When opened from FAB (no grid selection): user picks in dialog.
+  final List<String> _pickedEmployeeIds = [];
+  final List<int> _pickedDays = [];
+
+  bool get _pickInDialog =>
+      widget.employeeIds.isEmpty &&
+      widget.days.isEmpty &&
+      widget.employees != null &&
+      widget.weekStart != null;
 
   @override
   void initState() {
@@ -2181,6 +2214,94 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  // Employee(s) and Day(s) picker when opened from FAB (no grid selection)
+                  if (_pickInDialog) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Text(
+                        'Employee(s)',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 140),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: widget.employees!.length,
+                          itemBuilder: (context, index) {
+                            final emp = widget.employees![index];
+                            final id = emp.id ?? '';
+                            final selected = _pickedEmployeeIds.contains(id);
+                            return CheckboxListTile(
+                              value: selected,
+                              onChanged: (v) {
+                                setState(() {
+                                  if (v == true) {
+                                    _pickedEmployeeIds.add(id);
+                                  } else {
+                                    _pickedEmployeeIds.remove(id);
+                                  }
+                                });
+                              },
+                              title: Text(
+                                emp.name,
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                              controlAffinity: ListTileControlAffinity.leading,
+                              contentPadding: EdgeInsets.zero,
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Text(
+                        'Day(s)',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        children: List.generate(7, (dayIndex) {
+                          final selected = _pickedDays.contains(dayIndex);
+                          final dayName = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][dayIndex];
+                          final date = widget.weekStart!.add(Duration(days: dayIndex));
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: FilterChip(
+                              label: Text('$dayName ${date.day}'),
+                              selected: selected,
+                              onSelected: (v) {
+                                setState(() {
+                                  if (v == true) {
+                                    _pickedDays.add(dayIndex);
+                                  } else {
+                                    _pickedDays.remove(dayIndex);
+                                  }
+                                });
+                              },
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   // Presets section
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -2381,10 +2502,29 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                           child: FilledButton(
                             onPressed: () async {
                               if (!_formKey.currentState!.validate()) return;
+                              final effectiveEmployeeIds = widget.employeeIds.isNotEmpty
+                                  ? widget.employeeIds
+                                  : _pickedEmployeeIds;
+                              final effectiveDays = widget.days.isNotEmpty
+                                  ? widget.days
+                                  : _pickedDays;
+                              if (_pickInDialog &&
+                                  (effectiveEmployeeIds.isEmpty || effectiveDays.isEmpty)) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Select at least one employee and one day',
+                                    ),
+                                    backgroundColor: Colors.orange,
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                                return;
+                              }
                               Navigator.pop(context);
                               await widget.onCreateShifts(
-                                widget.employeeIds,
-                                widget.days,
+                                effectiveEmployeeIds,
+                                effectiveDays,
                                 widget.normalizeTime(_startController.text.trim()),
                                 widget.normalizeTime(_endController.text.trim()),
                                 _roleController.text.trim().isEmpty
@@ -2462,41 +2602,3 @@ class ShiftInfo {
   });
 }
 
-class ShiftModel {
-  final String? id;
-  final String employeeId;
-  final DateTime date;
-  final String startTime;
-  final String endTime;
-  final String role;
-
-  ShiftModel({
-    this.id,
-    required this.employeeId,
-    required this.date,
-    required this.startTime,
-    required this.endTime,
-    required this.role,
-  });
-
-  factory ShiftModel.fromFirestore(Map<String, dynamic> data, String id) {
-    return ShiftModel(
-      id: id,
-      employeeId: data['employeeId'] ?? '',
-      date: (data['date'] as Timestamp).toDate(),
-      startTime: data['startTime'] ?? '',
-      endTime: data['endTime'] ?? '',
-      role: data['role'] ?? '',
-    );
-  }
-
-  Map<String, dynamic> toFirestore() {
-    return {
-      'employeeId': employeeId,
-      'date': Timestamp.fromDate(date),
-      'startTime': startTime,
-      'endTime': endTime,
-      'role': role,
-    };
-  }
-}

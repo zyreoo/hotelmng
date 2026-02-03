@@ -56,24 +56,25 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       if (mounted) _loadRooms(hotelId);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to add room: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to add room: $e')));
       }
     }
   }
 
   Future<void> _editRoom(String hotelId, RoomModel room) async {
     final name = await _showNameDialog(context, name: room.name);
-    if (name == null || name == room.name || room.id == null || !mounted) return;
+    if (name == null || name == room.name || room.id == null || !mounted)
+      return;
     try {
       await _firebaseService.updateRoom(hotelId, room.id!, name);
       if (mounted) _loadRooms(hotelId);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update room: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to update room: $e')));
       }
     }
   }
@@ -93,7 +94,9 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            style: TextButton.styleFrom(foregroundColor: const Color(0xFFFF3B30)),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFFFF3B30),
+            ),
             child: const Text('Delete'),
           ),
         ],
@@ -105,14 +108,17 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       if (mounted) _loadRooms(hotelId);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete room: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to delete room: $e')));
       }
     }
   }
 
-  static Future<String?> _showNameDialog(BuildContext context, {required String name}) async {
+  static Future<String?> _showNameDialog(
+    BuildContext context, {
+    required String name,
+  }) async {
     final controller = TextEditingController(text: name);
     return showDialog<String>(
       context: context,
@@ -157,94 +163,103 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      _error!,
-                      style: const TextStyle(color: Color(0xFFFF3B30)),
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: Color(0xFFFF3B30)),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            )
+          : _rooms.isEmpty
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.meeting_room_rounded,
+                      size: 64,
+                      color: Colors.grey.shade400,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No rooms yet',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Add rooms to use them in the calendar and when creating bookings.',
+                      style: TextStyle(color: Colors.grey.shade600),
                       textAlign: TextAlign.center,
                     ),
-                  ),
-                )
-              : _rooms.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.meeting_room_rounded,
-                              size: 64,
-                              color: Colors.grey.shade400,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No rooms yet',
-                              style: Theme.of(context).textTheme.titleLarge,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Add rooms to use them in the calendar and when creating bookings.',
-                              style: TextStyle(color: Colors.grey.shade600),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
+                  ],
+                ),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              itemCount: _rooms.length,
+              itemBuilder: (context, index) {
+                final room = _rooms[index];
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF007AFF).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                      itemCount: _rooms.length,
-                      itemBuilder: (context, index) {
-                        final room = _rooms[index];
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          child: ListTile(
-                            leading: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF007AFF).withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Icon(
-                                Icons.meeting_room_rounded,
-                                color: Color(0xFF007AFF),
-                                size: 22,
-                              ),
-                            ),
-                            title: Text(
-                              room.name,
-                              style: const TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: Icon(Icons.edit_outlined, color: Colors.grey.shade600),
-                                  onPressed: hotelId == null
-                                      ? null
-                                      : () => _editRoom(hotelId, room),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete_outline, color: Color(0xFFFF3B30)),
-                                  onPressed: hotelId == null
-                                      ? null
-                                      : () => _deleteRoom(hotelId, room),
-                                ),
-                              ],
-                            ),
-                            onTap: hotelId == null ? null : () => _editRoom(hotelId, room),
-                          ),
-                        );
-                      },
+                      child: const Icon(
+                        Icons.meeting_room_rounded,
+                        color: Color(0xFF007AFF),
+                        size: 22,
+                      ),
                     ),
+                    title: Text(
+                      room.name,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            Icons.edit_outlined,
+                            color: Colors.grey.shade600,
+                          ),
+                          onPressed: hotelId == null
+                              ? null
+                              : () => _editRoom(hotelId, room),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: Color(0xFFFF3B30),
+                          ),
+                          onPressed: hotelId == null
+                              ? null
+                              : () => _deleteRoom(hotelId, room),
+                        ),
+                      ],
+                    ),
+                    onTap: hotelId == null
+                        ? null
+                        : () => _editRoom(hotelId, room),
+                  ),
+                );
+              },
+            ),
       floatingActionButton: hotelId == null
           ? null
           : FloatingActionButton(
               onPressed: () => _addRoom(hotelId),
               backgroundColor: const Color(0xFF007AFF),
+              foregroundColor: Colors.white,
               child: const Icon(Icons.add),
             ),
     );

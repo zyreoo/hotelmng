@@ -193,8 +193,9 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
           ? ''
           : _emailController.text.trim();
       final roleFinal = roleValue.isEmpty ? _role : roleValue;
-      final departmentFinal =
-          departmentValue.isEmpty ? _department : departmentValue;
+      final departmentFinal = departmentValue.isEmpty
+          ? _department
+          : departmentValue;
 
       if (_isEditMode) {
         final employer = widget.employee!.copyWith(
@@ -262,7 +263,10 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-                _isEditMode ? 'Error updating employee: $e' : 'Error adding employee: $e'),
+              _isEditMode
+                  ? 'Error updating employee: $e'
+                  : 'Error adding employee: $e',
+            ),
             behavior: SnackBarBehavior.floating,
             backgroundColor: Colors.red,
           ),
@@ -273,8 +277,10 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
 
   @override
   Widget build(BuildContext context) {
-    final horizontalPadding = MediaQuery.of(context).size.width >= 768 ? 24.0 : 16.0;
-    
+    final horizontalPadding = MediaQuery.of(context).size.width >= 768
+        ? 24.0
+        : 16.0;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F7),
       body: SafeArea(
@@ -305,7 +311,9 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  _isEditMode ? 'Edit Employee' : 'New Employee',
+                                  _isEditMode
+                                      ? 'Edit Employee'
+                                      : 'New Employee',
                                   style: Theme.of(context)
                                       .textTheme
                                       .headlineLarge
