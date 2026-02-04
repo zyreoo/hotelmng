@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/booking_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
+import '../services/auth_provider.dart';
 import 'add_booking_page.dart';
 import 'room_management_page.dart';
 
@@ -108,30 +109,22 @@ class _CalendarPageState extends State<CalendarPage> {
   final ScrollController _roomHeadersScrollController = ScrollController();
   final ScrollController _stickyDayLabelsScrollController = ScrollController();
 
-  Future<void> _deleteBooking(String hotelId, String bookingId) async {
-    await FirebaseFirestore.instance
-        .collection('hotels')
-        .doc(hotelId)
-        .collection('bookings')
-        .doc(bookingId)
-        .delete();
+  Future<void> _deleteBooking(
+      String userId, String hotelId, String bookingId) async {
+    await _firebaseService.deleteBooking(userId, hotelId, bookingId);
   }
 
-  Future<void> _updateBooking(String hotelId, BookingModel booking) async {
-    if (booking.id == null || booking.id!.isEmpty) return;
-    await FirebaseFirestore.instance
-        .collection('hotels')
-        .doc(hotelId)
-        .collection('bookings')
-        .doc(booking.id)
-        .update(booking.toFirestore());
+  Future<void> _updateBooking(
+      String userId, String hotelId, BookingModel booking) async {
+    await _firebaseService.updateBooking(userId, hotelId, booking);
   }
 
   Future<void> _loadRooms() async {
     final hotelId = HotelProvider.of(context).hotelId;
-    if (hotelId == null) return;
+    final userId = AuthScopeData.of(context).uid;
+    if (hotelId == null || userId == null) return;
     try {
-      final list = await _firebaseService.getRooms(hotelId);
+      final list = await _firebaseService.getRooms(userId, hotelId);
       if (mounted) {
         setState(() {
           _roomNames = list.map((r) => r.name).toList();
@@ -734,10 +727,13 @@ class _CalendarPageState extends State<CalendarPage> {
     final rangeEnd = rangeStart.add(Duration(days: _totalDaysLoaded));
 
     final hotelId = HotelProvider.of(context).hotelId;
-    if (hotelId == null) return;
+    final userId = AuthScopeData.of(context).uid;
+    if (hotelId == null || userId == null) return;
 
-    // Real-time query: only bookings overlapping [rangeStart, rangeEnd)
+    // Real-time query: users/{userId}/hotels/{hotelId}/bookings
     _bookingsSubscription = FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
         .collection('hotels')
         .doc(hotelId)
         .collection('bookings')
@@ -1544,7 +1540,8 @@ class _CalendarPageState extends State<CalendarPage> {
     Booking booking,
   ) {
     final hotelId = HotelProvider.of(context).hotelId;
-    if (hotelId == null) return;
+    final userId = AuthScopeData.of(context).uid;
+    if (hotelId == null || userId == null) return;
     final bookingId = booking.bookingId;
     showDialog(
       context: context,
@@ -1567,6 +1564,8 @@ class _CalendarPageState extends State<CalendarPage> {
           ),
           child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
             stream: FirebaseFirestore.instance
+                .collection('users')
+                .doc(userId)
                 .collection('hotels')
                 .doc(hotelId)
                 .collection('bookings')
@@ -1618,7 +1617,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 buildDetailRow: _buildDetailRow,
                 buildStatusRowWithStatus: _buildStatusRowWithStatus,
                 onSave: (updated) async {
-                  await _updateBooking(hotelId, updated);
+                  await _updateBooking(userId, hotelId, updated);
                   if (dialogContext.mounted) {
                     ScaffoldMessenger.of(dialogContext).showSnackBar(
                       const SnackBar(
@@ -1637,7 +1636,7 @@ class _CalendarPageState extends State<CalendarPage> {
                   if (!mounted) return;
                   try {
                     _showLoadingDialog(dialogContext);
-                    await _deleteBooking(hotelId, bookingId);
+                    await _deleteBooking(userId, hotelId, bookingId);
                     if (!mounted) return;
                     navigator.pop();
                     navigator.pop();

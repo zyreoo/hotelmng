@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/service_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
+import '../services/auth_provider.dart';
 
 class ServicesPage extends StatelessWidget {
   const ServicesPage({super.key});
@@ -11,9 +12,10 @@ class ServicesPage extends StatelessWidget {
     final horizontalPadding =
         MediaQuery.of(context).size.width >= 768 ? 24.0 : 16.0;
     final hotelId = HotelProvider.of(context).hotelId;
+    final userId = AuthScopeData.of(context).uid;
     final firebaseService = FirebaseService();
 
-    if (hotelId == null) {
+    if (hotelId == null || userId == null) {
       return Scaffold(
         body: Center(
           child: Text(
@@ -89,7 +91,7 @@ class ServicesPage extends StatelessWidget {
                   16,
                 ),
                 child: StreamBuilder<List<ServiceModel>>(
-                  stream: firebaseService.getServicesStream(hotelId),
+                  stream: firebaseService.getServicesStream(userId, hotelId),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting &&
                         !snapshot.hasData) {
@@ -147,12 +149,14 @@ class ServicesPage extends StatelessWidget {
                               service: service,
                               onEdit: () => _showServiceDialog(
                                 context,
+                                userId,
                                 hotelId,
                                 firebaseService,
                                 existing: service,
                               ),
                               onDelete: () => _confirmDelete(
                                 context,
+                                userId,
                                 hotelId,
                                 firebaseService,
                                 service,
@@ -170,7 +174,7 @@ class ServicesPage extends StatelessWidget {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showServiceDialog(context, hotelId, firebaseService),
+        onPressed: () => _showServiceDialog(context, userId, hotelId, firebaseService),
         backgroundColor: const Color(0xFF007AFF),
         icon: const Icon(Icons.add),
         label: const Text('Add service'),
@@ -180,6 +184,7 @@ class ServicesPage extends StatelessWidget {
 
   static Future<void> _showServiceDialog(
     BuildContext context,
+    String userId,
     String hotelId,
     FirebaseService firebaseService, {
     ServiceModel? existing,
@@ -284,9 +289,9 @@ class ServicesPage extends StatelessWidget {
               );
               try {
                 if (existing != null) {
-                  await firebaseService.updateService(hotelId, service);
+                  await firebaseService.updateService(userId, hotelId, service);
                 } else {
-                  await firebaseService.addService(hotelId, service);
+                  await firebaseService.addService(userId, hotelId, service);
                 }
                 if (context.mounted) Navigator.pop(context, true);
               } catch (e) {
@@ -321,6 +326,7 @@ class ServicesPage extends StatelessWidget {
 
   static Future<void> _confirmDelete(
     BuildContext context,
+    String userId,
     String hotelId,
     FirebaseService firebaseService,
     ServiceModel service,
@@ -349,7 +355,7 @@ class ServicesPage extends StatelessWidget {
     );
     if (confirm == true && service.id != null) {
       try {
-        await firebaseService.deleteService(hotelId, service.id!);
+        await firebaseService.deleteService(userId, hotelId, service.id!);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(

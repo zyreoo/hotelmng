@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../models/employer_model.dart';
+import '../services/auth_provider.dart';
 import '../services/hotel_provider.dart';
 import 'add_employee_page.dart';
 
@@ -33,10 +34,11 @@ class _UserPageState extends State<UserPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final hotelId = HotelProvider.of(context).hotelId;
-    if (hotelId != null) _loadShifts(hotelId);
+    final userId = AuthScopeData.of(context).uid;
+    if (hotelId != null && userId != null) _loadShifts(userId, hotelId);
   }
 
-  Future<void> _loadShifts(String hotelId) async {
+  Future<void> _loadShifts(String userId, String hotelId) async {
     if (_employee.id == null || _employee.id!.isEmpty) {
       setState(() => _loading = false);
       return;
@@ -48,6 +50,8 @@ class _UserPageState extends State<UserPage> {
       final twoMonthsAhead = now.add(const Duration(days: 60));
 
       final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
           .collection('hotels')
           .doc(hotelId)
           .collection('shifts')

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../models/booking_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
+import '../services/auth_provider.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -22,10 +23,11 @@ class _DashboardPageState extends State<DashboardPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final hotelId = HotelProvider.of(context).hotelId;
-    if (hotelId != null) _loadBookings(hotelId);
+    final userId = AuthScopeData.of(context).uid;
+    if (hotelId != null && userId != null) _loadBookings(userId, hotelId);
   }
 
-  Future<void> _loadBookings(String hotelId) async {
+  Future<void> _loadBookings(String userId, String hotelId) async {
     setState(() {
       _loading = true;
       _error = null;
@@ -36,6 +38,7 @@ class _DashboardPageState extends State<DashboardPage> {
       final start = now.subtract(const Duration(days: 120));
       final end = now.add(const Duration(days: 60));
       final list = await _firebaseService.getBookings(
+        userId,
         hotelId,
         startDate: start,
         endDate: end,

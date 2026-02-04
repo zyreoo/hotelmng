@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import '../services/firebase_service.dart';
+import '../services/auth_provider.dart';
 
 class ClientSearchWidget extends StatefulWidget {
   final String? hotelId;
@@ -41,7 +42,7 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
   }
 
   Future<void> _searchClients(String query) async {
-    if (query.length < 2 || widget.hotelId == null) {
+    if (query.trim().isEmpty || widget.hotelId == null) {
       setState(() {
         _searchResults = [];
         _isSearching = false;
@@ -49,20 +50,39 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
       return;
     }
 
+    final userId = AuthScopeData.of(context).uid;
+    if (userId == null) return;
+
     setState(() {
       _isSearching = true;
     });
 
     try {
-      final results = await _firebaseService.searchUsers(widget.hotelId!, query);
-      setState(() {
-        _searchResults = results;
-        _isSearching = false;
-      });
+      final results = await _firebaseService.searchUsers(
+        userId,
+        widget.hotelId!,
+        query,
+      );
+      if (mounted) {
+        setState(() {
+          _searchResults = results;
+          _isSearching = false;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _isSearching = false;
-      });
+      if (mounted) {
+        setState(() {
+          _searchResults = [];
+          _isSearching = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Search failed: ${e.toString().split('\n').first}'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+      debugPrint('Client search error: $e');
     }
   }
 
@@ -93,9 +113,7 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
     final result = await showDialog<UserModel>(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Create New Client'),
         content: Form(
           key: formKey,
@@ -168,12 +186,18 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
       ),
     );
 
-    if (result != null && widget.hotelId != null) {
+    if (result != null && widget.hotelId != null && mounted) {
+      final userId = AuthScopeData.of(context).uid;
+      if (userId == null) return;
+
       try {
         // Create client in Firebase
-        final userId =
-            await _firebaseService.createUser(widget.hotelId!, result);
-        final createdClient = result.copyWith(id: userId);
+        final clientId = await _firebaseService.createUser(
+          userId,
+          widget.hotelId!,
+          result,
+        );
+        final createdClient = result.copyWith(id: clientId);
         _selectClient(createdClient);
       } catch (e) {
         if (mounted) {
@@ -198,9 +222,7 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
           decoration: InputDecoration(
             labelText: 'Search Client',
             hintText: 'Type name or phone number...',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             filled: true,
             fillColor: Colors.grey.shade50,
             suffixIcon: _selectedClient != null
@@ -210,20 +232,15 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
                     color: Colors.grey.shade600,
                   )
                 : _isSearching
-                    ? const Padding(
-                        padding: EdgeInsets.all(12.0),
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      )
-                    : IconButton(
-                        icon: const Icon(Icons.person_add_rounded),
-                        onPressed: _showCreateClientDialog,
-                        color: const Color(0xFF007AFF),
-                        tooltip: 'Create new client',
-                      ),
+                ? const Padding(
+                    padding: EdgeInsets.all(12.0),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : null,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
               vertical: 16,

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/employer_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
+import '../services/auth_provider.dart';
 import '../widgets/employeer_search_widget.dart';
 import 'add_employee_page.dart';
 import 'user_page.dart';
@@ -32,12 +33,13 @@ class _EmployeesPageState extends State<EmployeesPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final hotelId = HotelProvider.of(context).hotelId;
-    if (hotelId != null) _loadFilters(hotelId);
+    final userId = AuthScopeData.of(context).uid;
+    if (hotelId != null && userId != null) _loadFilters(userId, hotelId);
   }
 
-  Future<void> _loadFilters(String hotelId) async {
+  Future<void> _loadFilters(String userId, String hotelId) async {
     try {
-      final fromDb = await FirebaseService().getDepartments(hotelId);
+      final fromDb = await FirebaseService().getDepartments(userId, hotelId);
       if (!mounted) return;
       setState(() {
         final seen = _defaultDepartments.toSet();
@@ -56,9 +58,11 @@ class _EmployeesPageState extends State<EmployeesPage> {
     }
   }
 
-  Stream<List<EmployerModel>> _employerstream(String? hotelId) {
-    if (hotelId == null) return Stream.value([]);
+  Stream<List<EmployerModel>> _employerstream(String? userId, String? hotelId) {
+    if (userId == null || hotelId == null) return Stream.value([]);
     return FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
         .collection('hotels')
         .doc(hotelId)
         .collection('employers')
@@ -70,8 +74,11 @@ class _EmployeesPageState extends State<EmployeesPage> {
         );
   }
 
-  Future<void> _deleteEmployee(String hotelId, String employeeId) async {
+  Future<void> _deleteEmployee(
+      String userId, String hotelId, String employeeId) async {
     await FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
         .collection('hotels')
         .doc(hotelId)
         .collection('employers')
@@ -116,12 +123,13 @@ class _EmployeesPageState extends State<EmployeesPage> {
         ? 24.0
         : 16.0;
     final hotelId = HotelProvider.of(context).hotelId;
+    final userId = AuthScopeData.of(context).uid;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F7),
       body: SafeArea(
         child: StreamBuilder<List<EmployerModel>>(
-          stream: _employerstream(hotelId),
+          stream: _employerstream(userId, hotelId),
           builder: (context, snapshot) {
             final all = snapshot.data ?? [];
             var filtered = _selectedFilter == 'All'
@@ -242,8 +250,8 @@ class _EmployeesPageState extends State<EmployeesPage> {
                         child: _EmployeeCard(
                           employee: employee,
                           employerModel: employerModel,
-                          onDelete: hotelId != null
-                              ? (id) => _deleteEmployee(hotelId, id)
+                          onDelete: (hotelId != null && userId != null)
+                              ? (id) => _deleteEmployee(userId!, hotelId!, id)
                               : null,
                         ),
                       );

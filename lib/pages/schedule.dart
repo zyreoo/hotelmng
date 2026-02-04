@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/employer_model.dart';
 import '../models/shift_model.dart';
+import '../services/auth_provider.dart';
 import '../services/hotel_provider.dart';
 
 class SchedulePage extends StatefulWidget {
@@ -271,10 +272,13 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   String? _hotelId;
+  String? _userId;
 
   Future<void> _deleteShift(String shiftId) async {
-    if (_hotelId == null) return;
+    if (_userId == null || _hotelId == null) return;
     await FirebaseFirestore.instance
+        .collection('users')
+        .doc(_userId)
         .collection('hotels')
         .doc(_hotelId)
         .collection('shifts')
@@ -283,8 +287,11 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Future<void> _updateShift(ShiftModel shift) async {
-    if (_hotelId == null || shift.id == null || shift.id!.isEmpty) return;
+    if (_userId == null || _hotelId == null ||
+        shift.id == null || shift.id!.isEmpty) return;
     await FirebaseFirestore.instance
+        .collection('users')
+        .doc(_userId)
         .collection('hotels')
         .doc(_hotelId)
         .collection('shifts')
@@ -326,10 +333,12 @@ class _SchedulePageState extends State<SchedulePage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final hotelId = HotelProvider.of(context).hotelId;
-    if (hotelId != _hotelId) {
+    final userId = AuthScopeData.of(context).uid;
+    if (hotelId != _hotelId || userId != _userId) {
       _employeesSubscription?.cancel();
       _hotelId = hotelId;
-      if (hotelId != null) {
+      _userId = userId;
+      if (hotelId != null && userId != null) {
         _subscribeToEmployees();
         _subscribeToShifts();
       }
@@ -348,8 +357,10 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   void _subscribeToEmployees() {
-    if (_hotelId == null) return;
+    if (_userId == null || _hotelId == null) return;
     _employeesSubscription = FirebaseFirestore.instance
+        .collection('users')
+        .doc(_userId)
         .collection('hotels')
         .doc(_hotelId)
         .collection('employers')
@@ -366,11 +377,13 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   void _subscribeToShifts() {
-    if (_hotelId == null) return;
+    if (_userId == null || _hotelId == null) return;
     final weekStart = _currentWeekStart;
     final weekEnd = weekStart.add(const Duration(days: 7));
 
     FirebaseFirestore.instance
+        .collection('users')
+        .doc(_userId)
         .collection('hotels')
         .doc(_hotelId)
         .collection('shifts')
@@ -543,8 +556,13 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Future<List<ShiftPreset>> _loadShiftPresets() async {
+    if (_userId == null || _hotelId == null) return [];
     try {
       final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_userId)
+          .collection('hotels')
+          .doc(_hotelId)
           .collection('shift_presets')
           .get();
       final fromFirestore = snapshot.docs.map((doc) {
@@ -565,8 +583,10 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Future<void> _saveShiftPreset(ShiftPreset preset) async {
-    if (_hotelId == null) return;
+    if (_userId == null || _hotelId == null) return;
     await FirebaseFirestore.instance
+        .collection('users')
+        .doc(_userId)
         .collection('hotels')
         .doc(_hotelId)
         .collection('shift_presets')
@@ -579,8 +599,11 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Future<void> _updateShiftPreset(ShiftPreset preset) async {
-    if (_hotelId == null || preset.id == null || preset.id!.isEmpty) return;
+    if (_userId == null || _hotelId == null ||
+        preset.id == null || preset.id!.isEmpty) return;
     await FirebaseFirestore.instance
+        .collection('users')
+        .doc(_userId)
         .collection('hotels')
         .doc(_hotelId)
         .collection('shift_presets')
@@ -594,8 +617,10 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Future<void> _deleteShiftPreset(String presetId) async {
-    if (_hotelId == null) return;
+    if (_userId == null || _hotelId == null) return;
     await FirebaseFirestore.instance
+        .collection('users')
+        .doc(_userId)
         .collection('hotels')
         .doc(_hotelId)
         .collection('shift_presets')
@@ -654,11 +679,13 @@ class _SchedulePageState extends State<SchedulePage> {
     String endTimeStr,
     String role,
   ) async {
-    if (_hotelId == null) return;
+    if (_userId == null || _hotelId == null) return;
     final startTime = _normalizeTimeString(startTimeStr);
     final endTime = _normalizeTimeString(endTimeStr);
     final batch = FirebaseFirestore.instance.batch();
     final shiftsRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(_userId)
         .collection('hotels')
         .doc(_hotelId)
         .collection('shifts');

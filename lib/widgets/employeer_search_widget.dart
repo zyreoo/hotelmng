@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/employer_model.dart';
 import '../services/firebase_service.dart';
+import '../services/auth_provider.dart';
 
 class EmployeeSearchWidget extends StatefulWidget {
   final String? hotelId;
@@ -50,10 +51,14 @@ class _EmployeeSearchWidgetState extends State<EmployeeSearchWidget> {
       return;
     }
 
+    final userId = AuthScopeData.of(context).uid;
+    if (userId == null) return;
+
     setState(() => _isSearching = true);
 
     try {
       final results = await _firebaseService.searchEmployers(
+        userId,
         widget.hotelId!,
         query.trim(),
       );
@@ -213,10 +218,13 @@ class _EmployeeSearchWidgetState extends State<EmployeeSearchWidget> {
       ),
     );
 
-    if (result != null && widget.hotelId != null) {
+    if (result != null && widget.hotelId != null && mounted) {
+      final userId = AuthScopeData.of(context).uid;
+      if (userId == null) return;
+
       try {
-        final employerId =
-            await _firebaseService.createEmployer(widget.hotelId!, result);
+        final employerId = await _firebaseService.createEmployer(
+            userId, widget.hotelId!, result);
         final created = result.copyWith(id: employerId);
         _selectEmployee(created);
         if (!mounted) return;

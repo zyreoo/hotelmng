@@ -18,6 +18,7 @@ class _SignUpPageState extends State<SignUpPage> {
   bool _obscureConfirm = true;
   bool _loading = false;
   String? _error;
+  bool _isEmailAlreadyInUse = false;
 
   @override
   void dispose() {
@@ -49,6 +50,7 @@ class _SignUpPageState extends State<SignUpPage> {
     }
     setState(() {
       _error = null;
+      _isEmailAlreadyInUse = false;
       _loading = true;
     });
     try {
@@ -61,6 +63,7 @@ class _SignUpPageState extends State<SignUpPage> {
         setState(() {
           _loading = false;
           _error = _messageForAuthError(e);
+          _isEmailAlreadyInUse = _isEmailAlreadyInUseError(e);
         });
       }
       debugPrint('Sign up error: $e');
@@ -161,11 +164,42 @@ class _SignUpPageState extends State<SignUpPage> {
                   ),
                   if (_error != null) ...[
                     const SizedBox(height: 12),
-                    Text(
-                      _error!,
-                      style: const TextStyle(
-                        color: Color(0xFFFF3B30),
-                        fontSize: 13,
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFF3B30).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFFFF3B30).withOpacity(0.3),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            _error!,
+                            style: const TextStyle(
+                              color: Color(0xFFFF3B30),
+                              fontSize: 13,
+                            ),
+                          ),
+                          if (_isEmailAlreadyInUse) ...[
+                            const SizedBox(height: 12),
+                            FilledButton.icon(
+                              onPressed: () => Navigator.of(context).pop(),
+                              icon: const Icon(Icons.login_rounded, size: 20),
+                              label: const Text('Sign in instead'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF007AFF),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                   ],
@@ -238,4 +272,11 @@ String _messageForAuthError(dynamic e) {
   if (s.contains('keychain')) return 'Keychain access failed. Stop the app and run again, or enable Keychain Sharing in Xcode.';
   if (s.contains('network')) return 'Network error. Check your connection.';
   return 'Sign up failed. Try again.';
+}
+
+bool _isEmailAlreadyInUseError(dynamic e) {
+  if (e is FirebaseAuthException) {
+    return e.code == 'email-already-in-use';
+  }
+  return e.toString().toLowerCase().contains('email-already-in-use');
 }

@@ -5,6 +5,7 @@ import '../models/hotel_model.dart';
 import 'auth_provider.dart';
 
 const String _keyCurrentHotelId = 'current_hotel_id';
+const String _keyCurrentUserId = 'current_user_id';
 /// Fallback if auth context is missing (should not happen when logged in).
 const String defaultOwnerId = 'default_owner';
 
@@ -32,11 +33,17 @@ class _HotelProviderState extends State<HotelProvider> {
       _loaded = true;
       try {
         final prefs = await SharedPreferences.getInstance();
-        final id = prefs.getString(_keyCurrentHotelId);
-        if (id != null && id.isNotEmpty) {
+        final hotelId = prefs.getString(_keyCurrentHotelId);
+        final userId = prefs.getString(_keyCurrentUserId);
+        if (hotelId != null &&
+            hotelId.isNotEmpty &&
+            userId != null &&
+            userId.isNotEmpty) {
           final doc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)
               .collection('hotels')
-              .doc(id)
+              .doc(hotelId)
               .get();
           if (doc.exists && mounted) {
             setState(() {
@@ -58,10 +65,12 @@ class _HotelProviderState extends State<HotelProvider> {
     setState(() => _currentHotel = hotel);
     try {
       final prefs = await SharedPreferences.getInstance();
-      if (hotel?.id != null) {
-        await prefs.setString(_keyCurrentHotelId, hotel!.id!);
+      if (hotel?.id != null && hotel!.ownerId.isNotEmpty) {
+        await prefs.setString(_keyCurrentHotelId, hotel.id!);
+        await prefs.setString(_keyCurrentUserId, hotel.ownerId);
       } else {
         await prefs.remove(_keyCurrentHotelId);
+        await prefs.remove(_keyCurrentUserId);
       }
     } catch (_) {
       // Persistence failed; hotel is still set in memory for this session.
@@ -70,7 +79,11 @@ class _HotelProviderState extends State<HotelProvider> {
 
   Future<HotelModel> createHotel(String name, {String? ownerId}) async {
     final uid = ownerId ?? AuthScopeData.of(context).uid ?? defaultOwnerId;
-    final ref = await FirebaseFirestore.instance.collection('hotels').add({
+    final ref = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('hotels')
+        .add({
       'name': name,
       'ownerId': uid,
       'createdAt': DateTime.now().toIso8601String(),
@@ -87,8 +100,9 @@ class _HotelProviderState extends State<HotelProvider> {
   Future<List<HotelModel>> getHotelsForOwner({String? ownerId}) async {
     final uid = ownerId ?? AuthScopeData.of(context).uid ?? defaultOwnerId;
     final snapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
         .collection('hotels')
-        .where('ownerId', isEqualTo: uid)
         .get();
     final list = snapshot.docs
         .map((d) => HotelModel.fromFirestore(d.data(), d.id))

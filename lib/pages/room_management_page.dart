@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/room_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
+import '../services/auth_provider.dart';
 
 /// Manage rooms: add, edit name, delete. Shown from the calendar.
 class RoomManagementPage extends StatefulWidget {
@@ -21,16 +22,17 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final hotelId = HotelProvider.of(context).hotelId;
-    if (hotelId != null) _loadRooms(hotelId);
+    final userId = AuthScopeData.of(context).uid;
+    if (hotelId != null && userId != null) _loadRooms(userId, hotelId);
   }
 
-  Future<void> _loadRooms(String hotelId) async {
+  Future<void> _loadRooms(String userId, String hotelId) async {
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final list = await _firebaseService.getRooms(hotelId);
+      final list = await _firebaseService.getRooms(userId, hotelId);
       if (mounted) {
         setState(() {
           _rooms = list;
@@ -48,12 +50,12 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     }
   }
 
-  Future<void> _addRoom(String hotelId) async {
+  Future<void> _addRoom(String userId, String hotelId) async {
     final name = await _showNameDialog(context, name: '');
     if (name == null || name.isEmpty || !mounted) return;
     try {
-      await _firebaseService.createRoom(hotelId, name);
-      if (mounted) _loadRooms(hotelId);
+      await _firebaseService.createRoom(userId, hotelId, name);
+      if (mounted) _loadRooms(userId, hotelId);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -63,13 +65,13 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     }
   }
 
-  Future<void> _editRoom(String hotelId, RoomModel room) async {
+  Future<void> _editRoom(String userId, String hotelId, RoomModel room) async {
     final name = await _showNameDialog(context, name: room.name);
     if (name == null || name == room.name || room.id == null || !mounted)
       return;
     try {
-      await _firebaseService.updateRoom(hotelId, room.id!, name);
-      if (mounted) _loadRooms(hotelId);
+      await _firebaseService.updateRoom(userId, hotelId, room.id!, name);
+      if (mounted) _loadRooms(userId, hotelId);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -79,7 +81,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     }
   }
 
-  Future<void> _deleteRoom(String hotelId, RoomModel room) async {
+  Future<void> _deleteRoom(String userId, String hotelId, RoomModel room) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -104,8 +106,8 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     );
     if (confirm != true || room.id == null || !mounted) return;
     try {
-      await _firebaseService.deleteRoom(hotelId, room.id!);
-      if (mounted) _loadRooms(hotelId);
+      await _firebaseService.deleteRoom(userId, hotelId, room.id!);
+      if (mounted) _loadRooms(userId, hotelId);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -152,116 +154,236 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
   @override
   Widget build(BuildContext context) {
     final hotelId = HotelProvider.of(context).hotelId;
+    final userId = AuthScopeData.of(context).uid;
+    final canEdit = hotelId != null && userId != null;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
+      backgroundColor: const Color(0xFFF2F2F7),
       appBar: AppBar(
-        title: const Text('Manage rooms'),
-        backgroundColor: const Color(0xFFF5F5F7),
+        title: const Text(
+          'Rooms',
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF000000),
+          ),
+        ),
+        backgroundColor: const Color(0xFFF2F2F7),
         elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: false,
+        actions: [
+          if (canEdit)
+            TextButton(
+              onPressed: () => _addRoom(userId!, hotelId!),
+              child: const Text(
+                'Add',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w400,
+                  color: Color(0xFF007AFF),
+                ),
+              ),
+            ),
+        ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  _error!,
-                  style: const TextStyle(color: Color(0xFFFF3B30)),
-                  textAlign: TextAlign.center,
-                ),
+          ? const Center(
+              child: CircularProgressIndicator(
+                color: Color(0xFF007AFF),
+                strokeWidth: 2,
               ),
             )
-          : _rooms.isEmpty
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.meeting_room_rounded,
-                      size: 64,
-                      color: Colors.grey.shade400,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No rooms yet',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Add rooms to use them in the calendar and when creating bookings.',
-                      style: TextStyle(color: Colors.grey.shade600),
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      _error!,
+                      style: const TextStyle(
+                        color: Color(0xFFFF3B30),
+                        fontSize: 15,
+                      ),
                       textAlign: TextAlign.center,
                     ),
-                  ],
-                ),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              itemCount: _rooms.length,
-              itemBuilder: (context, index) {
-                final room = _rooms[index];
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    leading: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF007AFF).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.meeting_room_rounded,
-                        color: Color(0xFF007AFF),
-                        size: 22,
-                      ),
-                    ),
-                    title: Text(
-                      room.name,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: Icon(
-                            Icons.edit_outlined,
-                            color: Colors.grey.shade600,
-                          ),
-                          onPressed: hotelId == null
-                              ? null
-                              : () => _editRoom(hotelId, room),
+                  ),
+                )
+              : _rooms.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.door_front_door_rounded,
+                              size: 56,
+                              color: Colors.grey.shade400,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No Rooms',
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 22,
+                                  ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Add rooms to use them in the calendar\nand when creating bookings.',
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 15,
+                                height: 1.35,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
                         ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.delete_outline,
-                            color: Color(0xFFFF3B30),
+                      ),
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      children: [
+                        Container(
+                          clipBehavior: Clip.antiAlias,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.04),
+                                blurRadius: 8,
+                                offset: const Offset(0, 1),
+                              ),
+                            ],
                           ),
-                          onPressed: hotelId == null
-                              ? null
-                              : () => _deleteRoom(hotelId, room),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: List.generate(_rooms.length * 2 - 1, (i) {
+                                  if (i.isOdd) {
+                                    return Divider(
+                                      height: 1,
+                                      thickness: 1,
+                                      indent: 56,
+                                      endIndent: 16,
+                                      color: Colors.grey.shade200,
+                                    );
+                                  }
+                                  final index = i ~/ 2;
+                                  final room = _rooms[index];
+                                  return Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      onTap: canEdit
+                                          ? () => _editRoom(userId!, hotelId!, room)
+                                          : null,
+                                      onLongPress: canEdit
+                                          ? () => _showRoomActions(
+                                                userId!,
+                                                hotelId!,
+                                                room,
+                                              )
+                                          : null,
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 12,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons.door_front_door_rounded,
+                                              size: 22,
+                                              color: Colors.grey.shade500,
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Text(
+                                                room.name,
+                                                style: const TextStyle(
+                                                  fontSize: 17,
+                                                  fontWeight: FontWeight.w400,
+                                                  color: Color(0xFF000000),
+                                                ),
+                                              ),
+                                            ),
+                                            if (canEdit)
+                                              Icon(
+                                                Icons.chevron_right_rounded,
+                                                size: 22,
+                                                color: Colors.grey.shade400,
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                            }),
+                          ),
                         ),
                       ],
                     ),
-                    onTap: hotelId == null
-                        ? null
-                        : () => _editRoom(hotelId, room),
+    );
+  }
+
+  void _showRoomActions(String userId, String hotelId, RoomModel room) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => SafeArea(
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFF2F2F7),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              ListTile(
+                leading: const Icon(Icons.edit_outlined, size: 22),
+                title: const Text('Edit room name'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _editRoom(userId, hotelId, room);
+                },
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.delete_outline_rounded,
+                  size: 22,
+                  color: Color(0xFFFF3B30),
+                ),
+                title: const Text(
+                  'Delete room',
+                  style: TextStyle(
+                    color: Color(0xFFFF3B30),
+                    fontWeight: FontWeight.w400,
                   ),
-                );
-              },
-            ),
-      floatingActionButton: hotelId == null
-          ? null
-          : FloatingActionButton(
-              onPressed: () => _addRoom(hotelId),
-              backgroundColor: const Color(0xFF007AFF),
-              foregroundColor: Colors.white,
-              child: const Icon(Icons.add),
-            ),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _deleteRoom(userId, hotelId, room);
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

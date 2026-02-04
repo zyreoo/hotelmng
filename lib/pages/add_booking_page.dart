@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/user_model.dart';
 import '../models/booking_model.dart';
 import '../models/service_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
+import '../services/auth_provider.dart';
 import '../widgets/client_search_widget.dart';
 import 'services_page.dart';
 
@@ -165,19 +167,20 @@ class _AddBookingPageState extends State<AddBookingPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final hotelId = HotelProvider.of(context).hotelId;
-    if (hotelId != null) {
-      _loadServices(hotelId);
-      _loadRooms(hotelId);
+    final userId = AuthScopeData.of(context).uid;
+    if (hotelId != null && userId != null) {
+      _loadServices(userId, hotelId);
+      _loadRooms(userId, hotelId);
     }
   }
 
-  Future<void> _loadServices(String hotelId) async {
-    final list = await _firebaseService.getServices(hotelId);
+  Future<void> _loadServices(String userId, String hotelId) async {
+    final list = await _firebaseService.getServices(userId, hotelId);
     if (mounted) setState(() => _availableServices = list);
   }
 
-  Future<void> _loadRooms(String hotelId) async {
-    final list = await _firebaseService.getRooms(hotelId);
+  Future<void> _loadRooms(String userId, String hotelId) async {
+    final list = await _firebaseService.getRooms(userId, hotelId);
     if (!mounted) return;
     final names = list.map((r) => r.name).toList();
     List<int>? pending = _pendingPreselectedRoomIndexes;
@@ -198,7 +201,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
 
   /// Finds N available rooms for [checkIn, checkOut). Returns room names to assign, or null if not enough space.
   /// When [roomsNextToEachOther] is true, returns the first contiguous block of N rooms in _roomNames order.
-  Future<List<String>?> _findAvailableRooms(String hotelId) async {
+  Future<List<String>?> _findAvailableRooms(String userId, String hotelId) async {
     if (_checkInDate == null || _checkOutDate == null || _roomNames.isEmpty) return null;
     final checkIn = DateTime(_checkInDate!.year, _checkInDate!.month, _checkInDate!.day);
     final checkOut = DateTime(_checkOutDate!.year, _checkOutDate!.month, _checkOutDate!.day);
@@ -207,7 +210,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
     // Fetch bookings that might overlap the range (wide window)
     final start = checkIn.subtract(const Duration(days: 60));
     final end = checkOut.add(const Duration(days: 60));
-    final all = await _firebaseService.getBookings(hotelId, startDate: start, endDate: end);
+    final all = await _firebaseService.getBookings(userId, hotelId, startDate: start, endDate: end);
     final overlapping = all.where((b) {
       if (b.status == 'Cancelled') return false;
       if (widget.existingBooking != null && b.id == widget.existingBooking!.id) return false;
@@ -291,7 +294,87 @@ class _AddBookingPageState extends State<AddBookingPage> {
   int get _remainingBalance =>
       (_suggestedTotal - _advanceAmountPaid).clamp(0, _suggestedTotal);
 
+  Future<int?> _showNumberInputDialog({
+    required String title,
+    required int initialValue,
+    required int minValue,
+  }) async {
+    final controller = TextEditingController(text: initialValue.toString());
+    final formKey = GlobalKey<FormState>();
+    final result = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(title),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+            ],
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              hintText: 'Enter a number',
+            ),
+            validator: (value) {
+              final v = int.tryParse(value?.trim() ?? '');
+              if (v == null) return 'Enter a valid number';
+              if (v < minValue) {
+                return 'Must be at least $minValue';
+              }
+              return null;
+            },
+            onFieldSubmitted: (_) {
+              if (formKey.currentState!.validate()) {
+                Navigator.of(ctx).pop(int.parse(controller.text.trim()));
+              }
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.of(ctx).pop(int.parse(controller.text.trim()));
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    return result;
+  }
+
+  void _updateNumberOfRooms(int newCount) {
+    if (newCount < 1) newCount = 1;
+    setState(() {
+      if (newCount < _numberOfRooms) {
+        _numberOfRooms = newCount;
+        if (_selectedRooms.length > _numberOfRooms) {
+          _selectedRooms = _selectedRooms.sublist(0, _numberOfRooms);
+        }
+        if (_numberOfRooms < 2) {
+          _roomsNextToEachOther = false;
+        }
+      } else if (newCount > _numberOfRooms) {
+        _numberOfRooms = newCount;
+        while (_selectedRooms.length < _numberOfRooms) {
+          _selectedRooms.add('');
+        }
+      }
+    });
+  }
+
   void _updateAmountFromSuggested() {
+    // When advance is still pending, don't pre-fill "Amount paid (total)" with full total
+    if (_advanceStatus == 'pending') return;
     final suggested = _suggestedTotal;
     if (suggested > 0 &&
         (int.tryParse(_amountPaidController.text.trim()) ?? 0) == 0) {
@@ -479,11 +562,12 @@ class _AddBookingPageState extends State<AddBookingPage> {
 
       try {
         final hotelId = HotelProvider.of(context).hotelId;
-        if (hotelId == null) {
+        final authUserId = AuthScopeData.of(context).uid;
+        if (hotelId == null || authUserId == null) {
           if (mounted) {
             Navigator.pop(context);
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('No hotel selected')),
+              const SnackBar(content: Text('No hotel selected or not authenticated')),
             );
           }
           return;
@@ -501,6 +585,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
         } else {
           // User doesn't have an ID, check if they exist by phone
           final existingUser = await _firebaseService.getUserByPhone(
+            authUserId,
             hotelId,
             clientToUse.phone,
           );
@@ -516,7 +601,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
             });
           } else {
             // User doesn't exist, create new user in Firebase
-            userId = await _firebaseService.createUser(hotelId, clientToUse);
+            userId = await _firebaseService.createUser(authUserId, hotelId, clientToUse);
             // Create user object with the new ID
             userToUse = clientToUse.copyWith(id: userId);
             // Update selected client for future use
@@ -532,7 +617,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
         if (_wantsSpecificRoom) {
           selectedRoomNumbers = _selectedRooms.where((room) => room.isNotEmpty).toList();
         } else {
-          final assigned = await _findAvailableRooms(hotelId);
+          final assigned = await _findAvailableRooms(authUserId, hotelId);
           if (assigned == null || assigned.length != _numberOfRooms) {
             if (mounted) {
               Navigator.pop(context);
@@ -587,9 +672,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
 
         // Step 4: Update or create in Firebase
         if (widget.existingBooking != null) {
-          await _firebaseService.updateBooking(hotelId, booking);
+          await _firebaseService.updateBooking(authUserId, hotelId, booking);
         } else {
-          await _firebaseService.createBooking(hotelId, booking);
+          await _firebaseService.createBooking(authUserId, hotelId, booking);
         }
 
         // Close loading dialog
@@ -832,6 +917,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                               // Show search or create form
                               if (!_showCreateClientForm) ...[
                                 ClientSearchWidget(
+                                  hotelId: HotelProvider.of(context).hotelId,
                                   initialClient: _selectedClient,
                                   onClientSelected: (client) {
                                     setState(() {
@@ -917,14 +1003,28 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         },
                                         color: const Color(0xFF007AFF),
                                       ),
-                                      Container(
-                                        width: 50,
-                                        alignment: Alignment.center,
-                                        child: Text(
-                                          '$_numberOfGuests',
-                                          style: const TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w600,
+                                      GestureDetector(
+                                        onTap: () async {
+                                          final value = await _showNumberInputDialog(
+                                            title: 'Number of guests',
+                                            initialValue: _numberOfGuests,
+                                            minValue: 1,
+                                          );
+                                          if (value != null) {
+                                            setState(() {
+                                              _numberOfGuests = value;
+                                            });
+                                          }
+                                        },
+                                        child: Container(
+                                          width: 50,
+                                          alignment: Alignment.center,
+                                          child: Text(
+                                            '$_numberOfGuests',
+                                            style: const TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.w600,
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -999,30 +1099,33 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         ),
                                         onPressed: () {
                                           if (_numberOfRooms > 1) {
-                                            setState(() {
-                                              _numberOfRooms--;
-                                              if (_selectedRooms.length >
-                                                  _numberOfRooms) {
-                                                _selectedRooms = _selectedRooms
-                                                    .sublist(0, _numberOfRooms);
-                                              }
-                                              // Reset next to each other if only 1 room
-                                              if (_numberOfRooms < 2) {
-                                                _roomsNextToEachOther = false;
-                                              }
-                                            });
+                                            _updateNumberOfRooms(
+                                              _numberOfRooms - 1,
+                                            );
                                           }
                                         },
                                         color: const Color(0xFF007AFF),
                                       ),
-                                      Container(
-                                        width: 50,
-                                        alignment: Alignment.center,
-                                        child: Text(
-                                          '$_numberOfRooms',
-                                          style: const TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w600,
+                                      GestureDetector(
+                                        onTap: () async {
+                                          final value = await _showNumberInputDialog(
+                                            title: 'Number of rooms',
+                                            initialValue: _numberOfRooms,
+                                            minValue: 1,
+                                          );
+                                          if (value != null) {
+                                            _updateNumberOfRooms(value);
+                                          }
+                                        },
+                                        child: Container(
+                                          width: 50,
+                                          alignment: Alignment.center,
+                                          child: Text(
+                                            '$_numberOfRooms',
+                                            style: const TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.w600,
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -1031,13 +1134,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                           Icons.add_circle_outline,
                                         ),
                                         onPressed: () {
-                                          setState(() {
-                                            _numberOfRooms++;
-                                            while (_selectedRooms.length <
-                                                _numberOfRooms) {
-                                              _selectedRooms.add('');
-                                            }
-                                          });
+                                          _updateNumberOfRooms(
+                                            _numberOfRooms + 1,
+                                          );
                                         },
                                         color: const Color(0xFF007AFF),
                                       ),
@@ -1480,6 +1579,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   ),
                                 ),
                                 keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
                                 onChanged: (_) {
                                   setState(() {});
                                   _updateAmountFromSuggested();
@@ -1540,7 +1642,8 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         ),
                                       );
                                       final hid = HotelProvider.of(context).hotelId;
-                                      if (hid != null) _loadServices(hid);
+                                      final uid = AuthScopeData.of(context).uid;
+                                      if (hid != null && uid != null) _loadServices(uid, hid);
                                     },
                                     icon: const Icon(Icons.add_circle_outline,
                                         size: 18),
@@ -1607,14 +1710,31 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                                   : null,
                                               color: const Color(0xFF007AFF),
                                             ),
-                                            SizedBox(
-                                              width: 28,
-                                              child: Text(
-                                                '$qty',
-                                                textAlign: TextAlign.center,
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 15,
+                                            GestureDetector(
+                                              onTap: () async {
+                                                final value =
+                                                    await _showNumberInputDialog(
+                                                  title:
+                                                      'Quantity for ${service.name}',
+                                                  initialValue: qty,
+                                                  minValue: 0,
+                                                );
+                                                if (value != null) {
+                                                  _setServiceQuantity(
+                                                    service,
+                                                    value,
+                                                  );
+                                                }
+                                              },
+                                              child: SizedBox(
+                                                width: 28,
+                                                child: Text(
+                                                  '$qty',
+                                                  textAlign: TextAlign.center,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 15,
+                                                  ),
                                                 ),
                                               ),
                                             ),
@@ -1744,6 +1864,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         ),
                                       ),
                                       keyboardType: TextInputType.number,
+                                      inputFormatters: [
+                                        FilteringTextInputFormatter.digitsOnly,
+                                      ],
                                       onChanged: (_) {
                                         setState(() {
                                           final p =
@@ -1786,6 +1909,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         ),
                                       ),
                                       keyboardType: TextInputType.number,
+                                      inputFormatters: [
+                                        FilteringTextInputFormatter.digitsOnly,
+                                      ],
                                       onChanged: (_) {
                                         setState(() {
                                           // From advance paid, calculate and update the %
@@ -1871,6 +1997,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       selected: _advanceStatus == 'pending',
                                       onSelected: (v) => setState(() {
                                             _advanceStatus = 'pending';
+                                            _amountPaidController.clear();
                                           }),
                                       selectedColor: const Color(0xFFFF9500)
                                           .withOpacity(0.3),
@@ -1889,8 +2016,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 ),
                                 const SizedBox(height: 12),
                               ],
-                              // Remaining balance (they owe you)
-                              if (_suggestedTotal > 0) ...[
+                              // "They owe you" and "Advance paid" only when advance is received (not when pending)
+                              if (_advanceStatus == 'received' &&
+                                  _suggestedTotal > 0) ...[
                                 Row(
                                   children: [
                                     Icon(Icons.account_balance_wallet_rounded,
@@ -1917,7 +2045,25 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   ],
                                 ),
                                 const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Icon(Icons.check_circle_rounded,
+                                        size: 18,
+                                        color: const Color(0xFF34C759)),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Advance paid ($_advanceAmountPaid) — $_advancePaymentMethod',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey.shade800,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
                               ],
+                              // When advance is pending: only show waiting message (no "They owe you", no "Advance paid")
                               Builder(
                                 builder: (context) {
                                   if (_advanceDisplayStatus == 'not_required') {
@@ -1937,23 +2083,8 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       ],
                                     );
                                   }
-                                  if (_advanceDisplayStatus == 'paid') {
-                                    return Row(
-                                      children: [
-                                        Icon(Icons.check_circle_rounded,
-                                            size: 18,
-                                            color: const Color(0xFF34C759)),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Advance paid ($_advanceAmountPaid) — $_advancePaymentMethod',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            color: Colors.grey.shade800,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
-                                    );
+                                  if (_advanceStatus == 'received') {
+                                    return const SizedBox.shrink();
                                   }
                                   return Row(
                                     children: [
@@ -1992,6 +2123,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 ),
                                 style: const TextStyle(fontSize: 16),
                                 keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
                               ),
                               const SizedBox(height: 16),
                               // Payment method

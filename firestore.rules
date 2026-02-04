@@ -3,36 +3,61 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Hotels (top-level). Each hotel is owned by an account (ownerId).
-    match /hotels/{hotelId} {
-      allow read, write: if true;
-      // Subcollections: all data is scoped to the hotel
-      match /users/{userId} {
-        allow read, write: if true;
-      }
-      match /bookings/{bookingId} {
-        allow read, write: if true;
-      }
-      match /employers/{employerId} {
-        allow read, write: if true;
-      }
-      match /roles/{roleId} {
-        allow read, write: if true;
-      }
-      match /departments/{departmentId} {
-        allow read, write: if true;
-      }
-      match /services/{serviceId} {
-        allow read, write: if true;
-      }
-      match /rooms/{roomId} {
-        allow read, write: if true;
-      }
-      match /shifts/{shiftId} {
-        allow read, write: if true;
-      }
-      match /shift_presets/{presetId} {
-        allow read, write: if true;
+    // New hierarchical structure: users/{userId}/hotels/{hotelId}/...
+    // Each authenticated user owns their hotels and all hotel data.
+    match /users/{userId} {
+      // Allow users to read/write only their own user document
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Hotels owned by this user
+      match /hotels/{hotelId} {
+        // Allow read/write only if authenticated and accessing own data
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        
+        // Hotel subcollections: clients/guests
+        match /clients/{clientId} {
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
+        
+        // Bookings
+        match /bookings/{bookingId} {
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
+        
+        // Employees/Employers
+        match /employers/{employerId} {
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
+        
+        // Roles
+        match /roles/{roleId} {
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
+        
+        // Departments
+        match /departments/{departmentId} {
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
+        
+        // Services
+        match /services/{serviceId} {
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
+        
+        // Rooms
+        match /rooms/{roomId} {
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
+        
+        // Shifts
+        match /shifts/{shiftId} {
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
+        
+        // Shift presets
+        match /shift_presets/{presetId} {
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
       }
     }
   }

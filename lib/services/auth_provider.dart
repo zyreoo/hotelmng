@@ -48,6 +48,7 @@ class _AuthProviderState extends State<AuthProvider> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_keyCurrentHotelId);
+      await prefs.remove(_keyCurrentUserId);
     } catch (_) {}
     await FirebaseAuth.instance.signOut();
   }
@@ -66,6 +67,7 @@ class _AuthProviderState extends State<AuthProvider> {
 }
 
 const String _keyCurrentHotelId = 'current_hotel_id';
+const String _keyCurrentUserId = 'current_user_id';
 
 class AuthScopeData extends InheritedWidget {
   final User? user;
