@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'firebase_options.dart';
 import 'services/auth_provider.dart';
 import 'services/hotel_provider.dart';
+import 'services/theme_provider.dart';
 import 'pages/login_page.dart';
 import 'pages/hotel_setup_page.dart';
 import 'pages/dashboard_page.dart';
 import 'pages/calendar_page.dart';
+import 'pages/bookings_list_page.dart';
 import 'pages/employees_page.dart';
 import 'pages/add_booking_page.dart';
-import 'pages/schedule.dart';
+import 'pages/settings_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +28,9 @@ void main() async {
     debugPrint('Firebase not initialized: $e');
   }
 
+  // Required for DateFormat with locale (e.g. calendar waiting list, date pickers)
+  await initializeDateFormatting('en');
+
   runApp(const HotelManagementApp());
 }
 
@@ -34,31 +40,191 @@ class HotelManagementApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AuthProvider(
-      child: _WrapHotelWhenLoggedIn(
-        child: MaterialApp(
-          title: 'Hotel Management',
-          debugShowCheckedModeBanner: false,
-          theme: ThemeData(
-            useMaterial3: true,
-            scaffoldBackgroundColor: const Color(0xFFF5F5F7),
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFF007AFF),
-              brightness: Brightness.light,
-            ),
-            cardTheme: const CardThemeData(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.all(Radius.circular(16)),
-              ),
+      child: ThemeProvider(
+        child: _WrapHotelWhenLoggedIn(
+          child: _MaterialAppWithTheme(),
+        ),
+      ),
+    );
+  }
+}
+
+class _MaterialAppWithTheme extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final themeMode = ThemeProvider.of(context).themeMode;
+
+    return MaterialApp(
+      title: 'Hotel Management',
+      debugShowCheckedModeBanner: false,
+      themeMode: themeMode,
+      theme: _buildLightTheme(),
+      darkTheme: _buildDarkTheme(),
+      home: const _AuthGate(),
+    );
+  }
+
+  ThemeData _buildLightTheme() {
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF007AFF),
+      brightness: Brightness.light,
+    );
+
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: colorScheme,
+      scaffoldBackgroundColor: const Color(0xFFF5F5F7),
+      
+      // Cards with frosted glass effect
+      cardTheme: CardThemeData(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        color: Colors.white,
+        shadowColor: Colors.black.withOpacity(0.05),
+      ),
+      
+      // AppBar
+      appBarTheme: AppBarTheme(
+        backgroundColor: const Color(0xFFF5F5F7),
+        foregroundColor: Colors.black,
+        elevation: 0,
+        centerTitle: false,
+        titleTextStyle: const TextStyle(
+          fontSize: 34,
+          fontWeight: FontWeight.bold,
+          color: Colors.black,
+        ),
+      ),
+      
+      // Navigation Bar (Material 3)
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: Colors.white,
+        indicatorColor: colorScheme.primary.withOpacity(0.12),
+        labelTextStyle: MaterialStateProperty.resolveWith((states) {
+          if (states.contains(MaterialState.selected)) {
+            return const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            );
+          }
+          return const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          );
+        }),
+        iconTheme: MaterialStateProperty.resolveWith((states) {
+          if (states.contains(MaterialState.selected)) {
+            return IconThemeData(color: colorScheme.primary);
+          }
+          return IconThemeData(color: Colors.grey.shade600);
+        }),
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        height: 65,
+      ),
+      
+      // Divider
+      dividerTheme: DividerThemeData(
+        color: Colors.grey.shade200,
+        thickness: 1,
+        space: 1,
+      ),
+      
+      // Text theme with proper contrast
+      textTheme: const TextTheme(
+        headlineLarge: TextStyle(
+          fontSize: 34,
+          fontWeight: FontWeight.bold,
+          color: Colors.black,
+        ),
+        bodyLarge: TextStyle(
+          fontSize: 16,
+          color: Colors.black87,
+        ),
+      ),
+    );
+  }
+
+  ThemeData _buildDarkTheme() {
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF0A84FF),
+      brightness: Brightness.dark,
+    );
+
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: colorScheme,
+      scaffoldBackgroundColor: const Color(0xFF000000),
+      
+      // Cards with elevated surface
+      cardTheme: CardThemeData(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        color: const Color(0xFF1C1C1E),
+        shadowColor: Colors.black.withOpacity(0.3),
+      ),
+      
+      // AppBar
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Color(0xFF000000),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: false,
+        titleTextStyle: TextStyle(
+          fontSize: 34,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+      ),
+      
+      // Navigation Bar (Material 3) - elevated surface
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: const Color(0xFF1C1C1E),
+        indicatorColor: colorScheme.primary.withOpacity(0.2),
+        labelTextStyle: MaterialStateProperty.resolveWith((states) {
+          if (states.contains(MaterialState.selected)) {
+            return const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
               color: Colors.white,
-            ),
-            appBarTheme: const AppBarTheme(
-              backgroundColor: Color(0xFFF5F5F7),
-              elevation: 0,
-              centerTitle: false,
-            ),
-          ),
-          home: const _AuthGate(),
+            );
+          }
+          return TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: Colors.grey.shade400,
+          );
+        }),
+        iconTheme: MaterialStateProperty.resolveWith((states) {
+          if (states.contains(MaterialState.selected)) {
+            return IconThemeData(color: colorScheme.primary);
+          }
+          return IconThemeData(color: Colors.grey.shade500);
+        }),
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        height: 65,
+      ),
+      
+      // Divider with better contrast
+      dividerTheme: const DividerThemeData(
+        color: Color(0xFF2C2C2E),
+        thickness: 1,
+        space: 1,
+      ),
+      
+      // Text theme with proper contrast for dark mode
+      textTheme: const TextTheme(
+        headlineLarge: TextStyle(
+          fontSize: 34,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+        bodyLarge: TextStyle(
+          fontSize: 16,
+          color: Color(0xFFE5E5E7),
         ),
       ),
     );
@@ -129,22 +295,26 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   final List<Widget> _pages = const [
     DashboardPage(),
     AddBookingPage(),
+    BookingsListPage(),
     CalendarPage(),
     EmployeesPage(),
-    SchedulePage(),
+    SettingsPage(),
   ];
 
   final List<_NavItem> _navItems = const [
     _NavItem(Icons.dashboard_rounded, 'Dashboard'),
     _NavItem(Icons.add_circle_outline_rounded, 'Add Booking'),
+    _NavItem(Icons.list_alt_rounded, 'Bookings'),
     _NavItem(Icons.calendar_month_rounded, 'Calendar'),
     _NavItem(Icons.people_rounded, 'Employees'),
-    _NavItem(Icons.schedule_rounded, 'Schedule'),
+    _NavItem(Icons.settings_rounded, 'Settings'),
   ];
 
   @override
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width >= 768;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       body: isDesktop
@@ -154,10 +324,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 Container(
                   width: 240,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
+                        color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
                         blurRadius: 10,
                         offset: const Offset(2, 0),
                       ),
@@ -177,7 +347,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                                 width: 40,
                                 height: 40,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF007AFF),
+                                  color: colorScheme.primary,
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: const Icon(
@@ -187,11 +357,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                                 ),
                               ),
                               const SizedBox(height: 12),
-                              const Text(
+                              Text(
                                 'Hotel Management',
                                 style: TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : Colors.black,
                                 ),
                               ),
                             ],
@@ -232,38 +403,29 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             )
           : _pages[_selectedIndex], // Mobile: full screen
       drawer: isDesktop ? null : const Drawer(child: _SignOutDrawer()),
-      // Bottom Navigation Bar (Mobile)
+      // Bottom Navigation Bar (Mobile) - Using Material 3 NavigationBar
       bottomNavigationBar: isDesktop
           ? null
-          : Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, -2),
-                  ),
-                ],
-              ),
-              child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: List.generate(
-                      _navItems.length,
-                      (index) => _buildBottomNavItem(_navItems[index], index),
-                    ),
-                  ),
-                ),
-              ),
+          : NavigationBar(
+              selectedIndex: _selectedIndex,
+              onDestinationSelected: (index) {
+                setState(() => _selectedIndex = index);
+              },
+              destinations: _navItems.map((item) {
+                return NavigationDestination(
+                  icon: Icon(item.icon),
+                  label: item.label,
+                );
+              }).toList(),
             ),
     );
   }
 
   Widget _buildNavItem(_NavItem item, int index) {
     final isSelected = _selectedIndex == index;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return InkWell(
       onTap: () => setState(() => _selectedIndex = index),
       borderRadius: BorderRadius.circular(12),
@@ -272,7 +434,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           color: isSelected
-              ? const Color(0xFF007AFF).withOpacity(0.1)
+              ? colorScheme.primary.withOpacity(isDark ? 0.2 : 0.1)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),
@@ -281,8 +443,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             Icon(
               item.icon,
               color: isSelected
-                  ? const Color(0xFF007AFF)
-                  : Colors.grey.shade600,
+                  ? colorScheme.primary
+                  : (isDark ? Colors.grey.shade400 : Colors.grey.shade600),
               size: 24,
             ),
             const SizedBox(width: 12),
@@ -292,8 +454,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 fontSize: 16,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                 color: isSelected
-                    ? const Color(0xFF007AFF)
-                    : Colors.grey.shade700,
+                    ? colorScheme.primary
+                    : (isDark ? Colors.grey.shade300 : Colors.grey.shade700),
               ),
             ),
           ],
@@ -302,41 +464,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     );
   }
 
-  Widget _buildBottomNavItem(_NavItem item, int index) {
-    final isSelected = _selectedIndex == index;
-    return InkWell(
-      onTap: () => setState(() => _selectedIndex = index),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              item.icon,
-              color: isSelected
-                  ? const Color(0xFF007AFF)
-                  : Colors.grey.shade600,
-              size: 24,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              item.label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                color: isSelected
-                    ? const Color(0xFF007AFF)
-                    : Colors.grey.shade600,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _NavItem {
@@ -350,14 +477,20 @@ class _SignOutTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = AuthScopeData.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
     return ListTile(
-      leading: Icon(Icons.logout_rounded, color: Colors.grey.shade600, size: 24),
+      leading: Icon(
+        Icons.logout_rounded,
+        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+        size: 24,
+      ),
       title: Text(
         'Sign out',
         style: TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w500,
-          color: Colors.grey.shade700,
+          color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
         ),
       ),
       onTap: () async {

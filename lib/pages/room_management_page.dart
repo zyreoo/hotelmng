@@ -67,8 +67,9 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
 
   Future<void> _editRoom(String userId, String hotelId, RoomModel room) async {
     final name = await _showNameDialog(context, name: room.name);
-    if (name == null || name == room.name || room.id == null || !mounted)
+    if (name == null || name == room.name || room.id == null || !mounted) {
       return;
+    }
     try {
       await _firebaseService.updateRoom(userId, hotelId, room.id!, name);
       if (mounted) _loadRooms(userId, hotelId);
@@ -175,7 +176,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
         actions: [
           if (canEdit)
             TextButton(
-              onPressed: () => _addRoom(userId!, hotelId!),
+              onPressed: () => _addRoom(userId, hotelId),
               child: const Text(
                 'Add',
                 style: TextStyle(
@@ -279,12 +280,12 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
                                     color: Colors.transparent,
                                     child: InkWell(
                                       onTap: canEdit
-                                          ? () => _editRoom(userId!, hotelId!, room)
+                                          ? () => _editRoom(userId, hotelId, room)
                                           : null,
                                       onLongPress: canEdit
                                           ? () => _showRoomActions(
-                                                userId!,
-                                                hotelId!,
+                                                userId,
+                                                hotelId,
                                                 room,
                                               )
                                           : null,

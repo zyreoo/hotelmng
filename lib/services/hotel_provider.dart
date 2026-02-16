@@ -6,6 +6,7 @@ import 'auth_provider.dart';
 
 const String _keyCurrentHotelId = 'current_hotel_id';
 const String _keyCurrentUserId = 'current_user_id';
+
 /// Fallback if auth context is missing (should not happen when logged in).
 const String defaultOwnerId = 'default_owner';
 
@@ -16,7 +17,10 @@ class HotelProvider extends StatefulWidget {
 
   static HotelScopeData of(BuildContext context) {
     final data = context.dependOnInheritedWidgetOfExactType<HotelScopeData>();
-    assert(data != null, 'HotelProvider not found. Wrap app with HotelProvider.');
+    assert(
+      data != null,
+      'HotelProvider not found. Wrap app with HotelProvider.',
+    );
     return data!;
   }
 
@@ -84,10 +88,12 @@ class _HotelProviderState extends State<HotelProvider> {
         .doc(uid)
         .collection('hotels')
         .add({
-      'name': name,
-      'ownerId': uid,
-      'createdAt': DateTime.now().toIso8601String(),
-    });
+          'name': name,
+          'ownerId': uid,
+          'createdAt': DateTime.now().toIso8601String(),
+          'currencyCode': 'EUR',
+          'currencySymbol': '€',
+        });
     final doc = await ref.get();
     final hotel = HotelModel.fromFirestore(
       doc.data() as Map<String, dynamic>,

@@ -2,15 +2,24 @@
 class HotelModel {
   final String? id;
   final String name;
+
   /// User account id that created/owns this hotel (e.g. Firebase Auth uid when auth is added).
   final String ownerId;
   final DateTime createdAt;
+  
+  /// Currency code for this hotel (e.g. 'EUR', 'USD', 'RON').
+  final String currencyCode;
+  
+  /// Currency symbol for display (e.g. '€', '$', 'RON').
+  final String currencySymbol;
 
   HotelModel({
     this.id,
     required this.name,
     required this.ownerId,
     DateTime? createdAt,
+    this.currencyCode = 'EUR',
+    this.currencySymbol = '€',
   }) : createdAt = createdAt ?? DateTime.now();
 
   Map<String, dynamic> toFirestore() {
@@ -18,6 +27,8 @@ class HotelModel {
       'name': name,
       'ownerId': ownerId,
       'createdAt': createdAt.toIso8601String(),
+      'currencyCode': currencyCode,
+      'currencySymbol': currencySymbol,
     };
   }
 
@@ -29,6 +40,8 @@ class HotelModel {
       createdAt: data['createdAt'] != null
           ? DateTime.parse(data['createdAt'])
           : DateTime.now(),
+      currencyCode: data['currencyCode']?.toString() ?? 'EUR',
+      currencySymbol: data['currencySymbol']?.toString() ?? '€',
     );
   }
 
@@ -37,12 +50,16 @@ class HotelModel {
     String? name,
     String? ownerId,
     DateTime? createdAt,
+    String? currencyCode,
+    String? currencySymbol,
   }) {
     return HotelModel(
       id: id ?? this.id,
       name: name ?? this.name,
       ownerId: ownerId ?? this.ownerId,
       createdAt: createdAt ?? this.createdAt,
+      currencyCode: currencyCode ?? this.currencyCode,
+      currencySymbol: currencySymbol ?? this.currencySymbol,
     );
   }
 }

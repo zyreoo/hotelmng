@@ -42,6 +42,7 @@ class BookingModel {
     'Cancelled',
     'Paid',
     'Unpaid',
+    'Waiting list',
   ];
 
   static const List<String> paymentMethods = [

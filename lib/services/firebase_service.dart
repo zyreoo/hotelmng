@@ -36,83 +36,75 @@ class FirebaseService {
   CollectionReference<Map<String, dynamic>> _usersRef(
     String userId,
     String hotelId,
-  ) =>
-      firestore
-          .collection('users')
-          .doc(userId)
-          .collection('hotels')
-          .doc(hotelId)
-          .collection('clients');
+  ) => firestore
+      .collection('users')
+      .doc(userId)
+      .collection('hotels')
+      .doc(hotelId)
+      .collection('clients');
   CollectionReference<Map<String, dynamic>> _bookingsRef(
     String userId,
     String hotelId,
-  ) =>
-      firestore
-          .collection('users')
-          .doc(userId)
-          .collection('hotels')
-          .doc(hotelId)
-          .collection('bookings');
+  ) => firestore
+      .collection('users')
+      .doc(userId)
+      .collection('hotels')
+      .doc(hotelId)
+      .collection('bookings');
   CollectionReference<Map<String, dynamic>> _employersRef(
     String userId,
     String hotelId,
-  ) =>
-      firestore
-          .collection('users')
-          .doc(userId)
-          .collection('hotels')
-          .doc(hotelId)
-          .collection('employers');
+  ) => firestore
+      .collection('users')
+      .doc(userId)
+      .collection('hotels')
+      .doc(hotelId)
+      .collection('employers');
   CollectionReference<Map<String, dynamic>> _rolesRef(
     String userId,
     String hotelId,
-  ) =>
-      firestore
-          .collection('users')
-          .doc(userId)
-          .collection('hotels')
-          .doc(hotelId)
-          .collection('roles');
+  ) => firestore
+      .collection('users')
+      .doc(userId)
+      .collection('hotels')
+      .doc(hotelId)
+      .collection('roles');
   CollectionReference<Map<String, dynamic>> _departmentsRef(
     String userId,
     String hotelId,
-  ) =>
-      firestore
-          .collection('users')
-          .doc(userId)
-          .collection('hotels')
-          .doc(hotelId)
-          .collection('departments');
+  ) => firestore
+      .collection('users')
+      .doc(userId)
+      .collection('hotels')
+      .doc(hotelId)
+      .collection('departments');
   CollectionReference<Map<String, dynamic>> _servicesRef(
     String userId,
     String hotelId,
-  ) =>
-      firestore
-          .collection('users')
-          .doc(userId)
-          .collection('hotels')
-          .doc(hotelId)
-          .collection('services');
+  ) => firestore
+      .collection('users')
+      .doc(userId)
+      .collection('hotels')
+      .doc(hotelId)
+      .collection('services');
   CollectionReference<Map<String, dynamic>> _roomsRef(
     String userId,
     String hotelId,
-  ) =>
-      firestore
-          .collection('users')
-          .doc(userId)
-          .collection('hotels')
-          .doc(hotelId)
-          .collection('rooms');
+  ) => firestore
+      .collection('users')
+      .doc(userId)
+      .collection('hotels')
+      .doc(hotelId)
+      .collection('rooms');
   CollectionReference<Map<String, dynamic>> _shiftsRef(
     String userId,
     String hotelId,
-  ) =>
-      firestore
-          .collection('users')
-          .doc(userId)
-          .collection('hotels')
-          .doc(hotelId)
-          .collection('shifts');
+  ) => firestore
+      .collection('users')
+      .doc(userId)
+      .collection('hotels')
+      .doc(hotelId)
+      .collection('shifts');
 
   // ─── Shift operations ────────────────────────────────────────────────────
   Future<String> createShift(
@@ -209,8 +201,7 @@ class FirebaseService {
     final results = snapshot.docs
         .map((doc) => UserModel.fromFirestore(doc.data(), doc.id))
         .where((user) {
-          final nameMatch =
-              user.name.toLowerCase().contains(queryLower);
+          final nameMatch = user.name.toLowerCase().contains(queryLower);
           final phoneMatch = user.phone.contains(queryTrimmed);
           return nameMatch || phoneMatch;
         })
@@ -245,12 +236,11 @@ class FirebaseService {
 
     if (query.docs.isNotEmpty) {
       final doc = query.docs.first;
-      return UserModel.fromFirestore(doc.data()!, doc.id);
+      return UserModel.fromFirestore(doc.data(), doc.id);
     }
     return null;
   }
 
-  // ─── Booking operations ─────────────────────────────────────────────────
   Future<String> createBooking(
     String userId,
     String hotelId,
@@ -261,8 +251,10 @@ class FirebaseService {
         'Firebase is not initialized. Please configure Firebase first.',
       );
     }
-    final docRef =
-        await _bookingsRef(userId, hotelId).add(booking.toFirestore());
+    final docRef = await _bookingsRef(
+      userId,
+      hotelId,
+    ).add(booking.toFirestore());
     return docRef.id;
   }
 
@@ -312,9 +304,10 @@ class FirebaseService {
     BookingModel booking,
   ) async {
     if (!isInitialized || booking.id == null) return;
-    await _bookingsRef(userId, hotelId)
-        .doc(booking.id)
-        .update(booking.toFirestore());
+    await _bookingsRef(
+      userId,
+      hotelId,
+    ).doc(booking.id).update(booking.toFirestore());
   }
 
   Future<void> deleteBooking(
@@ -378,8 +371,10 @@ class FirebaseService {
         'Firebase is not initialized. Please configure Firebase first.',
       );
     }
-    final docRef =
-        await _employersRef(userId, hotelId).add(employer.toFirestore());
+    final docRef = await _employersRef(
+      userId,
+      hotelId,
+    ).add(employer.toFirestore());
     return docRef.id;
   }
 
@@ -444,10 +439,7 @@ class FirebaseService {
   }
 
   // ─── Services (per hotel) ─────────────────────────────────────────────────
-  Stream<List<ServiceModel>> getServicesStream(
-    String userId,
-    String hotelId,
-  ) {
+  Stream<List<ServiceModel>> getServicesStream(String userId, String hotelId) {
     if (!isInitialized) return Stream.value([]);
     return _servicesRef(userId, hotelId).snapshots().map((snapshot) {
       final list = snapshot.docs
@@ -479,8 +471,10 @@ class FirebaseService {
     if (service.name.trim().isEmpty) {
       throw ArgumentError('Service name is required.');
     }
-    final docRef =
-        await _servicesRef(userId, hotelId).add(service.toFirestore());
+    final docRef = await _servicesRef(
+      userId,
+      hotelId,
+    ).add(service.toFirestore());
     return docRef.id;
   }
 
@@ -492,9 +486,10 @@ class FirebaseService {
     if (!isInitialized || service.id == null || service.id!.isEmpty) {
       throw Exception('Cannot update service: missing id.');
     }
-    await _servicesRef(userId, hotelId)
-        .doc(service.id!)
-        .update(service.toFirestore());
+    await _servicesRef(
+      userId,
+      hotelId,
+    ).doc(service.id!).update(service.toFirestore());
   }
 
   Future<void> deleteService(

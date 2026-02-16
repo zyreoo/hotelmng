@@ -1,12 +1,4 @@
-/**
- * Clear all root-level Firestore collections (data only).
- * Run: node scripts/clear_firestore_data.js
- *
- * Requires:
- *   1. Service account key: save as scripts/serviceAccountKey.json
- *      (Firebase Console → Project Settings → Service accounts → Generate new private key)
- *   2. npm install firebase-admin
- */
+
 const admin = require('firebase-admin');
 const path = require('path');
 

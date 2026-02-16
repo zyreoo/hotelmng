@@ -7,6 +7,8 @@ import '../models/service_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
+import '../utils/currency_formatter.dart';
+import '../utils/money_input_formatter.dart';
 import '../widgets/client_search_widget.dart';
 import 'services_page.dart';
 
@@ -93,11 +95,11 @@ class _AddBookingPageState extends State<AddBookingPage> {
       _numberOfGuests = b.numberOfGuests;
       _bookingStatus = b.status;
       _amountPaidController.text = b.amountOfMoneyPaid > 0
-          ? b.amountOfMoneyPaid.toString()
+          ? CurrencyFormatter.formatStoredAmountForInput(b.amountOfMoneyPaid)
           : '';
       _pricePerNightController.text =
           b.pricePerNight != null && b.pricePerNight! > 0
-              ? b.pricePerNight.toString()
+              ? CurrencyFormatter.formatStoredAmountForInput(b.pricePerNight!)
               : '';
       _paymentMethod = b.paymentMethod.isNotEmpty
           ? b.paymentMethod
@@ -106,7 +108,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
       _advancePercentController.text =
           b.advancePercent != null ? b.advancePercent.toString() : '';
       _advanceAmountPaidController.text =
-          b.advanceAmountPaid > 0 ? b.advanceAmountPaid.toString() : '';
+          b.advanceAmountPaid > 0
+              ? CurrencyFormatter.formatStoredAmountForInput(b.advanceAmountPaid)
+              : '';
       _advancePaymentMethod = (b.advancePaymentMethod != null &&
               b.advancePaymentMethod!.isNotEmpty)
           ? b.advancePaymentMethod!
@@ -212,7 +216,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
     final end = checkOut.add(const Duration(days: 60));
     final all = await _firebaseService.getBookings(userId, hotelId, startDate: start, endDate: end);
     final overlapping = all.where((b) {
-      if (b.status == 'Cancelled') return false;
+      if (b.status == 'Cancelled' || b.status == 'Waiting list') return false;
       if (widget.existingBooking != null && b.id == widget.existingBooking!.id) return false;
       final bStart = DateTime(b.checkIn.year, b.checkIn.month, b.checkIn.day);
       final bEnd = DateTime(b.checkOut.year, b.checkOut.month, b.checkOut.day);
@@ -264,11 +268,55 @@ class _AddBookingPageState extends State<AddBookingPage> {
     return available.take(n).toList();
   }
 
+  /// Returns true if the currently selected specific rooms are free for every night in [checkIn, checkOut).
+  /// Excludes Cancelled and Waiting list from occupancy; excludes current booking when editing.
+  Future<bool> _areSelectedRoomsAvailable(String userId, String hotelId) async {
+    if (_checkInDate == null || _checkOutDate == null || _roomNames.isEmpty) return false;
+    final roomsToCheck = _selectedRooms.where((r) => r.isNotEmpty).toList();
+    if (roomsToCheck.isEmpty) return false;
+    final checkIn = DateTime(_checkInDate!.year, _checkInDate!.month, _checkInDate!.day);
+    final checkOut = DateTime(_checkOutDate!.year, _checkOutDate!.month, _checkOutDate!.day);
+    if (!checkOut.isAfter(checkIn)) return false;
+
+    final start = checkIn.subtract(const Duration(days: 60));
+    final end = checkOut.add(const Duration(days: 60));
+    final all = await _firebaseService.getBookings(userId, hotelId, startDate: start, endDate: end);
+    final overlapping = all.where((b) {
+      if (b.status == 'Cancelled' || b.status == 'Waiting list') return false;
+      if (widget.existingBooking != null && b.id == widget.existingBooking!.id) return false;
+      final bStart = DateTime(b.checkIn.year, b.checkIn.month, b.checkIn.day);
+      final bEnd = DateTime(b.checkOut.year, b.checkOut.month, b.checkOut.day);
+      return bStart.isBefore(checkOut) && bEnd.isAfter(checkIn);
+    }).toList();
+
+    final occupiedByNight = <DateTime, Set<String>>{};
+    for (var d = checkIn; d.isBefore(checkOut); d = d.add(const Duration(days: 1))) {
+      occupiedByNight[d] = {};
+      for (final b in overlapping) {
+        if (b.selectedRooms == null || b.selectedRooms!.isEmpty) continue;
+        final bStart = DateTime(b.checkIn.year, b.checkIn.month, b.checkIn.day);
+        final bEnd = DateTime(b.checkOut.year, b.checkOut.month, b.checkOut.day);
+        if (!d.isBefore(bStart) && d.isBefore(bEnd)) {
+          for (final r in b.selectedRooms!) {
+            occupiedByNight[d]!.add(r);
+          }
+        }
+      }
+    }
+
+    for (final room in roomsToCheck) {
+      for (var d = checkIn; d.isBefore(checkOut); d = d.add(const Duration(days: 1))) {
+        if (occupiedByNight[d]!.contains(room)) return false;
+      }
+    }
+    return true;
+  }
+
   int get _servicesSubtotal =>
       _selectedServices.fold(0, (sum, s) => sum + s.lineTotal);
 
   int get _pricePerNight =>
-      int.tryParse(_pricePerNightController.text.trim()) ?? 0;
+      CurrencyFormatter.parseMoneyStringToCents(_pricePerNightController.text.trim());
 
   int get _roomSubtotal =>
       _numberOfNights * _numberOfRooms * _pricePerNight;
@@ -281,7 +329,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
           : 0;
 
   int get _advanceAmountPaid =>
-      int.tryParse(_advanceAmountPaidController.text.trim()) ?? 0;
+      CurrencyFormatter.parseMoneyStringToCents(_advanceAmountPaidController.text.trim());
 
   /// Derived status for display (paid/waiting/not_required). Stored status is _advanceStatus (not_required/pending/received).
   String get _advanceDisplayStatus {
@@ -294,10 +342,13 @@ class _AddBookingPageState extends State<AddBookingPage> {
   int get _remainingBalance =>
       (_suggestedTotal - _advanceAmountPaid).clamp(0, _suggestedTotal);
 
+  int get _maxRooms => _roomNames.isEmpty ? 1 : _roomNames.length;
+
   Future<int?> _showNumberInputDialog({
     required String title,
     required int initialValue,
     required int minValue,
+    int? maxValue,
   }) async {
     final controller = TextEditingController(text: initialValue.toString());
     final formKey = GlobalKey<FormState>();
@@ -323,6 +374,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
               if (v == null) return 'Enter a valid number';
               if (v < minValue) {
                 return 'Must be at least $minValue';
+              }
+              if (maxValue != null && v > maxValue) {
+                return 'Maximum is $maxValue';
               }
               return null;
             },
@@ -353,7 +407,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
   }
 
   void _updateNumberOfRooms(int newCount) {
-    if (newCount < 1) newCount = 1;
+    newCount = newCount.clamp(1, _maxRooms);
     setState(() {
       if (newCount < _numberOfRooms) {
         _numberOfRooms = newCount;
@@ -377,8 +431,8 @@ class _AddBookingPageState extends State<AddBookingPage> {
     if (_advanceStatus == 'pending') return;
     final suggested = _suggestedTotal;
     if (suggested > 0 &&
-        (int.tryParse(_amountPaidController.text.trim()) ?? 0) == 0) {
-      _amountPaidController.text = suggested.toString();
+        CurrencyFormatter.parseMoneyStringToCents(_amountPaidController.text.trim()) == 0) {
+      _amountPaidController.text = CurrencyFormatter.formatCentsForInput(suggested);
     }
   }
 
@@ -612,19 +666,28 @@ class _AddBookingPageState extends State<AddBookingPage> {
           }
         }
 
-        // Step 2: Resolve room assignment (specific rooms or auto-assign where there is space)
+        // Step 2: Resolve room assignment or detect over capacity (then save as Waiting list)
+        // When "next to each other" is checked, always use the first available contiguous block; if none, waiting list.
         List<String>? selectedRoomNumbers;
-        if (_wantsSpecificRoom) {
-          selectedRoomNumbers = _selectedRooms.where((room) => room.isNotEmpty).toList();
-        } else {
+        bool overCapacity = false;
+        if (_roomsNextToEachOther && _numberOfRooms >= 2) {
+          // Next to each other: assign first contiguous block only; no contiguous block → waiting list
           final assigned = await _findAvailableRooms(authUserId, hotelId);
           if (assigned == null || assigned.length != _numberOfRooms) {
+            overCapacity = true;
+            selectedRoomNumbers = null;
+          } else {
+            selectedRoomNumbers = assigned;
+          }
+        } else if (_wantsSpecificRoom) {
+          final rooms = _selectedRooms.where((room) => room.isNotEmpty).toList();
+          if (rooms.length != _numberOfRooms) {
             if (mounted) {
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
+                SnackBar(
                   content: Text(
-                    'Not enough rooms available for this period. Try different dates or fewer rooms, or select specific rooms.',
+                    'Please select all $_numberOfRooms ${_numberOfRooms == 1 ? 'room' : 'rooms'}',
                   ),
                   behavior: SnackBarBehavior.floating,
                 ),
@@ -632,12 +695,26 @@ class _AddBookingPageState extends State<AddBookingPage> {
             }
             return;
           }
-          selectedRoomNumbers = assigned;
+          final available = await _areSelectedRoomsAvailable(authUserId, hotelId);
+          if (!available) {
+            overCapacity = true;
+            selectedRoomNumbers = rooms;
+          } else {
+            selectedRoomNumbers = rooms;
+          }
+        } else {
+          final assigned = await _findAvailableRooms(authUserId, hotelId);
+          if (assigned == null || assigned.length != _numberOfRooms) {
+            overCapacity = true;
+            selectedRoomNumbers = null;
+          } else {
+            selectedRoomNumbers = assigned;
+          }
         }
 
-        // Step 3: Build booking with user information
-
-        final amountPaid = int.tryParse(_amountPaidController.text.trim()) ?? 0;
+        // Step 3: Build booking with user information (use 'Waiting list' when over capacity)
+        final statusToSave = overCapacity ? 'Waiting list' : _bookingStatus;
+        final amountPaid = CurrencyFormatter.parseMoneyStringToCents(_amountPaidController.text.trim());
         final booking = BookingModel(
           id: widget.existingBooking?.id,
           userId: userId,
@@ -650,7 +727,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
           nextToEachOther: _numberOfRooms >= 2 ? _roomsNextToEachOther : false,
           selectedRooms: selectedRoomNumbers,
           numberOfGuests: _numberOfGuests,
-          status: _bookingStatus,
+          status: statusToSave,
           notes: _notesController.text.isEmpty ? null : _notesController.text,
           createdAt: widget.existingBooking?.createdAt,
           amountOfMoneyPaid: amountPaid,
@@ -665,7 +742,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
             return p != null && p > 0 ? p : null;
           }(),
           advanceAmountPaid:
-              int.tryParse(_advanceAmountPaidController.text.trim()) ?? 0,
+              CurrencyFormatter.parseMoneyStringToCents(_advanceAmountPaidController.text.trim()),
           advancePaymentMethod: _advancePaymentMethod,
           advanceStatus: _advanceStatus,
         );
@@ -680,22 +757,34 @@ class _AddBookingPageState extends State<AddBookingPage> {
         // Close loading dialog
         if (mounted) Navigator.pop(context);
 
-        // Show success (include assigned rooms when auto-assigned)
+        // Show success (or waiting-list message when over capacity)
         if (mounted) {
-          final roomInfo = selectedRoomNumbers.isNotEmpty
-              ? ' (${selectedRoomNumbers.join(', ')})'
-              : '';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                widget.existingBooking != null
-                    ? 'Booking updated for ${userToUse.name}'
-                    : 'Booking created for ${userToUse.name}$roomInfo',
+          if (overCapacity) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'No capacity for these dates — added to waiting list. You can move it to confirmed when a room becomes available.',
+                ),
+                behavior: SnackBarBehavior.floating,
+                backgroundColor: Color(0xFFAF52DE),
               ),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: const Color(0xFF34C759),
-            ),
-          );
+            );
+          } else {
+            final roomInfo = selectedRoomNumbers != null && selectedRoomNumbers.isNotEmpty
+                ? ' (${selectedRoomNumbers.join(', ')})'
+                : '';
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  widget.existingBooking != null
+                      ? 'Booking updated for ${userToUse.name}'
+                      : 'Booking created for ${userToUse.name}$roomInfo',
+                ),
+                behavior: SnackBarBehavior.floating,
+                backgroundColor: const Color(0xFF34C759),
+              ),
+            );
+          }
         }
 
         // Navigate back only if there's a previous route
@@ -723,9 +812,10 @@ class _AddBookingPageState extends State<AddBookingPage> {
   @override
   Widget build(BuildContext context) {
     final horizontalPadding = MediaQuery.of(context).size.width >= 768 ? 24.0 : 16.0;
+    final hotel = HotelProvider.of(context).currentHotel;
+    final currencyFormatter = CurrencyFormatter.fromHotel(hotel);
     
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
       body: SafeArea(
         child: Form(
           key: _formKey,
@@ -1065,6 +1155,129 @@ class _AddBookingPageState extends State<AddBookingPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              // Check-in Date
+                              GestureDetector(
+                                onTap: _selectCheckInDate,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade50,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.grey.shade300,
+                                    ),
+                                  ),
+                                  padding: const EdgeInsets.all(16),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.calendar_today_rounded,
+                                        color: Colors.grey.shade600,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Check-in Date',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              _checkInDate != null
+                                                  ? DateFormat(
+                                                      'MMM d, yyyy',
+                                                    ).format(_checkInDate!)
+                                                  : 'Select date',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                color: _checkInDate != null
+                                                    ? Colors.black87
+                                                    : Colors.grey.shade600,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.chevron_right_rounded,
+                                        color: Colors.grey.shade400,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+
+                              // Check-out Date
+                              GestureDetector(
+                                onTap: _selectCheckOutDate,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade50,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.grey.shade300,
+                                    ),
+                                  ),
+                                  padding: const EdgeInsets.all(16),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.event_rounded,
+                                        color: Colors.grey.shade600,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Check-out Date',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              _checkOutDate != null
+                                                  ? DateFormat(
+                                                      'MMM d, yyyy',
+                                                    ).format(_checkOutDate!)
+                                                  : 'Select date',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                color: _checkOutDate != null
+                                                    ? Colors.black87
+                                                    : Colors.grey.shade600,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.chevron_right_rounded,
+                                        color: Colors.grey.shade400,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+
+                              const Divider(),
+                              const SizedBox(height: 16),
+
                               // Number of Rooms (always visible)
                               Row(
                                 children: [
@@ -1112,6 +1325,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                             title: 'Number of rooms',
                                             initialValue: _numberOfRooms,
                                             minValue: 1,
+                                            maxValue: _maxRooms,
                                           );
                                           if (value != null) {
                                             _updateNumberOfRooms(value);
@@ -1255,7 +1469,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               : 0,
                                         ),
                                         child: DropdownButtonFormField<String>(
-                                          value:
+                                          initialValue:
                                               index < _selectedRooms.length &&
                                                   _selectedRooms[index]
                                                       .isNotEmpty
@@ -1343,126 +1557,6 @@ class _AddBookingPageState extends State<AddBookingPage> {
                               const Divider(),
                               const SizedBox(height: 16),
 
-                              // Check-in Date
-                              GestureDetector(
-                                onTap: _selectCheckInDate,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade50,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: Colors.grey.shade300,
-                                    ),
-                                  ),
-                                  padding: const EdgeInsets.all(16),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.calendar_today_rounded,
-                                        color: Colors.grey.shade600,
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              'Check-in Date',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey.shade600,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              _checkInDate != null
-                                                  ? DateFormat(
-                                                      'MMM d, yyyy',
-                                                    ).format(_checkInDate!)
-                                                  : 'Select date',
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                color: _checkInDate != null
-                                                    ? Colors.black87
-                                                    : Colors.grey.shade600,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Icon(
-                                        Icons.chevron_right_rounded,
-                                        color: Colors.grey.shade400,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-
-                              // Check-out Date
-                              GestureDetector(
-                                onTap: _selectCheckOutDate,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade50,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: Colors.grey.shade300,
-                                    ),
-                                  ),
-                                  padding: const EdgeInsets.all(16),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.event_rounded,
-                                        color: Colors.grey.shade600,
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              'Check-out Date',
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey.shade600,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              _checkOutDate != null
-                                                  ? DateFormat(
-                                                      'MMM d, yyyy',
-                                                    ).format(_checkOutDate!)
-                                                  : 'Select date',
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                color: _checkOutDate != null
-                                                    ? Colors.black87
-                                                    : Colors.grey.shade600,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Icon(
-                                        Icons.chevron_right_rounded,
-                                        color: Colors.grey.shade400,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-
                               // Number of Nights (calculated)
                               if (_numberOfNights > 0)
                                 Container(
@@ -1492,47 +1586,6 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   ),
                                 ),
                               const SizedBox(height: 16),
-
-                              // Booking Status
-                              DropdownButtonFormField<String>(
-                                value: _bookingStatus,
-                                decoration: InputDecoration(
-                                  labelText: 'Status',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  filled: true,
-                                  fillColor: Colors.grey.shade50,
-                                  prefixIcon: const Icon(Icons.info_rounded),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 16,
-                                  ),
-                                ),
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.black87,
-                                ),
-                                dropdownColor: Colors.white,
-                                items: BookingModel.statusOptions
-                                    .map((status) {
-                                  return DropdownMenuItem(
-                                    value: status,
-                                    child: Text(
-                                      status,
-                                      style: const TextStyle(
-                                        color: Colors.black87,
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _bookingStatus = value!;
-                                  });
-                                },
-                              ),
                             ],
                           ),
                         ),
@@ -1566,7 +1619,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                               TextFormField(
                                 controller: _pricePerNightController,
                                 decoration: InputDecoration(
-                                  hintText: 'e.g. 100',
+                                  hintText: 'e.g. 100.00 or 100,50',
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
@@ -1578,13 +1631,22 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     vertical: 14,
                                   ),
                                 ),
-                                keyboardType: TextInputType.number,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 inputFormatters: [
-                                  FilteringTextInputFormatter.digitsOnly,
+                                  MoneyInputFormatter(),
                                 ],
                                 onChanged: (_) {
                                   setState(() {});
                                   _updateAmountFromSuggested();
+                                },
+                                onEditingComplete: () {
+                                  final cents = CurrencyFormatter.parseMoneyStringToCents(
+                                      _pricePerNightController.text.trim());
+                                  if (cents > 0) {
+                                    _pricePerNightController.text =
+                                        CurrencyFormatter.formatCentsForInput(cents);
+                                  }
+                                  setState(() {});
                                 },
                               ),
                               if (_numberOfNights > 0 && _pricePerNight > 0) ...[
@@ -1599,7 +1661,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
-                                        '$_numberOfNights night${_numberOfNights == 1 ? '' : 's'} × $_numberOfRooms room${_numberOfRooms == 1 ? '' : 's'} × $_pricePerNight = $_roomSubtotal',
+                                        '$_numberOfNights night${_numberOfNights == 1 ? '' : 's'} × $_numberOfRooms room${_numberOfRooms == 1 ? '' : 's'} × ${currencyFormatter.formatCompact(_pricePerNight)}',
                                         style: TextStyle(
                                           fontSize: 14,
                                           color: Colors.grey.shade700,
@@ -1607,7 +1669,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       ),
                                     ),
                                     Text(
-                                      '$_roomSubtotal',
+                                      currencyFormatter.formatCompact(_roomSubtotal),
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w600,
                                         color: Color(0xFF007AFF),
@@ -1687,7 +1749,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                                 ),
                                               ),
                                               Text(
-                                                '${service.price} per unit',
+                                                '${currencyFormatter.formatCompact(service.price)} per unit',
                                                 style: TextStyle(
                                                   fontSize: 12,
                                                   color: Colors.grey.shade600,
@@ -1792,7 +1854,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       ),
                                     ),
                                     Text(
-                                      '$_servicesSubtotal',
+                                      currencyFormatter.formatCompact(_servicesSubtotal),
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w600,
                                         fontSize: 15,
@@ -1819,7 +1881,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     ),
                                   ),
                                   Text(
-                                    '$_suggestedTotal',
+                                    currencyFormatter.formatCompact(_suggestedTotal),
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 17,
@@ -1880,6 +1942,12 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               _advanceStatus == 'not_required') {
                                             _advanceStatus = 'pending';
                                           }
+                                          if (p > 0 && _suggestedTotal > 0) {
+                                            final amount = (_suggestedTotal * p / 100).round();
+                                            _advanceAmountPaidController.text = CurrencyFormatter.formatCentsForInput(amount);
+                                          } else {
+                                            _advanceAmountPaidController.text = '';
+                                          }
                                         });
                                       },
                                     ),
@@ -1892,7 +1960,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                           _advanceAmountPaidController,
                                       decoration: InputDecoration(
                                         labelText: 'Advance paid',
-                                        hintText: '0',
+                                        hintText: 'e.g. 0 or 20.00',
                                         border: OutlineInputBorder(
                                           borderRadius:
                                               BorderRadius.circular(12),
@@ -1908,29 +1976,29 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                           vertical: 14,
                                         ),
                                       ),
-                                      keyboardType: TextInputType.number,
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                       inputFormatters: [
-                                        FilteringTextInputFormatter.digitsOnly,
+                                        MoneyInputFormatter(),
                                       ],
                                       onChanged: (_) {
                                         setState(() {
-                                          // From advance paid, calculate and update the %
-                                          final paid = int.tryParse(
-                                                  _advanceAmountPaidController
-                                                      .text
-                                                      .trim()) ??
-                                              0;
-                                          if (_suggestedTotal > 0 &&
-                                              paid >= 0) {
-                                            final p = (paid * 100 /
-                                                    _suggestedTotal)
-                                                .round();
-                                            _advancePercent =
-                                                p > 0 ? p : null;
-                                            _advancePercentController.text =
-                                                p > 0 ? p.toString() : '';
+                                          final paid = CurrencyFormatter.parseMoneyStringToCents(
+                                              _advanceAmountPaidController.text.trim());
+                                          if (_suggestedTotal > 0 && paid >= 0) {
+                                            final p = (paid * 100 / _suggestedTotal).round();
+                                            _advancePercent = p > 0 ? p : null;
+                                            _advancePercentController.text = p > 0 ? p.toString() : '';
                                           }
                                         });
+                                      },
+                                      onEditingComplete: () {
+                                        final cents = CurrencyFormatter.parseMoneyStringToCents(
+                                            _advanceAmountPaidController.text.trim());
+                                        if (cents > 0) {
+                                          _advanceAmountPaidController.text =
+                                              CurrencyFormatter.formatCentsForInput(cents);
+                                        }
+                                        setState(() {});
                                       },
                                     ),
                                   ),
@@ -1941,7 +2009,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   _suggestedTotal > 0) ...[
                                 const SizedBox(height: 8),
                                 Text(
-                                  'Required: $_advanceAmountRequired ($_advancePercent% of total $_suggestedTotal)',
+                                  'Required: ${currencyFormatter.formatCompact(_advanceAmountRequired)} ($_advancePercent% of total ${currencyFormatter.formatCompact(_suggestedTotal)})',
                                   style: TextStyle(
                                     fontSize: 13,
                                     color: Colors.grey.shade700,
@@ -1950,7 +2018,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                               ],
                               const SizedBox(height: 12),
                               DropdownButtonFormField<String>(
-                                value: BookingModel.paymentMethods
+                                initialValue: BookingModel.paymentMethods
                                         .contains(_advancePaymentMethod)
                                     ? _advancePaymentMethod
                                     : BookingModel.paymentMethods.first,
@@ -2026,7 +2094,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         color: Colors.grey.shade700),
                                     const SizedBox(width: 8),
                                     Text(
-                                      'They owe you: $_remainingBalance',
+                                      'They owe you: ${currencyFormatter.formatCompact(_remainingBalance)}',
                                       style: TextStyle(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w600,
@@ -2036,7 +2104,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       ),
                                     ),
                                     Text(
-                                      ' (total $_suggestedTotal − advance $_advanceAmountPaid)',
+                                      ' (total ${currencyFormatter.formatCompact(_suggestedTotal)} − advance ${currencyFormatter.formatCompact(_advanceAmountPaid)})',
                                       style: TextStyle(
                                         fontSize: 13,
                                         color: Colors.grey.shade600,
@@ -2052,7 +2120,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         color: const Color(0xFF34C759)),
                                     const SizedBox(width: 8),
                                     Text(
-                                      'Advance paid ($_advanceAmountPaid) — $_advancePaymentMethod',
+                                      'Advance paid (${currencyFormatter.formatCompact(_advanceAmountPaid)}) — $_advancePaymentMethod',
                                       style: TextStyle(
                                         fontSize: 14,
                                         color: Colors.grey.shade800,
@@ -2086,21 +2154,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   if (_advanceStatus == 'received') {
                                     return const SizedBox.shrink();
                                   }
-                                  return Row(
-                                    children: [
-                                      Icon(Icons.schedule_rounded,
-                                          size: 18,
-                                          color: const Color(0xFFFF9500)),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'Waiting for advance: $_advanceAmountPaid / $_advanceAmountRequired ($_advancePercent%)',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey.shade800,
-                                        ),
-                                      ),
-                                    ],
-                                  );
+                                  return const SizedBox.shrink();
                                 },
                               ),
                               const SizedBox(height: 16),
@@ -2109,7 +2163,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 controller: _amountPaidController,
                                 decoration: InputDecoration(
                                   labelText: 'Amount paid (total)',
-                                  hintText: '0 or same as suggested total',
+                                  hintText: 'e.g. 20.00 or 150,50',
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
@@ -2122,15 +2176,24 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   ),
                                 ),
                                 style: const TextStyle(fontSize: 16),
-                                keyboardType: TextInputType.number,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 inputFormatters: [
-                                  FilteringTextInputFormatter.digitsOnly,
+                                  MoneyInputFormatter(),
                                 ],
+                                onEditingComplete: () {
+                                  final cents = CurrencyFormatter.parseMoneyStringToCents(
+                                      _amountPaidController.text.trim());
+                                  if (cents > 0) {
+                                    _amountPaidController.text =
+                                        CurrencyFormatter.formatCentsForInput(cents);
+                                  }
+                                  setState(() {});
+                                },
                               ),
                               const SizedBox(height: 16),
                               // Payment method
                               DropdownButtonFormField<String>(
-                                value: BookingModel.paymentMethods
+                                initialValue: BookingModel.paymentMethods
                                         .contains(_paymentMethod)
                                     ? _paymentMethod
                                     : BookingModel.paymentMethods.first,
@@ -2174,6 +2237,53 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 },
                               ),
                             ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Booking Status (above notes)
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: DropdownButtonFormField<String>(
+                            initialValue: _bookingStatus,
+                            decoration: InputDecoration(
+                              labelText: 'Status',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              filled: true,
+                              fillColor: Colors.grey.shade50,
+                              prefixIcon: const Icon(Icons.info_rounded),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 16,
+                              ),
+                            ),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.black87,
+                            ),
+                            dropdownColor: Colors.white,
+                            items: BookingModel.statusOptions
+                                .map((status) {
+                              return DropdownMenuItem(
+                                value: status,
+                                child: Text(
+                                  status,
+                                  style: const TextStyle(
+                                    color: Colors.black87,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                _bookingStatus = value!;
+                              });
+                            },
                           ),
                         ),
                       ),

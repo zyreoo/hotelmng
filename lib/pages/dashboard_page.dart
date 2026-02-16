@@ -5,6 +5,8 @@ import '../models/booking_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
+import '../utils/currency_formatter.dart';
+import 'add_booking_page.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -68,7 +70,11 @@ class _DashboardPageState extends State<DashboardPage> {
   bool _bookingOverlapsDate(BookingModel b, DateTime date) {
     final d = DateTime(date.year, date.month, date.day);
     final checkIn = DateTime(b.checkIn.year, b.checkIn.month, b.checkIn.day);
-    final checkOut = DateTime(b.checkOut.year, b.checkOut.month, b.checkOut.day);
+    final checkOut = DateTime(
+      b.checkOut.year,
+      b.checkOut.month,
+      b.checkOut.day,
+    );
     return !d.isBefore(checkIn) && d.isBefore(checkOut);
   }
 
@@ -92,16 +98,40 @@ class _DashboardPageState extends State<DashboardPage> {
     }).length;
   }
 
-  /// Revenue: sum of amountOfMoneyPaid (assumed in cents).
+  /// Bookings checking in today.
+  List<BookingModel> get _checkInsTodayList {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return _activeBookings.where((b) {
+      final ci = DateTime(b.checkIn.year, b.checkIn.month, b.checkIn.day);
+      return ci == today;
+    }).toList();
+  }
+
+  /// Bookings with advance payment pending (future check-in, advance required but not received).
+  List<BookingModel> get _advancesPendingList {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return _activeBookings.where((b) {
+      final ci = DateTime(b.checkIn.year, b.checkIn.month, b.checkIn.day);
+      final isFuture = !ci.isBefore(today);
+      final hasAdvanceRequired = b.advancePercent != null && b.advancePercent! > 0;
+      final notReceived = b.advancePaymentStatus != 'paid';
+      return isFuture && hasAdvanceRequired && notReceived;
+    }).toList();
+  }
+
+  /// Total revenue: sum of "amount paid" for all non-cancelled bookings (in loaded range).
   int get _revenueTotal =>
       _activeBookings.fold<int>(0, (sum, b) => sum + b.amountOfMoneyPaid);
 
-  /// Revenue this month.
+  /// Revenue this month: sum of "amount paid" for bookings whose check-in is in the current month.
   int get _revenueThisMonth {
     final now = DateTime.now();
     return _activeBookings
-        .where((b) =>
-            b.checkIn.year == now.year && b.checkIn.month == now.month)
+        .where(
+          (b) => b.checkIn.year == now.year && b.checkIn.month == now.month,
+        )
         .fold<int>(0, (sum, b) => sum + b.amountOfMoneyPaid);
   }
 
@@ -122,17 +152,10 @@ class _DashboardPageState extends State<DashboardPage> {
     return m > 0 ? m : 10;
   }
 
-  static String _formatCurrency(int cents) {
-    if (cents >= 100000) {
-      return '\$${(cents / 1000).round() / 100}k';
-    }
-    return '\$${NumberFormat('#,##0').format(cents ~/ 100)}';
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
@@ -152,8 +175,10 @@ class _DashboardPageState extends State<DashboardPage> {
                     Text(
                       'Overview of your hotel',
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: Colors.grey.shade600,
-                          ),
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? Colors.grey.shade400
+                            : Colors.grey.shade600,
+                      ),
                     ),
                   ],
                 ),
@@ -171,309 +196,340 @@ class _DashboardPageState extends State<DashboardPage> {
                       ),
                     )
                   : _error != null
-                      ? SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Text(
-                              _error!,
-                              style: const TextStyle(color: Color(0xFFFF3B30)),
-                            ),
-                          ),
-                        )
-                      : SliverToBoxAdapter(
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              final isMobile = constraints.maxWidth < 600;
-                              final weekDays = _weeklyOccupancyRoomNights;
-                              final maxY = _weeklyMaxRoomNights.toDouble();
+                  ? SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          _error!,
+                          style: const TextStyle(color: Color(0xFFFF3B30)),
+                        ),
+                      ),
+                    )
+                  : SliverToBoxAdapter(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final isMobile = constraints.maxWidth < 600;
+                          final weekDays = _weeklyOccupancyRoomNights;
+                          final maxY = _weeklyMaxRoomNights.toDouble();
+                          final hotel = HotelProvider.of(context).currentHotel;
+                          final currencyFormatter = CurrencyFormatter.fromHotel(hotel);
 
-                              return Column(
-                                children: [
-                                  // Stats Cards Grid
-                                  if (isMobile) ...[
-                                    _StatCard(
-                                      title: 'Occupied today',
-                                      value: '$_occupiedToday',
-                                      icon: Icons.bed_rounded,
-                                      color: const Color(0xFF34C759),
-                                      trend: 'rooms',
-                                    ),
-                                    const SizedBox(height: 12),
-                                    _StatCard(
-                                      title: 'Check-ins today',
-                                      value: '$_checkInsToday',
-                                      icon: Icons.login_rounded,
-                                      color: const Color(0xFFFF9500),
-                                      trend: 'bookings',
-                                    ),
-                                    const SizedBox(height: 12),
-                                    _StatCard(
-                                      title: 'Revenue (month)',
-                                      value: _formatCurrency(_revenueThisMonth),
-                                      icon: Icons.attach_money_rounded,
-                                      color: const Color(0xFF5856D6),
-                                      trend: 'this month',
-                                    ),
-                                    const SizedBox(height: 12),
-                                    _StatCard(
-                                      title: 'Total revenue',
-                                      value: _formatCurrency(_revenueTotal),
-                                      icon: Icons.account_balance_wallet_rounded,
-                                      color: const Color(0xFF007AFF),
-                                      trend: 'all time',
-                                    ),
-                                  ] else ...[
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: _StatCard(
-                                            title: 'Occupied today',
-                                            value: '$_occupiedToday',
-                                            icon: Icons.bed_rounded,
-                                            color: const Color(0xFF34C759),
-                                            trend: 'rooms',
-                                          ),
+                          return Column(
+                            children: [
+                              // Reminders Section
+                              if (_checkInsTodayList.isNotEmpty || _advancesPendingList.isNotEmpty) ...[
+                                _RemindersCard(
+                                  checkInsToday: _checkInsTodayList,
+                                  advancesPending: _advancesPendingList,
+                                  currencyFormatter: currencyFormatter,
+                                  onBookingTap: (booking) {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => AddBookingPage(
+                                          existingBooking: booking,
                                         ),
-                                        const SizedBox(width: 16),
-                                        Expanded(
-                                          child: _StatCard(
-                                            title: 'Check-ins today',
-                                            value: '$_checkInsToday',
-                                            icon: Icons.login_rounded,
-                                            color: const Color(0xFFFF9500),
-                                            trend: 'bookings',
-                                          ),
-                                        ),
-                                      ],
+                                      ),
+                                    ).then((_) {
+                                      // Reload after editing
+                                      final hotelId = HotelProvider.of(context).hotelId;
+                                      final userId = AuthScopeData.of(context).uid;
+                                      if (hotelId != null && userId != null) {
+                                        _loadBookings(userId, hotelId);
+                                      }
+                                    });
+                                  },
+                                ),
+                                const SizedBox(height: 24),
+                              ],
+
+                              // Stats Cards Grid
+                              if (isMobile) ...[
+                                _StatCard(
+                                  title: 'Occupied today',
+                                  value: '$_occupiedToday',
+                                  icon: Icons.bed_rounded,
+                                  color: const Color(0xFF34C759),
+                                  trend: 'rooms',
+                                ),
+                                const SizedBox(height: 12),
+                                _StatCard(
+                                  title: 'Check-ins today',
+                                  value: '$_checkInsToday',
+                                  icon: Icons.login_rounded,
+                                  color: const Color(0xFFFF9500),
+                                  trend: 'bookings',
+                                ),
+                                const SizedBox(height: 12),
+                                _StatCard(
+                                  title: 'Revenue this month',
+                                  value: currencyFormatter.formatCompact(_revenueThisMonth),
+                                  icon: Icons.attach_money_rounded,
+                                  color: const Color(0xFF5856D6),
+                                  trend:
+                                      'sum of amount paid (check-in this month)',
+                                ),
+                                const SizedBox(height: 12),
+                                _StatCard(
+                                  title: 'Total revenue',
+                                  value: currencyFormatter.formatCompact(_revenueTotal),
+                                  icon: Icons.account_balance_wallet_rounded,
+                                  color: const Color(0xFF007AFF),
+                                  trend: 'sum of amount paid (all bookings)',
+                                ),
+                              ] else ...[
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _StatCard(
+                                        title: 'Occupied today',
+                                        value: '$_occupiedToday',
+                                        icon: Icons.bed_rounded,
+                                        color: const Color(0xFF34C759),
+                                        trend: 'rooms',
+                                      ),
                                     ),
-                                    const SizedBox(height: 16),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: _StatCard(
-                                            title: 'Revenue (month)',
-                                            value:
-                                                _formatCurrency(_revenueThisMonth),
-                                            icon: Icons.attach_money_rounded,
-                                            color: const Color(0xFF5856D6),
-                                            trend: 'this month',
-                                          ),
-                                        ),
-                                        const SizedBox(width: 16),
-                                        Expanded(
-                                          child: _StatCard(
-                                            title: 'Total revenue',
-                                            value: _formatCurrency(_revenueTotal),
-                                            icon: Icons
-                                                .account_balance_wallet_rounded,
-                                            color: const Color(0xFF007AFF),
-                                            trend: 'all time',
-                                          ),
-                                        ),
-                                      ],
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: _StatCard(
+                                        title: 'Check-ins today',
+                                        value: '$_checkInsToday',
+                                        icon: Icons.login_rounded,
+                                        color: const Color(0xFFFF9500),
+                                        trend: 'bookings',
+                                      ),
                                     ),
                                   ],
-                                  const SizedBox(height: 24),
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _StatCard(
+                                        title: 'Revenue this month',
+                                        value: currencyFormatter.formatCompact(_revenueThisMonth),
+                                        icon: Icons.attach_money_rounded,
+                                        color: const Color(0xFF5856D6),
+                                        trend:
+                                            'sum of amount paid (check-in this month)',
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: _StatCard(
+                                        title: 'Total revenue',
+                                        value: currencyFormatter.formatCompact(_revenueTotal),
+                                        icon: Icons
+                                            .account_balance_wallet_rounded,
+                                        color: const Color(0xFF007AFF),
+                                        trend:
+                                            'sum of amount paid (all bookings)',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              const SizedBox(height: 24),
 
-                                  // Weekly occupancy (room-nights per day)
-                                  Card(
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(20),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                              // Weekly occupancy (room-nights per day)
+                              Card(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(20),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
                                         children: [
-                                          Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Text(
-                                                'Weekly occupancy',
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .titleLarge
-                                                    ?.copyWith(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                    ),
-                                              ),
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                  horizontal: 12,
-                                                  vertical: 6,
+                                          Text(
+                                            'Weekly occupancy',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleLarge
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w600,
                                                 ),
-                                                decoration: BoxDecoration(
-                                                  color: const Color(0xFF007AFF)
-                                                      .withOpacity(0.1),
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                ),
-                                                child: Text(
-                                                  'Room-nights',
-                                                  style: TextStyle(
-                                                    color: Colors.grey.shade600,
-                                                    fontWeight:
-                                                        FontWeight.w600,
-                                                    fontSize: 12,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
                                           ),
-                                          const SizedBox(height: 24),
-                                          SizedBox(
-                                            height: 200,
-                                            child: LineChart(
-                                              LineChartData(
-                                                gridData: FlGridData(
-                                                  show: true,
-                                                  drawVerticalLine: false,
-                                                  getDrawingHorizontalLine:
-                                                      (value) {
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(
+                                                0xFF007AFF,
+                                              ).withOpacity(0.1),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: Text(
+                                              'Room-nights',
+                                              style: TextStyle(
+                                                color: Colors.grey.shade600,
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 24),
+                                      SizedBox(
+                                        height: 200,
+                                        child: LineChart(
+                                          LineChartData(
+                                            gridData: FlGridData(
+                                              show: true,
+                                              drawVerticalLine: false,
+                                              getDrawingHorizontalLine:
+                                                  (value) {
                                                     return FlLine(
                                                       color:
                                                           Colors.grey.shade200,
                                                       strokeWidth: 1,
                                                     );
                                                   },
+                                            ),
+                                            titlesData: FlTitlesData(
+                                              show: true,
+                                              rightTitles: const AxisTitles(
+                                                sideTitles: SideTitles(
+                                                  showTitles: false,
                                                 ),
-                                                titlesData: FlTitlesData(
-                                                  show: true,
-                                                  rightTitles: const AxisTitles(
-                                                    sideTitles: SideTitles(
-                                                      showTitles: false,
-                                                    ),
-                                                  ),
-                                                  topTitles: const AxisTitles(
-                                                    sideTitles: SideTitles(
-                                                      showTitles: false,
-                                                    ),
-                                                  ),
-                                                  bottomTitles: AxisTitles(
-                                                    sideTitles: SideTitles(
-                                                      showTitles: true,
-                                                      reservedSize: 30,
-                                                      getTitlesWidget:
-                                                          (value, meta) {
-                                                        final now =
-                                                            DateTime.now();
-                                                        final d = now.subtract(
-                                                            Duration(
-                                                                days:
-                                                                    6 -
-                                                                        value
-                                                                            .toInt()));
-                                                        const days = [
-                                                          'Mon',
-                                                          'Tue',
-                                                          'Wed',
-                                                          'Thu',
-                                                          'Fri',
-                                                          'Sat',
-                                                          'Sun',
-                                                        ];
-                                                        final i = d
-                                                            .weekday; // 1=Mon
-                                                        if (value.toInt() >=
-                                                                0 &&
-                                                            value.toInt() <
-                                                                7) {
-                                                          return Padding(
-                                                            padding:
-                                                                const EdgeInsets
-                                                                    .only(
-                                                                    top: 8.0),
-                                                            child: Text(
-                                                              days[i - 1],
-                                                              style: TextStyle(
-                                                                color: Colors
-                                                                    .grey
-                                                                    .shade600,
-                                                                fontSize: 12,
-                                                              ),
+                                              ),
+                                              topTitles: const AxisTitles(
+                                                sideTitles: SideTitles(
+                                                  showTitles: false,
+                                                ),
+                                              ),
+                                              bottomTitles: AxisTitles(
+                                                sideTitles: SideTitles(
+                                                  showTitles: true,
+                                                  reservedSize: 30,
+                                                  getTitlesWidget: (value, meta) {
+                                                    final now = DateTime.now();
+                                                    final d = now.subtract(
+                                                      Duration(
+                                                        days: 6 - value.toInt(),
+                                                      ),
+                                                    );
+                                                    const days = [
+                                                      'Mon',
+                                                      'Tue',
+                                                      'Wed',
+                                                      'Thu',
+                                                      'Fri',
+                                                      'Sat',
+                                                      'Sun',
+                                                    ];
+                                                    final i =
+                                                        d.weekday; // 1=Mon
+                                                    if (value.toInt() >= 0 &&
+                                                        value.toInt() < 7) {
+                                                      return Padding(
+                                                        padding:
+                                                            const EdgeInsets.only(
+                                                              top: 8.0,
                                                             ),
-                                                          );
-                                                        }
-                                                        return const Text('');
-                                                      },
-                                                    ),
-                                                  ),
-                                                  leftTitles: AxisTitles(
-                                                    sideTitles: SideTitles(
-                                                      showTitles: true,
-                                                      reservedSize: 32,
-                                                      getTitlesWidget:
-                                                          (value, meta) {
-                                                        return Text(
-                                                          value.toInt().toString(),
+                                                        child: Text(
+                                                          days[i - 1],
                                                           style: TextStyle(
                                                             color: Colors
-                                                                .grey.shade600,
+                                                                .grey
+                                                                .shade600,
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
+                                                      );
+                                                    }
+                                                    return const Text('');
+                                                  },
+                                                ),
+                                              ),
+                                              leftTitles: AxisTitles(
+                                                sideTitles: SideTitles(
+                                                  showTitles: true,
+                                                  reservedSize: 32,
+                                                  getTitlesWidget:
+                                                      (value, meta) {
+                                                        return Text(
+                                                          value
+                                                              .toInt()
+                                                              .toString(),
+                                                          style: TextStyle(
+                                                            color: Colors
+                                                                .grey
+                                                                .shade600,
                                                             fontSize: 12,
                                                           ),
                                                         );
                                                       },
-                                                    ),
+                                                ),
+                                              ),
+                                            ),
+                                            borderData: FlBorderData(
+                                              show: false,
+                                            ),
+                                            minX: 0,
+                                            maxX: 6,
+                                            minY: 0,
+                                            maxY: maxY,
+                                            lineBarsData: [
+                                              LineChartBarData(
+                                                spots: List.generate(
+                                                  7,
+                                                  (i) => FlSpot(
+                                                    i.toDouble(),
+                                                    weekDays[i].toDouble(),
                                                   ),
                                                 ),
-                                                borderData:
-                                                    FlBorderData(show: false),
-                                                minX: 0,
-                                                maxX: 6,
-                                                minY: 0,
-                                                maxY: maxY,
-                                                lineBarsData: [
-                                                  LineChartBarData(
-                                                    spots: List.generate(
-                                                      7,
-                                                      (i) => FlSpot(
-                                                          i.toDouble(),
-                                                          weekDays[i]
-                                                              .toDouble()),
-                                                    ),
-                                                    isCurved: true,
-                                                    color: const Color(
-                                                      0xFF007AFF,
-                                                    ),
-                                                    barWidth: 3,
-                                                    isStrokeCapRound: true,
-                                                    dotData: FlDotData(
-                                                      show: true,
-                                                      getDotPainter:
-                                                          (spot, percent,
-                                                              barData, index) {
+                                                isCurved: true,
+                                                color: const Color(0xFF007AFF),
+                                                barWidth: 3,
+                                                isStrokeCapRound: true,
+                                                dotData: FlDotData(
+                                                  show: true,
+                                                  getDotPainter:
+                                                      (
+                                                        spot,
+                                                        percent,
+                                                        barData,
+                                                        index,
+                                                      ) {
                                                         return FlDotCirclePainter(
                                                           radius: 4,
                                                           color: Colors.white,
                                                           strokeWidth: 2,
                                                           strokeColor:
                                                               const Color(
-                                                                  0xFF007AFF),
+                                                                0xFF007AFF,
+                                                              ),
                                                         );
                                                       },
-                                                    ),
-                                                    belowBarData: BarAreaData(
-                                                      show: true,
-                                                      color: const Color(
-                                                        0xFF007AFF,
-                                                      ).withOpacity(0.1),
-                                                    ),
-                                                  ),
-                                                ],
+                                                ),
+                                                belowBarData: BarAreaData(
+                                                  show: true,
+                                                  color: const Color(
+                                                    0xFF007AFF,
+                                                  ).withOpacity(0.1),
+                                                ),
                                               ),
-                                            ),
+                                            ],
                                           ),
-                                        ],
+                                        ),
                                       ),
-                                    ),
+                                    ],
                                   ),
-                                  const SizedBox(height: 24),
-                                ],
-                              );
-                            },
-                          ),
-                        ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
             ),
           ],
         ),
@@ -529,20 +585,248 @@ class _StatCard extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               value,
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineMedium
-                  ?.copyWith(fontWeight: FontWeight.bold),
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
             Text(
               title,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: Colors.grey.shade600),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RemindersCard extends StatelessWidget {
+  final List<BookingModel> checkInsToday;
+  final List<BookingModel> advancesPending;
+  final CurrencyFormatter currencyFormatter;
+  final Function(BookingModel) onBookingTap;
+
+  const _RemindersCard({
+    required this.checkInsToday,
+    required this.advancesPending,
+    required this.currencyFormatter,
+    required this.onBookingTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF9500).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.notifications_active_rounded,
+                    color: Color(0xFFFF9500),
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Today\'s Reminders',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // Check-ins today
+            if (checkInsToday.isNotEmpty) ...[
+              Row(
+                children: [
+                  Container(
+                    width: 4,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF34C759),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Check-ins today (${checkInsToday.length})',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade900,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...checkInsToday.take(3).map((booking) {
+                return _ReminderItem(
+                  booking: booking,
+                  currencyFormatter: currencyFormatter,
+                  onTap: () => onBookingTap(booking),
+                  subtitle: '${booking.numberOfRooms} room(s) · ${booking.numberOfGuests} guest(s)',
+                );
+              }),
+              if (checkInsToday.length > 3) ...[
+                const SizedBox(height: 8),
+                Center(
+                  child: Text(
+                    '+ ${checkInsToday.length - 3} more',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+
+            // Divider between sections
+            if (checkInsToday.isNotEmpty && advancesPending.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              Divider(height: 1, color: Colors.grey.shade200),
+              const SizedBox(height: 20),
+            ],
+
+            // Advances pending
+            if (advancesPending.isNotEmpty) ...[
+              Row(
+                children: [
+                  Container(
+                    width: 4,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF9500),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Advance payments pending (${advancesPending.length})',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade900,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...advancesPending.take(3).map((booking) {
+                return _ReminderItem(
+                  booking: booking,
+                  currencyFormatter: currencyFormatter,
+                  onTap: () => onBookingTap(booking),
+                  subtitle: 'Due: ${currencyFormatter.formatCompact(booking.advanceAmountRequired)} · Check-in ${DateFormat('MMM d').format(booking.checkIn)}',
+                  showWarning: true,
+                );
+              }),
+              if (advancesPending.length > 3) ...[
+                const SizedBox(height: 8),
+                Center(
+                  child: Text(
+                    '+ ${advancesPending.length - 3} more',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReminderItem extends StatelessWidget {
+  final BookingModel booking;
+  final CurrencyFormatter currencyFormatter;
+  final VoidCallback onTap;
+  final String subtitle;
+  final bool showWarning;
+
+  const _ReminderItem({
+    required this.booking,
+    required this.currencyFormatter,
+    required this.onTap,
+    required this.subtitle,
+    this.showWarning = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: showWarning
+            ? const Color(0xFFFF9500).withOpacity(0.05)
+            : Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: showWarning
+              ? const Color(0xFFFF9500).withOpacity(0.2)
+              : Colors.grey.shade200,
+          width: 1,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        booking.userName,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.grey.shade400,
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

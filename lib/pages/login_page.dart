@@ -52,8 +52,10 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -67,7 +69,7 @@ class _LoginPageState extends State<LoginPage> {
                   Icon(
                     Icons.hotel_rounded,
                     size: 64,
-                    color: const Color(0xFF007AFF).withOpacity(0.8),
+                    color: colorScheme.primary.withOpacity(0.8),
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -81,7 +83,7 @@ class _LoginPageState extends State<LoginPage> {
                   Text(
                     'Sign in with your account',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey.shade600,
+                          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
                         ),
                     textAlign: TextAlign.center,
                   ),
@@ -97,7 +99,7 @@ class _LoginPageState extends State<LoginPage> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
                       prefixIcon: const Icon(Icons.email_outlined),
                     ),
                     onSubmitted: (_) => _signIn(),
@@ -113,7 +115,7 @@ class _LoginPageState extends State<LoginPage> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
                       prefixIcon: const Icon(Icons.lock_outline_rounded),
                       suffixIcon: IconButton(
                         icon: Icon(

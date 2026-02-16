@@ -10,6 +10,12 @@ import '../services/auth_provider.dart';
 import 'add_booking_page.dart';
 import 'room_management_page.dart';
 
+/// Payload when dragging a booking from the waiting list onto the calendar.
+class _WaitingListDragPayload {
+  const _WaitingListDragPayload({required this.bookingId});
+  final String bookingId;
+}
+
 class CalendarPage extends StatefulWidget {
   const CalendarPage({super.key});
 
@@ -32,12 +38,17 @@ class _CalendarPageState extends State<CalendarPage> {
   static const int _loadMoreDays = 30;
   static const int _maxDaysLoaded = 180;
   bool _isLoadingMore = false;
-  List<DateTime> _cachedDates = [];
+  final List<DateTime> _cachedDates = [];
+
 
   // Real-time Firestore synchronization
   StreamSubscription<QuerySnapshot>? _bookingsSubscription;
+  StreamSubscription<QuerySnapshot>? _waitingListSubscription;
   Timer? _debounceTimer;
   static const Duration _debounceDuration = Duration(milliseconds: 100);
+
+  /// Bookings with status 'Waiting list' (over capacity / not on grid).
+  final List<({String id, BookingModel booking})> _waitingListBookings = [];
 
   // Rooms loaded from Firestore (hotel-specific)
   List<String> _roomNames = [];
@@ -68,6 +79,7 @@ class _CalendarPageState extends State<CalendarPage> {
     'Cancelled',
     'Paid',
     'Unpaid',
+    'Waiting list',
   ];
 
   static Color _statusColor(String status) {
@@ -82,6 +94,8 @@ class _CalendarPageState extends State<CalendarPage> {
         return const Color(0xFF007AFF);
       case 'Unpaid':
         return const Color(0xFF8E8E93);
+      case 'Waiting list':
+        return const Color(0xFFAF52DE);
       default:
         return Colors.grey;
     }
@@ -460,6 +474,7 @@ class _CalendarPageState extends State<CalendarPage> {
   void dispose() {
     _debounceTimer?.cancel();
     _bookingsSubscription?.cancel();
+    _waitingListSubscription?.cancel();
     _verticalScrollController.dispose();
     _horizontalScrollController.dispose();
     _roomHeadersScrollController.dispose();
@@ -588,6 +603,173 @@ class _CalendarPageState extends State<CalendarPage> {
     }
   }
 
+  /// Finds all bookings that occupy any cell in [selectedRooms] x [selectedDates]
+  /// and moves them to Waiting list. Optionally exclude [excludeBookingId] (e.g. the booking being moved).
+  Future<void> _moveBookingsInSelectionToWaitingList(
+    List<String> selectedRooms,
+    List<DateTime> selectedDates, {
+    String? excludeBookingId,
+  }) async {
+    final userId = AuthScopeData.of(context).uid;
+    final hotelId = HotelProvider.of(context).hotelId;
+    if (userId == null || hotelId == null) return;
+
+    final Set<String> bookingIds = {};
+    for (final room in selectedRooms) {
+      for (final date in selectedDates) {
+        final night = DateTime(date.year, date.month, date.day);
+        final booking = _getBooking(room, night);
+        if (booking != null && booking.bookingId.isNotEmpty) {
+          if (excludeBookingId == null || booking.bookingId != excludeBookingId) {
+            bookingIds.add(booking.bookingId);
+          }
+        }
+      }
+    }
+
+    for (final id in bookingIds) {
+      final model = _bookingModelsById[id];
+      if (model == null ||
+          model.status == 'Cancelled' ||
+          model.status == 'Waiting list') {
+        continue;
+      }
+      await _updateBooking(
+        userId,
+        hotelId,
+        model.copyWith(status: 'Waiting list'),
+      );
+    }
+  }
+
+  /// Move a booking (from the grid) to the waiting list. No-op if already Waiting list or Cancelled.
+  Future<void> _moveBookingToWaitingList(String bookingId) async {
+    final userId = AuthScopeData.of(context).uid;
+    final hotelId = HotelProvider.of(context).hotelId;
+    if (userId == null || hotelId == null) return;
+
+    final model = _bookingModelsById[bookingId];
+    if (model == null ||
+        model.status == 'Cancelled' ||
+        model.status == 'Waiting list') {
+      return;
+    }
+
+    final updated = model.copyWith(status: 'Waiting list');
+    await _updateBooking(userId, hotelId, updated);
+
+    // Remove from grid immediately so UI updates without waiting for Firestore snapshot
+    for (final entry in _bookings.entries.toList()) {
+      final roomMap = entry.value;
+      for (final roomName in roomMap.keys.toList()) {
+        if (roomMap[roomName]?.bookingId == bookingId) {
+          roomMap.remove(roomName);
+        }
+      }
+    }
+    for (final nightDate in _bookings.keys.toList()) {
+      if (_bookings[nightDate]!.isEmpty) {
+        _bookings.remove(nightDate);
+      }
+    }
+    if (mounted) setState(() {});
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${model.userName} moved to waiting list'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFFAF52DE),
+        ),
+      );
+    }
+  }
+
+  /// Drop a booking onto the calendar at (room, date). Works for both waiting-list and grid bookings.
+  /// Displaced bookings in that range are moved to the waiting list (excluding the one being placed).
+  Future<void> _onDropWaitingListBooking(
+    String bookingId,
+    String room,
+    DateTime date,
+  ) async {
+    final userId = AuthScopeData.of(context).uid;
+    final hotelId = HotelProvider.of(context).hotelId;
+    if (userId == null || hotelId == null) return;
+
+    // Resolve booking: from waiting list or from grid (_bookingModelsById)
+    BookingModel? booking;
+    bool fromWaitingList = false;
+    for (final e in _waitingListBookings) {
+      if (e.id == bookingId) {
+        booking = e.booking;
+        fromWaitingList = true;
+        break;
+      }
+    }
+    booking ??= _bookingModelsById[bookingId];
+    if (booking == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Booking not found'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+
+    final roomIndex = _roomNames.indexOf(room);
+    if (roomIndex == -1) return;
+    final n = booking.numberOfRooms;
+    if (roomIndex + n > _roomNames.length) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Not enough contiguous rooms: need $n from "$room"',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+    final targetRooms = _roomNames.sublist(roomIndex, roomIndex + n);
+    final checkIn = DateTime(date.year, date.month, date.day);
+    final checkOut = checkIn.add(Duration(days: booking.numberOfNights));
+
+    // Move any existing bookings in target range to waiting list (exclude the one we're placing)
+    final selectedDates = <DateTime>[];
+    for (var d = checkIn; d.isBefore(checkOut); d = d.add(const Duration(days: 1))) {
+      selectedDates.add(d);
+    }
+    await _moveBookingsInSelectionToWaitingList(
+      targetRooms,
+      selectedDates,
+      excludeBookingId: bookingId,
+    );
+
+    final newStatus = fromWaitingList ? 'Confirmed' : booking.status;
+    final updated = booking.copyWith(
+      checkIn: checkIn,
+      checkOut: checkOut,
+      selectedRooms: targetRooms,
+      status: newStatus,
+    );
+    await _updateBooking(userId, hotelId, updated);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${booking.userName} moved to ${targetRooms.join(", ")}'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF34C759),
+        ),
+      );
+    }
+  }
+
   void _endSelection() {
     if (_isSelecting &&
         _selectionStartRoom != null &&
@@ -601,12 +783,17 @@ class _CalendarPageState extends State<CalendarPage> {
             .map((room) => _roomNames.indexOf(room))
             .where((index) => index != -1)
             .toList();
-        _showBookingDialog(
-          selectedRooms,
-          selectedDates,
-          _roomsNextToEachOther,
-          preselectedRoomIndexes: _preselectedRoomsIndex,
-        );
+        // Move any existing bookings in the selected range to waiting list, then open dialog
+        _moveBookingsInSelectionToWaitingList(selectedRooms, selectedDates)
+            .then((_) {
+          if (!mounted) return;
+          _showBookingDialog(
+            selectedRooms,
+            selectedDates,
+            _roomsNextToEachOther,
+            preselectedRoomIndexes: _preselectedRoomsIndex,
+          );
+        });
       }
 
       setState(() {
@@ -747,6 +934,39 @@ class _CalendarPageState extends State<CalendarPage> {
             debugPrint('Firestore booking subscription error: $error');
           },
         );
+    _subscribeToWaitingList();
+  }
+
+  void _subscribeToWaitingList() {
+    _waitingListSubscription?.cancel();
+
+    final hotelId = HotelProvider.of(context).hotelId;
+    final userId = AuthScopeData.of(context).uid;
+    if (hotelId == null || userId == null) return;
+
+    _waitingListSubscription = FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .collection('hotels')
+        .doc(hotelId)
+        .collection('bookings')
+        .where('status', isEqualTo: 'Waiting list')
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+      final list = <({String id, BookingModel booking})>[];
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        list.add((id: doc.id, booking: BookingModel.fromFirestore(data, doc.id)));
+      }
+      setState(() {
+        _waitingListBookings
+          ..clear()
+          ..addAll(list);
+      });
+    }, onError: (error) {
+      debugPrint('Firestore waiting list subscription error: $error');
+    });
   }
 
   void _processBookingChanges(
@@ -782,8 +1002,72 @@ class _CalendarPageState extends State<CalendarPage> {
         continue; // completely outside visible range
       }
 
+      // Waiting list bookings are not drawn on the grid; they are shown in the waiting list section
+      if (bookingModel.status == 'Waiting list') {
+        final docId = change.doc.id;
+        // Remove from grid so it doesn't stay visible when moved to waiting list
+        for (final entry in _bookings.entries.toList()) {
+          final roomMap = entry.value;
+          for (final roomName in roomMap.keys.toList()) {
+            if (roomMap[roomName]?.bookingId == docId) {
+              roomMap.remove(roomName);
+              needsUpdate = true;
+            }
+          }
+        }
+        for (final nightDate in _bookings.keys.toList()) {
+          if (_bookings[nightDate]!.isEmpty) {
+            _bookings.remove(nightDate);
+          }
+        }
+        if (change.type == DocumentChangeType.removed) {
+          _bookingModelsById.remove(docId);
+        } else {
+          _bookingModelsById[docId] = bookingModel;
+        }
+        needsUpdate = true;
+        continue;
+      }
+
       final rooms = bookingModel.selectedRooms;
       if (rooms == null || rooms.isEmpty) continue;
+
+      final docId = change.doc.id;
+
+      if (change.type == DocumentChangeType.removed) {
+        // Remove this booking from all cells
+        for (final entry in _bookings.entries.toList()) {
+          final nightDate = entry.key;
+          final roomMap = entry.value;
+          for (final roomName in roomMap.keys.toList()) {
+            if (roomMap[roomName]?.bookingId == docId) {
+              roomMap.remove(roomName);
+              needsUpdate = true;
+            }
+          }
+          if (roomMap.isEmpty) {
+            _bookings.remove(nightDate);
+          }
+        }
+        _bookingModelsById.remove(docId);
+        continue;
+      }
+
+      // Added or modified: clear any previous placement of this booking (so moved bookings don't stay in old cells)
+      for (final entry in _bookings.entries.toList()) {
+        final roomMap = entry.value;
+        for (final roomName in roomMap.keys.toList()) {
+          if (roomMap[roomName]?.bookingId == docId) {
+            roomMap.remove(roomName);
+            needsUpdate = true;
+          }
+        }
+      }
+      for (final nightDate in _bookings.keys.toList()) {
+        if (_bookings[nightDate]!.isEmpty) {
+          _bookings.remove(nightDate);
+        }
+      }
 
       final totalNights = bookingModel.numberOfNights;
 
@@ -800,37 +1084,22 @@ class _CalendarPageState extends State<CalendarPage> {
             continue; // night outside visible range
           }
 
-          if (change.type == DocumentChangeType.removed) {
-            // Remove booking
-            _bookings[nightDate]?.remove(room);
-            if (_bookings[nightDate]?.isEmpty ?? false) {
-              _bookings.remove(nightDate);
-            }
-            needsUpdate = true;
-          } else {
-            // Added or modified
-            _bookings[nightDate] ??= {};
-            _bookings[nightDate]![room] = Booking(
-              bookingId: bookingModel.id ?? '',
-              guestName: bookingModel.userName,
-              color: _statusColor(bookingModel.status),
-              isFirstNight: i == 0,
-              isLastNight: i == totalNights - 1,
-              totalNights: totalNights,
-              advancePaymentStatus: bookingModel.advancePaymentStatus,
-            );
-            needsUpdate = true;
-          }
+          // Add placement
+          _bookings[nightDate] ??= {};
+          _bookings[nightDate]![room] = Booking(
+            bookingId: bookingModel.id ?? '',
+            guestName: bookingModel.userName,
+            color: _statusColor(bookingModel.status),
+            isFirstNight: i == 0,
+            isLastNight: i == totalNights - 1,
+            totalNights: totalNights,
+            advancePaymentStatus: bookingModel.advancePaymentStatus,
+          );
+          needsUpdate = true;
         }
       }
 
-      // Keep full booking model for edit: one entry per document
-      final docId = change.doc.id;
-      if (change.type == DocumentChangeType.removed) {
-        _bookingModelsById.remove(docId);
-      } else {
-        _bookingModelsById[docId] = bookingModel;
-      }
+      _bookingModelsById[docId] = bookingModel;
     }
 
     if (needsUpdate) {
@@ -1016,22 +1285,25 @@ class _CalendarPageState extends State<CalendarPage> {
                             ),
                           ),
                         )
-                      : Container(
-                margin: const EdgeInsets.symmetric(horizontal: 24),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Stack(
+                      : Column(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(horizontal: 24),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.08),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Stack(
                     children: [
                       // Main scrollable grid
                       Positioned.fill(
@@ -1242,8 +1514,9 @@ class _CalendarPageState extends State<CalendarPage> {
                             final todayIndex = _dates.indexWhere(
                               (date) => isSameDay(date, DateTime.now()),
                             );
-                            if (todayIndex == -1)
+                            if (todayIndex == -1) {
                               return const SizedBox.shrink();
+                            }
 
                             final scrollOffset =
                                 _verticalScrollController.hasClients
@@ -1268,6 +1541,10 @@ class _CalendarPageState extends State<CalendarPage> {
                   ),
                 ),
               ),
+            ),
+                            _buildWaitingListSection(),
+                          ],
+                        ),
             ),
             const SizedBox(height: 24),
           ],
@@ -1301,6 +1578,351 @@ class _CalendarPageState extends State<CalendarPage> {
             borderRadius: BorderRadius.circular(16),
           ),
           child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWaitingListSection() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+      child: DragTarget<_WaitingListDragPayload>(
+        onWillAcceptWithDetails: (details) => true,
+        onAcceptWithDetails: (details) {
+          _moveBookingToWaitingList(details.data.bookingId);
+        },
+        builder: (context, candidateData, rejectedData) {
+          final isHighlighted = candidateData.isNotEmpty;
+          return Card(
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: isHighlighted
+                  ? const BorderSide(color: Color(0xFFAF52DE), width: 2)
+                  : BorderSide.none,
+            ),
+            color: isHighlighted
+                ? const Color(0xFFAF52DE).withOpacity(0.08)
+                : null,
+            child: Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+            tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            leading: Icon(
+              Icons.list_alt_rounded,
+              color: _waitingListBookings.isEmpty
+                  ? Colors.grey.shade400
+                  : const Color(0xFFAF52DE),
+              size: 24,
+            ),
+            title: Text(
+              'Waiting list',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            trailing: Text(
+              '${_waitingListBookings.length}',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: _waitingListBookings.isEmpty
+                    ? Colors.grey.shade600
+                    : const Color(0xFFAF52DE),
+              ),
+            ),
+            children: [
+              if (_waitingListBookings.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                  child: Text(
+                    'No reservations on the waiting list. Bookings saved as "Waiting list" (e.g. over capacity) appear here.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade600,
+                      height: 1.4,
+                    ),
+                  ),
+                )
+              else
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+                      child: Text(
+                        'Long-press an item and drag it to a calendar cell to place it. Any booking there will move to the waiting list.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey.shade600,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                    ..._waitingListBookings.map((e) {
+                  final b = e.booking;
+                  final payload = _WaitingListDragPayload(bookingId: e.id);
+                  return LongPressDraggable<_WaitingListDragPayload>(
+                    data: payload,
+                    feedback: Material(
+                      elevation: 4,
+                      borderRadius: BorderRadius.circular(12),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 220),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.person_rounded,
+                                color: _statusColor('Waiting list'),
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  b.userName,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${b.numberOfRooms} room(s)',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    childWhenDragging: Opacity(
+                      opacity: 0.5,
+                      child: ListTile(
+                        dense: true,
+                        leading: CircleAvatar(
+                          backgroundColor:
+                              _statusColor('Waiting list').withOpacity(0.2),
+                          child: Icon(
+                            Icons.person_rounded,
+                            size: 20,
+                            color: _statusColor('Waiting list'),
+                          ),
+                        ),
+                        title: Text(
+                          b.userName,
+                          style: const TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                        subtitle: Text(
+                          '${DateFormat('MMM d', 'en').format(b.checkIn)} – ${DateFormat('MMM d', 'en').format(b.checkOut)} · ${b.numberOfRooms} room(s)',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        trailing: const Icon(
+                          Icons.chevron_right_rounded,
+                          color: Color(0xFF007AFF),
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                    child: ListTile(
+                      dense: true,
+                      leading: CircleAvatar(
+                        backgroundColor:
+                            _statusColor('Waiting list').withOpacity(0.2),
+                        child: Icon(
+                          Icons.person_rounded,
+                          size: 20,
+                          color: _statusColor('Waiting list'),
+                        ),
+                      ),
+                      title: Text(
+                        b.userName,
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                      subtitle: Text(
+                        '${DateFormat('MMM d', 'en').format(b.checkIn)} – ${DateFormat('MMM d', 'en').format(b.checkOut)} · ${b.numberOfRooms} room(s)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      trailing: const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Color(0xFF007AFF),
+                        size: 20,
+                      ),
+                      onTap: () => _showBookingDetailsById(context, e.id),
+                    ),
+                  );
+                }),
+                  ],
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      );
+  },
+      ),
+    );
+  }
+
+  void _showBookingDetailsById(BuildContext context, String bookingId) {
+    final hotelId = HotelProvider.of(context).hotelId;
+    final userId = AuthScopeData.of(context).uid;
+    if (hotelId == null || userId == null) return;
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 520),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF2F2F7),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance
+                .collection('users')
+                .doc(userId)
+                .collection('hotels')
+                .doc(hotelId)
+                .collection('bookings')
+                .doc(bookingId)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Padding(
+                  padding: EdgeInsets.all(48),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              final doc = snapshot.data!;
+              if (!doc.exists) {
+                return Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Booking removed',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Text('Close'),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              final fullBooking = BookingModel.fromFirestore(
+                doc.data()!,
+                doc.id,
+              );
+              return _BookingDetailsForm(
+                key: ValueKey(fullBooking.id),
+                fullBooking: fullBooking,
+                room: '—',
+                date: fullBooking.checkIn,
+                bookingId: bookingId,
+                statusOptions: statusOptions,
+                getStatusColor: _statusColor,
+                paymentMethods: paymentMethods,
+                buildDetailRow: _buildDetailRow,
+                buildStatusRowWithStatus: _buildStatusRowWithStatus,
+                onSave: (updated) async {
+                  await _updateBooking(userId, hotelId, updated);
+                  if (dialogContext.mounted) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      const SnackBar(
+                        content: Text('Booking updated'),
+                        behavior: SnackBarBehavior.floating,
+                        backgroundColor: Color(0xFF34C759),
+                      ),
+                    );
+                  }
+                },
+                onDelete: () async {
+                  final navigator = Navigator.of(dialogContext);
+                  final messenger = ScaffoldMessenger.of(dialogContext);
+                  final confirm = await _showDeleteConfirmation(dialogContext);
+                  if (confirm != true) return;
+                  if (!mounted) return;
+                  try {
+                    _showLoadingDialog(dialogContext);
+                    await _deleteBooking(userId, hotelId, bookingId);
+                    if (!mounted) return;
+                    navigator.pop();
+                    navigator.pop();
+                  } catch (e) {
+                    if (!mounted) return;
+                    navigator.pop();
+                    navigator.pop();
+                    messenger.showSnackBar(
+                      SnackBar(
+                        content: Text('Failed to delete: $e'),
+                        backgroundColor: Colors.red,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+                },
+                onEditFull: () {
+                  final navigator = Navigator.of(dialogContext);
+                  navigator.pop();
+                  navigator
+                      .push(
+                        MaterialPageRoute(
+                          builder: (context) => AddBookingPage(
+                            existingBooking: fullBooking,
+                            preselectedRoom: (fullBooking.selectedRooms?.isNotEmpty == true)
+                              ? fullBooking.selectedRooms!.first
+                              : '—',
+                            preselectedStartDate: fullBooking.checkIn,
+                            preselectedEndDate: fullBooking.checkOut,
+                            preselectedNumberOfRooms: fullBooking.numberOfRooms,
+                          ),
+                        ),
+                      )
+                      .then((bookingCreated) {
+                        if (bookingCreated == true) {
+                          _subscribeToBookings();
+                          _subscribeToWaitingList();
+                        }
+                      });
+                },
+                onClose: () => Navigator.pop(dialogContext),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -1403,22 +2025,30 @@ class _CalendarPageState extends State<CalendarPage> {
   Widget _buildRoomCell(String room, DateTime date, Booking? booking) {
     final isSelected = _isCellInSelection(room, date);
 
-    return GestureDetector(
-      onTap: () {
-        if (booking != null) {
-          _showBookingDetails(context, room, date, booking);
-        } else if (!_isSelecting) {
-          // Single tap on empty cell - show quick booking dialog for one cell
-          _showBookingDialog([room], [date], false);
-        }
+    return DragTarget<_WaitingListDragPayload>(
+      onWillAcceptWithDetails: (details) => true,
+      onAcceptWithDetails: (details) {
+        _onDropWaitingListBooking(details.data.bookingId, room, date);
       },
-      child: Container(
+      builder: (context, candidateData, rejectedData) {
+        final isHighlighted = candidateData.isNotEmpty;
+        return GestureDetector(
+          onTap: () {
+            if (booking != null) {
+              _showBookingDetails(context, room, date, booking);
+            } else if (!_isSelecting) {
+              _showBookingDialog([room], [date], false);
+            }
+          },
+          child: Container(
         width: _roomColumnWidth,
         height: _dayRowHeight,
         decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFF007AFF).withOpacity(0.2)
-              : Colors.white,
+          color: isHighlighted
+              ? const Color(0xFFAF52DE).withOpacity(0.25)
+              : isSelected
+                  ? const Color(0xFF007AFF).withOpacity(0.2)
+                  : Colors.white,
           border: Border(
             right: BorderSide(color: Colors.grey.shade200, width: 1),
             top: isSelected
@@ -1443,80 +2073,142 @@ class _CalendarPageState extends State<CalendarPage> {
         ),
         child: Stack(
           children: [
-            // Booking display
+            // Booking display (long-press to drag to another cell)
             if (booking != null)
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    width: double.infinity,
-                    height: double.infinity,
+              LongPressDraggable<_WaitingListDragPayload>(
+                data: _WaitingListDragPayload(bookingId: booking.bookingId),
+                feedback: Material(
+                  elevation: 4,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: booking.color,
-                      borderRadius: BorderRadius.horizontal(
-                        left: booking.isFirstNight
-                            ? const Radius.circular(8)
-                            : Radius.zero,
-                        right: booking.isLastNight
-                            ? const Radius.circular(8)
-                            : Radius.zero,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          booking.guestName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (booking.totalNights > 1) ...[
+                          const SizedBox(width: 6),
+                          Text(
+                            '${booking.totalNights} nights',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.9),
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                childWhenDragging: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      height: double.infinity,
+                      decoration: BoxDecoration(
+                        color: booking.color.withOpacity(0.4),
+                        borderRadius: BorderRadius.horizontal(
+                          left: booking.isFirstNight
+                              ? const Radius.circular(8)
+                              : Radius.zero,
+                          right: booking.isLastNight
+                              ? const Radius.circular(8)
+                              : Radius.zero,
+                        ),
                       ),
-                      border: booking.isFirstNight
-                          ? Border(
-                              left: BorderSide(
-                                width: 3,
-                                color: _advanceIndicatorColor(
-                                  booking.advancePaymentStatus,
+                    ),
+                  ],
+                ),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      height: double.infinity,
+                      decoration: BoxDecoration(
+                        color: booking.color,
+                        borderRadius: BorderRadius.horizontal(
+                          left: booking.isFirstNight
+                              ? const Radius.circular(8)
+                              : Radius.zero,
+                          right: booking.isLastNight
+                              ? const Radius.circular(8)
+                              : Radius.zero,
+                        ),
+                        border: booking.isFirstNight
+                            ? Border(
+                                left: BorderSide(
+                                  width: 3,
+                                  color: _advanceIndicatorColor(
+                                    booking.advancePaymentStatus,
+                                  ),
                                 ),
+                              )
+                            : null,
+                        boxShadow: booking.isFirstNight
+                            ? [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: booking.isFirstNight
+                          ? Padding(
+                              padding: const EdgeInsets.only(
+                                left: 10,
+                                right: 8,
+                                top: 6,
+                                bottom: 6,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    booking.guestName,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (booking.totalNights > 1)
+                                    Text(
+                                      '${booking.totalNights} nights',
+                                      style: TextStyle(
+                                        color: Colors.white.withOpacity(0.9),
+                                        fontSize: 9,
+                                      ),
+                                    ),
+                                ],
                               ),
                             )
-                          : null,
-                      boxShadow: booking.isFirstNight
-                          ? [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ]
-                          : null,
+                          : const SizedBox(),
                     ),
-                    child: booking.isFirstNight
-                        ? Padding(
-                            padding: const EdgeInsets.only(
-                              left: 10,
-                              right: 8,
-                              top: 6,
-                              bottom: 6,
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  booking.guestName,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                if (booking.totalNights > 1)
-                                  Text(
-                                    '${booking.totalNights} nights',
-                                    style: TextStyle(
-                                      color: Colors.white.withOpacity(0.9),
-                                      fontSize: 9,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          )
-                        : const SizedBox(),
-                  ),
-                ],
+                  ],
+                ),
               ),
             // Selection overlay
             if (isSelected && booking == null)
@@ -1530,6 +2222,8 @@ class _CalendarPageState extends State<CalendarPage> {
           ],
         ),
       ),
+    );
+      },
     );
   }
 
@@ -2505,7 +3199,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
-                      value:
+                      initialValue:
                           widget.paymentMethods.contains(_advancePaymentMethod)
                           ? _advancePaymentMethod
                           : widget.paymentMethods.first,
@@ -2620,7 +3314,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                 ),
                 const SizedBox(height: 6),
                 DropdownButtonFormField<String>(
-                  value: _status,
+                  initialValue: _status,
                   decoration: InputDecoration(
                     filled: true,
                     fillColor: Colors.white,
@@ -2672,7 +3366,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                 const SizedBox(height: 12),
                 // Editable: Payment method
                 DropdownButtonFormField<String>(
-                  value: widget.paymentMethods.contains(_paymentMethod)
+                  initialValue: widget.paymentMethods.contains(_paymentMethod)
                       ? _paymentMethod
                       : widget.paymentMethods.first,
                   decoration: InputDecoration(

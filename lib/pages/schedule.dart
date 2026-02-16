@@ -288,7 +288,9 @@ class _SchedulePageState extends State<SchedulePage> {
 
   Future<void> _updateShift(ShiftModel shift) async {
     if (_userId == null || _hotelId == null ||
-        shift.id == null || shift.id!.isEmpty) return;
+        shift.id == null || shift.id!.isEmpty) {
+      return;
+    }
     await FirebaseFirestore.instance
         .collection('users')
         .doc(_userId)
@@ -600,7 +602,9 @@ class _SchedulePageState extends State<SchedulePage> {
 
   Future<void> _updateShiftPreset(ShiftPreset preset) async {
     if (_userId == null || _hotelId == null ||
-        preset.id == null || preset.id!.isEmpty) return;
+        preset.id == null || preset.id!.isEmpty) {
+      return;
+    }
     await FirebaseFirestore.instance
         .collection('users')
         .doc(_userId)
@@ -2124,10 +2128,12 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
 
   Future<void> _loadPresets() async {
     final list = await widget.loadPresets();
-    if (mounted) setState(() {
+    if (mounted) {
+      setState(() {
       _presets = list;
       _presetsLoading = false;
     });
+    }
   }
 
   void _applyPreset(ShiftPreset preset) {

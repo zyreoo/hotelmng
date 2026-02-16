@@ -70,8 +70,9 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
     super.didChangeDependencies();
     final hotelId = HotelProvider.of(context).hotelId;
     final userId = AuthScopeData.of(context).uid;
-    if (hotelId != null && userId != null)
+    if (hotelId != null && userId != null) {
       _loadRolesAndDepartments(userId, hotelId);
+    }
   }
 
   @override
@@ -541,7 +542,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
     required ValueChanged<String?> onChanged,
   }) {
     return DropdownButtonFormField<String>(
-      value: value,
+      initialValue: value,
       decoration: InputDecoration(
         labelText: label,
         border: OutlineInputBorder(

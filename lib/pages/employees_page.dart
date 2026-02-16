@@ -251,7 +251,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
                           employee: employee,
                           employerModel: employerModel,
                           onDelete: (hotelId != null && userId != null)
-                              ? (id) => _deleteEmployee(userId!, hotelId!, id)
+                              ? (id) => _deleteEmployee(userId, hotelId, id)
                               : null,
                         ),
                       );
