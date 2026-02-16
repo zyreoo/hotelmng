@@ -426,16 +426,6 @@ class _AddBookingPageState extends State<AddBookingPage> {
     });
   }
 
-  void _updateAmountFromSuggested() {
-    // When advance is still pending, don't pre-fill "Amount paid (total)" with full total
-    if (_advanceStatus == 'pending') return;
-    final suggested = _suggestedTotal;
-    if (suggested > 0 &&
-        CurrencyFormatter.parseMoneyStringToCents(_amountPaidController.text.trim()) == 0) {
-      _amountPaidController.text = CurrencyFormatter.formatCentsForInput(suggested);
-    }
-  }
-
   void _setServiceQuantity(ServiceModel service, int quantity) {
     setState(() {
       _selectedServices.removeWhere((s) => s.serviceId == service.id);
@@ -445,9 +435,8 @@ class _AddBookingPageState extends State<AddBookingPage> {
           name: service.name,
           unitPrice: service.price,
           quantity: quantity,
-        ));
+        )        );
       }
-      _updateAmountFromSuggested();
     });
   }
 
@@ -480,17 +469,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
       initialDate: _checkInDate ?? DateTime.now(),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF007AFF),
-              onPrimary: Colors.white,
-            ),
-          ),
-          child: child!,
-        );
-      },
+      builder: (context, child) => child!,
     );
     if (picked != null) {
       setState(() {
@@ -513,17 +492,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
           _checkInDate?.add(const Duration(days: 1)) ??
           DateTime.now().add(const Duration(days: 1)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF007AFF),
-              onPrimary: Colors.white,
-            ),
-          ),
-          child: child!,
-        );
-      },
+      builder: (context, child) => child!,
     );
     if (picked != null) {
       setState(() {
@@ -535,6 +504,59 @@ class _AddBookingPageState extends State<AddBookingPage> {
   int get _numberOfNights {
     if (_checkInDate == null || _checkOutDate == null) return 0;
     return _checkOutDate!.difference(_checkInDate!).inDays;
+  }
+
+  Future<void> _duplicateBooking() async {
+    if (widget.existingBooking == null) return;
+
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Duplicate Booking'),
+        content: const Text(
+          'This will create a copy of this booking with the same details. You can then edit the dates and other information.',
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF007AFF),
+              foregroundColor: Theme.of(context).colorScheme.onPrimary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text('Duplicate'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // Create a new booking with the same details (but no ID)
+    final duplicated = widget.existingBooking!.copyWith(
+      id: null, // Clear ID so a new one is created
+      status: 'Pending', // Reset to pending
+    );
+
+    // Navigate to add booking page with the duplicated booking
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AddBookingPage(existingBooking: duplicated),
+        ),
+      );
+    }
   }
 
   Future<void> _submitBooking() async {
@@ -862,7 +884,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       ? 'Update reservation'
                                       : 'Create a new reservation',
                                   style: Theme.of(context).textTheme.bodyLarge
-                                      ?.copyWith(color: Colors.grey.shade600),
+                                      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                                 ),
                               ],
                             ),
@@ -895,112 +917,105 @@ class _AddBookingPageState extends State<AddBookingPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               // Toggle between search and create
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.grey.shade100,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          setState(() {
-                                            _showCreateClientForm = false;
-                                            _selectedClient = null;
-                                          });
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 10,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: !_showCreateClientForm
-                                                ? Colors.white
-                                                : Colors.transparent,
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            boxShadow: !_showCreateClientForm
-                                                ? [
-                                                    BoxShadow(
-                                                      color: Colors.black
-                                                          .withOpacity(0.05),
-                                                      blurRadius: 8,
-                                                      offset: const Offset(
-                                                        0,
-                                                        2,
-                                                      ),
-                                                    ),
-                                                  ]
-                                                : null,
-                                          ),
-                                          child: Center(
-                                            child: Text(
-                                              'Search Client',
-                                              style: TextStyle(
+                              Builder(
+                                builder: (context) {
+                                  final cs = Theme.of(context).colorScheme;
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                      color: cs.surfaceContainerHighest,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              setState(() {
+                                                _showCreateClientForm = false;
+                                                _selectedClient = null;
+                                              });
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                vertical: 10,
+                                              ),
+                                              decoration: BoxDecoration(
                                                 color: !_showCreateClientForm
-                                                    ? Colors.black87
-                                                    : Colors.grey.shade600,
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 15,
+                                                    ? cs.surface
+                                                    : Colors.transparent,
+                                                borderRadius: BorderRadius.circular(8),
+                                                boxShadow: !_showCreateClientForm
+                                                    ? [
+                                                        BoxShadow(
+                                                          color: cs.shadow.withOpacity(0.05),
+                                                          blurRadius: 8,
+                                                          offset: const Offset(0, 2),
+                                                        ),
+                                                      ]
+                                                    : null,
+                                              ),
+                                              child: Center(
+                                                child: Text(
+                                                  'Search Client',
+                                                  style: TextStyle(
+                                                    color: !_showCreateClientForm
+                                                        ? cs.onSurface
+                                                        : cs.onSurfaceVariant,
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 15,
+                                                  ),
+                                                ),
                                               ),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Expanded(
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          setState(() {
-                                            _showCreateClientForm = true;
-                                            _selectedClient = null;
-                                          });
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 10,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: _showCreateClientForm
-                                                ? Colors.white
-                                                : Colors.transparent,
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            boxShadow: _showCreateClientForm
-                                                ? [
-                                                    BoxShadow(
-                                                      color: Colors.black
-                                                          .withOpacity(0.05),
-                                                      blurRadius: 8,
-                                                      offset: const Offset(
-                                                        0,
-                                                        2,
-                                                      ),
-                                                    ),
-                                                  ]
-                                                : null,
-                                          ),
-                                          child: Center(
-                                            child: Text(
-                                              'New Client',
-                                              style: TextStyle(
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              setState(() {
+                                                _showCreateClientForm = true;
+                                                _selectedClient = null;
+                                              });
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                vertical: 10,
+                                              ),
+                                              decoration: BoxDecoration(
                                                 color: _showCreateClientForm
-                                                    ? Colors.black87
-                                                    : Colors.grey.shade600,
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 15,
+                                                    ? cs.surface
+                                                    : Colors.transparent,
+                                                borderRadius: BorderRadius.circular(8),
+                                                boxShadow: _showCreateClientForm
+                                                    ? [
+                                                        BoxShadow(
+                                                          color: cs.shadow.withOpacity(0.05),
+                                                          blurRadius: 8,
+                                                          offset: const Offset(0, 2),
+                                                        ),
+                                                      ]
+                                                    : null,
+                                              ),
+                                              child: Center(
+                                                child: Text(
+                                                  'New Client',
+                                                  style: TextStyle(
+                                                    color: _showCreateClientForm
+                                                        ? cs.onSurface
+                                                        : cs.onSurfaceVariant,
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 15,
+                                                  ),
+                                                ),
                                               ),
                                             ),
                                           ),
                                         ),
-                                      ),
+                                      ],
                                     ),
-                                  ],
-                                ),
+                                  );
+                                },
                               ),
                               const SizedBox(height: 20),
 
@@ -1160,10 +1175,10 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 onTap: _selectCheckInDate,
                                 child: Container(
                                   decoration: BoxDecoration(
-                                    color: Colors.grey.shade50,
+                                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
-                                      color: Colors.grey.shade300,
+                                      color: Theme.of(context).colorScheme.outline.withOpacity(0.5),
                                     ),
                                   ),
                                   padding: const EdgeInsets.all(16),
@@ -1171,7 +1186,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     children: [
                                       Icon(
                                         Icons.calendar_today_rounded,
-                                        color: Colors.grey.shade600,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                                         size: 20,
                                       ),
                                       const SizedBox(width: 12),
@@ -1184,7 +1199,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               'Check-in Date',
                                               style: TextStyle(
                                                 fontSize: 12,
-                                                color: Colors.grey.shade600,
+                                                color: Theme.of(context).colorScheme.onSurfaceVariant,
                                               ),
                                             ),
                                             const SizedBox(height: 4),
@@ -1197,8 +1212,8 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               style: TextStyle(
                                                 fontSize: 16,
                                                 color: _checkInDate != null
-                                                    ? Colors.black87
-                                                    : Colors.grey.shade600,
+                                                    ? Theme.of(context).colorScheme.onSurface
+                                                    : Theme.of(context).colorScheme.onSurfaceVariant,
                                                 fontWeight: FontWeight.w500,
                                               ),
                                             ),
@@ -1207,7 +1222,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       ),
                                       Icon(
                                         Icons.chevron_right_rounded,
-                                        color: Colors.grey.shade400,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                                       ),
                                     ],
                                   ),
@@ -1220,10 +1235,10 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 onTap: _selectCheckOutDate,
                                 child: Container(
                                   decoration: BoxDecoration(
-                                    color: Colors.grey.shade50,
+                                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
-                                      color: Colors.grey.shade300,
+                                      color: Theme.of(context).colorScheme.outline.withOpacity(0.5),
                                     ),
                                   ),
                                   padding: const EdgeInsets.all(16),
@@ -1231,7 +1246,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     children: [
                                       Icon(
                                         Icons.event_rounded,
-                                        color: Colors.grey.shade600,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                                         size: 20,
                                       ),
                                       const SizedBox(width: 12),
@@ -1244,7 +1259,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               'Check-out Date',
                                               style: TextStyle(
                                                 fontSize: 12,
-                                                color: Colors.grey.shade600,
+                                                color: Theme.of(context).colorScheme.onSurfaceVariant,
                                               ),
                                             ),
                                             const SizedBox(height: 4),
@@ -1257,8 +1272,8 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               style: TextStyle(
                                                 fontSize: 16,
                                                 color: _checkOutDate != null
-                                                    ? Colors.black87
-                                                    : Colors.grey.shade600,
+                                                    ? Theme.of(context).colorScheme.onSurface
+                                                    : Theme.of(context).colorScheme.onSurfaceVariant,
                                                 fontWeight: FontWeight.w500,
                                               ),
                                             ),
@@ -1267,7 +1282,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       ),
                                       Icon(
                                         Icons.chevron_right_rounded,
-                                        color: Colors.grey.shade400,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                                       ),
                                     ],
                                   ),
@@ -1298,7 +1313,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                           'How many rooms do you need?',
                                           style: TextStyle(
                                             fontSize: 13,
-                                            color: Colors.grey.shade600,
+                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                                           ),
                                         ),
                                       ],
@@ -1391,7 +1406,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                             'Check in rooms together',
                                             style: TextStyle(
                                               fontSize: 13,
-                                              color: Colors.grey.shade600,
+                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                                             ),
                                           ),
                                         ],
@@ -1442,7 +1457,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                           'Assign specific rooms to this booking',
                                           style: TextStyle(
                                             fontSize: 13,
-                                            color: Colors.grey.shade600,
+                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                                           ),
                                         ),
                                       ],
@@ -1485,7 +1500,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                                   BorderRadius.circular(12),
                                             ),
                                             filled: true,
-                                            fillColor: Colors.grey.shade50,
+                                            fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                                             prefixIcon: const Icon(
                                               Icons.hotel_rounded,
                                             ),
@@ -1495,11 +1510,11 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                                   vertical: 16,
                                                 ),
                                           ),
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 16,
-                                            color: Colors.black87,
+                                            color: Theme.of(context).colorScheme.onSurface,
                                           ),
-                                          dropdownColor: Colors.white,
+                                          dropdownColor: Theme.of(context).colorScheme.surface,
                                           items: _roomNames
                                               .where(
                                                 (room) =>
@@ -1514,8 +1529,8 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                                   value: room,
                                                   child: Text(
                                                     'Room $room',
-                                                    style: const TextStyle(
-                                                      color: Colors.black87,
+                                                    style: TextStyle(
+                                                      color: Theme.of(context).colorScheme.onSurface,
                                                       fontSize: 16,
                                                     ),
                                                   ),
@@ -1612,7 +1627,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 'Price per night (per room)',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: Colors.grey.shade600,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                               const SizedBox(height: 8),
@@ -1624,7 +1639,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   filled: true,
-                                  fillColor: Colors.grey.shade50,
+                                  fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                                   prefixIcon: const Icon(Icons.euro_rounded),
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16,
@@ -1637,7 +1652,6 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 ],
                                 onChanged: (_) {
                                   setState(() {});
-                                  _updateAmountFromSuggested();
                                 },
                                 onEditingComplete: () {
                                   final cents = CurrencyFormatter.parseMoneyStringToCents(
@@ -1656,7 +1670,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     Icon(
                                       Icons.nights_stay_rounded,
                                       size: 18,
-                                      color: Colors.grey.shade600,
+                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                                     ),
                                     const SizedBox(width: 8),
                                     Expanded(
@@ -1664,7 +1678,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         '$_numberOfNights night${_numberOfNights == 1 ? '' : 's'} × $_numberOfRooms room${_numberOfRooms == 1 ? '' : 's'} × ${currencyFormatter.formatCompact(_pricePerNight)}',
                                         style: TextStyle(
                                           fontSize: 14,
-                                          color: Colors.grey.shade700,
+                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                                         ),
                                       ),
                                     ),
@@ -1725,7 +1739,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     'No services yet. Tap "Add more services" to add breakfast, spa, sauna, etc.',
                                     style: TextStyle(
                                       fontSize: 14,
-                                      color: Colors.grey.shade600,
+                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                                     ),
                                   ),
                                 )
@@ -1752,7 +1766,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                                 '${currencyFormatter.formatCompact(service.price)} per unit',
                                                 style: TextStyle(
                                                   fontSize: 12,
-                                                  color: Colors.grey.shade600,
+                                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                                 ),
                                               ),
                                             ],
@@ -1825,18 +1839,18 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                             MainAxisAlignment.spaceBetween,
                                         children: [
                                           Text(
-                                            '${s.name} — ${s.quantity} × ${s.unitPrice}',
+                                            '${s.name} — ${s.quantity} × ${currencyFormatter.formatCompact(s.unitPrice)}',
                                             style: TextStyle(
                                               fontSize: 13,
-                                              color: Colors.grey.shade700,
+                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                                             ),
                                           ),
                                           Text(
-                                            '${s.lineTotal}',
+                                            currencyFormatter.formatCompact(s.lineTotal),
                                             style: TextStyle(
                                               fontSize: 13,
                                               fontWeight: FontWeight.w500,
-                                              color: Colors.grey.shade800,
+                                              color: Theme.of(context).colorScheme.onSurface,
                                             ),
                                           ),
                                         ],
@@ -1877,7 +1891,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     style: TextStyle(
                                       fontWeight: FontWeight.w600,
                                       fontSize: 15,
-                                      color: Colors.grey.shade800,
+                                      color: Theme.of(context).colorScheme.onSurface,
                                     ),
                                   ),
                                   Text(
@@ -1918,7 +1932,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               BorderRadius.circular(12),
                                         ),
                                         filled: true,
-                                        fillColor: Colors.grey.shade50,
+                                        fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                                         contentPadding:
                                             const EdgeInsets.symmetric(
                                           horizontal: 16,
@@ -1966,7 +1980,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               BorderRadius.circular(12),
                                         ),
                                         filled: true,
-                                        fillColor: Colors.grey.shade50,
+                                        fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                                         prefixIcon: const Icon(
                                             Icons.payments_rounded,
                                             size: 20),
@@ -2012,7 +2026,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   'Required: ${currencyFormatter.formatCompact(_advanceAmountRequired)} ($_advancePercent% of total ${currencyFormatter.formatCompact(_suggestedTotal)})',
                                   style: TextStyle(
                                     fontSize: 13,
-                                    color: Colors.grey.shade700,
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                                   ),
                                 ),
                               ],
@@ -2028,7 +2042,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   filled: true,
-                                  fillColor: Colors.grey.shade50,
+                                  fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16,
                                     vertical: 14,
@@ -2054,7 +2068,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w500,
-                                    color: Colors.grey.shade700,
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                                   ),
                                 ),
                                 const SizedBox(height: 6),
@@ -2091,7 +2105,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   children: [
                                     Icon(Icons.account_balance_wallet_rounded,
                                         size: 18,
-                                        color: Colors.grey.shade700),
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant),
                                     const SizedBox(width: 8),
                                     Text(
                                       'They owe you: ${currencyFormatter.formatCompact(_remainingBalance)}',
@@ -2100,14 +2114,14 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         fontWeight: FontWeight.w600,
                                         color: _remainingBalance > 0
                                             ? const Color(0xFFFF9500)
-                                            : Colors.grey.shade800,
+                                            : Theme.of(context).colorScheme.onSurface,
                                       ),
                                     ),
                                     Text(
                                       ' (total ${currencyFormatter.formatCompact(_suggestedTotal)} − advance ${currencyFormatter.formatCompact(_advanceAmountPaid)})',
                                       style: TextStyle(
                                         fontSize: 13,
-                                        color: Colors.grey.shade600,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                                       ),
                                     ),
                                   ],
@@ -2123,7 +2137,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       'Advance paid (${currencyFormatter.formatCompact(_advanceAmountPaid)}) — $_advancePaymentMethod',
                                       style: TextStyle(
                                         fontSize: 14,
-                                        color: Colors.grey.shade800,
+                                        color: Theme.of(context).colorScheme.onSurface,
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
@@ -2139,13 +2153,13 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       children: [
                                         Icon(Icons.info_outline_rounded,
                                             size: 18,
-                                            color: Colors.grey.shade600),
+                                            color: Theme.of(context).colorScheme.onSurfaceVariant),
                                         const SizedBox(width: 8),
                                         Text(
                                           'No advance required',
                                           style: TextStyle(
                                             fontSize: 14,
-                                            color: Colors.grey.shade700,
+                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                                           ),
                                         ),
                                       ],
@@ -2168,7 +2182,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   filled: true,
-                                  fillColor: Colors.grey.shade50,
+                                  fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                                   prefixIcon: const Icon(Icons.payments_rounded),
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16,
@@ -2203,7 +2217,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   filled: true,
-                                  fillColor: Colors.grey.shade50,
+                                  fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                                   prefixIcon: const Icon(
                                     Icons.credit_card_rounded,
                                   ),
@@ -2212,19 +2226,19 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     vertical: 16,
                                   ),
                                 ),
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 16,
-                                  color: Colors.black87,
+                                  color: Theme.of(context).colorScheme.onSurface,
                                 ),
-                                dropdownColor: Colors.white,
+                                dropdownColor: Theme.of(context).colorScheme.surface,
                                 items: BookingModel.paymentMethods
                                     .map((method) {
                                   return DropdownMenuItem(
                                     value: method,
                                     child: Text(
                                       method,
-                                      style: const TextStyle(
-                                        color: Colors.black87,
+                                      style: TextStyle(
+                                        color: Theme.of(context).colorScheme.onSurface,
                                         fontSize: 16,
                                       ),
                                     ),
@@ -2254,26 +2268,26 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               filled: true,
-                              fillColor: Colors.grey.shade50,
+                              fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                               prefixIcon: const Icon(Icons.info_rounded),
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 16,
                               ),
                             ),
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 16,
-                              color: Colors.black87,
+                              color: Theme.of(context).colorScheme.onSurface,
                             ),
-                            dropdownColor: Colors.white,
+                            dropdownColor: Theme.of(context).colorScheme.surface,
                             items: BookingModel.statusOptions
                                 .map((status) {
                               return DropdownMenuItem(
                                 value: status,
                                 child: Text(
                                   status,
-                                  style: const TextStyle(
-                                    color: Colors.black87,
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.onSurface,
                                     fontSize: 16,
                                   ),
                                 ),
@@ -2310,7 +2324,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               filled: true,
-                              fillColor: Colors.grey.shade50,
+                              fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                               alignLabelWithHint: true,
                               contentPadding: const EdgeInsets.all(16),
                             ),
@@ -2323,6 +2337,37 @@ class _AddBookingPageState extends State<AddBookingPage> {
 
                       const SizedBox(height: 32),
 
+                      // Action buttons
+                      if (widget.existingBooking != null) ...[
+                        // Duplicate button for existing bookings
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _duplicateBooking,
+                            icon: const Icon(Icons.content_copy_rounded),
+                            label: const Text(
+                              'Duplicate Booking',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF007AFF),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              side: const BorderSide(
+                                color: Color(0xFF007AFF),
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+
                       // Save Button
                       SizedBox(
                         width: double.infinity,
@@ -2330,7 +2375,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                           onPressed: _submitBooking,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF007AFF),
-                            foregroundColor: Colors.white,
+                            foregroundColor: Theme.of(context).colorScheme.onPrimary,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -2375,19 +2420,19 @@ class _AddBookingPageState extends State<AddBookingPage> {
         hintText: hint,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+          borderSide: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.5)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+          borderSide: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.5)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: Color(0xFF007AFF), width: 2),
         ),
         filled: true,
-        fillColor: Colors.grey.shade50,
-        prefixIcon: Icon(icon, color: Colors.grey.shade600),
+        fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+        prefixIcon: Icon(icon, color: Theme.of(context).colorScheme.onSurfaceVariant),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 16,

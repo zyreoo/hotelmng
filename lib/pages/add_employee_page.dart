@@ -334,7 +334,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
                                       ? 'Update employee information'
                                       : 'Add a new team member',
                                   style: Theme.of(context).textTheme.bodyLarge
-                                      ?.copyWith(color: Colors.grey.shade600),
+                                      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                                 ),
                               ],
                             ),
@@ -465,8 +465,8 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
                         child: ElevatedButton(
                           onPressed: _submitEmployee,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF007AFF),
-                            foregroundColor: Colors.white,
+                            backgroundColor: Theme.of(context).colorScheme.primary,
+                            foregroundColor: Theme.of(context).colorScheme.onPrimary,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -503,6 +503,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
     bool isRequired = false,
     String? Function(String?)? validator,
   }) {
+    final colorScheme = Theme.of(context).colorScheme;
     return TextFormField(
       controller: controller,
       decoration: InputDecoration(
@@ -510,25 +511,25 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
         hintText: hint,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+          borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.5)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+          borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.5)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF007AFF), width: 2),
+          borderSide: BorderSide(color: colorScheme.primary, width: 2),
         ),
         filled: true,
-        fillColor: Colors.grey.shade50,
-        prefixIcon: Icon(icon, color: Colors.grey.shade600),
+        fillColor: colorScheme.surfaceContainerHighest,
+        prefixIcon: Icon(icon, color: colorScheme.onSurfaceVariant),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 16,
         ),
       ),
-      style: const TextStyle(fontSize: 16),
+      style: TextStyle(fontSize: 16, color: colorScheme.onSurface),
       keyboardType: keyboardType,
       validator: validator,
     );
@@ -541,25 +542,26 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
     required IconData icon,
     required ValueChanged<String?> onChanged,
   }) {
+    final colorScheme = Theme.of(context).colorScheme;
     return DropdownButtonFormField<String>(
       initialValue: value,
       decoration: InputDecoration(
         labelText: label,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+          borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.5)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+          borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.5)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF007AFF), width: 2),
+          borderSide: BorderSide(color: colorScheme.primary, width: 2),
         ),
         filled: true,
-        fillColor: Colors.grey.shade50,
-        prefixIcon: Icon(icon, color: Colors.grey.shade600),
+        fillColor: colorScheme.surfaceContainerHighest,
+        prefixIcon: Icon(icon, color: colorScheme.onSurfaceVariant),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 16,
@@ -569,12 +571,12 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
           .map(
             (e) => DropdownMenuItem<String>(
               value: e,
-              child: Text(e, style: const TextStyle(color: Colors.black)),
+              child: Text(e, style: TextStyle(color: colorScheme.onSurface)),
             ),
           )
           .toList(),
       onChanged: onChanged,
-      style: const TextStyle(fontSize: 16, color: Colors.black),
+      style: TextStyle(fontSize: 16, color: colorScheme.onSurface),
     );
   }
 }

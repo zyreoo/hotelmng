@@ -80,6 +80,306 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _showEditHotelNameDialog() async {
+    final hotel = HotelProvider.of(context).currentHotel;
+    if (hotel == null) return;
+
+    final nameController = TextEditingController(text: hotel.name);
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Edit Hotel Name',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              TextField(
+                controller: nameController,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Hotel Name',
+                  hintText: 'Enter hotel name',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        if (nameController.text.trim().isNotEmpty) {
+                          Navigator.pop(context, true);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Save'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (result == true && nameController.text.trim().isNotEmpty) {
+      await _updateHotelName(nameController.text.trim());
+    }
+  }
+
+  Future<void> _updateHotelName(String newName) async {
+    final hotelProvider = HotelProvider.of(context);
+    final hotel = hotelProvider.currentHotel;
+    final userId = AuthScopeData.of(context).uid;
+    if (hotel?.id == null || userId == null) return;
+
+    try {
+      final updatedHotel = hotel!.copyWith(name: newName);
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('hotels')
+          .doc(hotel.id!)
+          .update(updatedHotel.toFirestore());
+      await hotelProvider.setCurrentHotel(updatedHotel);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Hotel name updated successfully'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: const Color(0xFF34C759),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update hotel name: $e'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: const Color(0xFFFF3B30),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showEditTotalRoomsDialog() async {
+    final hotel = HotelProvider.of(context).currentHotel;
+    if (hotel == null) return;
+
+    final roomsController = TextEditingController(text: hotel.totalRooms.toString());
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Edit Total Rooms',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'This is used to calculate occupancy percentage.',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              TextField(
+                controller: roomsController,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Total Rooms',
+                  hintText: 'e.g. 20',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        final value = int.tryParse(roomsController.text.trim());
+                        if (value != null && value > 0) {
+                          Navigator.pop(context, true);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Save'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (result == true) {
+      final value = int.tryParse(roomsController.text.trim());
+      if (value != null && value > 0) {
+        await _updateTotalRooms(value);
+      }
+    }
+  }
+
+  Future<void> _updateTotalRooms(int totalRooms) async {
+    final hotelProvider = HotelProvider.of(context);
+    final hotel = hotelProvider.currentHotel;
+    final userId = AuthScopeData.of(context).uid;
+    if (hotel?.id == null || userId == null) return;
+
+    try {
+      final updatedHotel = hotel!.copyWith(totalRooms: totalRooms);
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('hotels')
+          .doc(hotel.id!)
+          .update(updatedHotel.toFirestore());
+      await hotelProvider.setCurrentHotel(updatedHotel);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Total rooms updated successfully'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: const Color(0xFF34C759),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update total rooms: $e'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: const Color(0xFFFF3B30),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = AuthScopeData.of(context);
@@ -109,9 +409,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     Text(
                       'Customize your experience',
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: Theme.of(context).brightness == Brightness.dark
-                                ? Colors.grey.shade400
-                                : Colors.grey.shade600,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                     ),
                   ],
@@ -151,6 +449,22 @@ class _SettingsPageState extends State<SettingsPage> {
                         icon: Icons.hotel_rounded,
                         title: 'Hotel Name',
                         subtitle: hotel?.name ?? 'No hotel selected',
+                        trailing: Icon(
+                          Icons.chevron_right_rounded,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        onTap: _showEditHotelNameDialog,
+                      ),
+                      const Divider(height: 1),
+                      _SettingsTile(
+                        icon: Icons.meeting_room_rounded,
+                        title: 'Total Rooms',
+                        subtitle: '${hotel?.totalRooms ?? 10} rooms',
+                        trailing: Icon(
+                          Icons.chevron_right_rounded,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        onTap: _showEditTotalRoomsDialog,
                       ),
                       const Divider(height: 1),
                       _SettingsTile(
@@ -158,9 +472,9 @@ class _SettingsPageState extends State<SettingsPage> {
                         title: 'Currency',
                         subtitle:
                             '${hotel?.currencyCode ?? 'EUR'} (${hotel?.currencySymbol ?? '€'})',
-                        trailing: const Icon(
+                        trailing: Icon(
                           Icons.chevron_right_rounded,
-                          color: Colors.grey,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                         onTap: () => _showCurrencyPicker(context),
                       ),
@@ -215,7 +529,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _showCurrencyPicker(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colorScheme = Theme.of(context).colorScheme;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -225,7 +539,7 @@ class _SettingsPageState extends State<SettingsPage> {
         return Container(
           height: MediaQuery.of(context).size.height * 0.7,
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+            color: colorScheme.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: SafeArea(
@@ -236,7 +550,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
+                    color: colorScheme.onSurfaceVariant.withOpacity(0.5),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -276,8 +590,8 @@ class _SettingsPageState extends State<SettingsPage> {
                           height: 40,
                           decoration: BoxDecoration(
                             color: isSelected
-                                ? const Color(0xFF007AFF).withOpacity(0.1)
-                                : Colors.grey.shade100,
+                                ? colorScheme.primary.withOpacity(0.1)
+                                : colorScheme.surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Center(
@@ -287,8 +601,8 @@ class _SettingsPageState extends State<SettingsPage> {
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
                                 color: isSelected
-                                    ? const Color(0xFF007AFF)
-                                    : Colors.grey.shade700,
+                                    ? colorScheme.primary
+                                    : colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ),
@@ -305,13 +619,13 @@ class _SettingsPageState extends State<SettingsPage> {
                           '${currency['code']} (${currency['symbol']})',
                           style: TextStyle(
                             fontSize: 13,
-                            color: Colors.grey.shade600,
+                            color: colorScheme.onSurfaceVariant,
                           ),
                         ),
                         trailing: isSelected
-                            ? const Icon(
+                            ? Icon(
                                 Icons.check_circle_rounded,
-                                color: Color(0xFF007AFF),
+                                color: colorScheme.primary,
                               )
                             : null,
                         onTap: _updatingCurrency
@@ -379,7 +693,7 @@ class _SectionHeader extends StatelessWidget {
         style: TextStyle(
           fontSize: 13,
           fontWeight: FontWeight.w600,
-          color: Colors.grey.shade600,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
           letterSpacing: 0.5,
         ),
       ),
@@ -394,14 +708,14 @@ class _SettingsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
+            color: colorScheme.shadow.withOpacity(Theme.of(context).brightness == Brightness.dark ? 0.3 : 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -464,7 +778,7 @@ class _SettingsTile extends StatelessWidget {
                 subtitle!,
                 style: TextStyle(
                   fontSize: 14,
-                  color: Colors.grey.shade600,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             )
@@ -485,13 +799,14 @@ class _ThemeSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return InkWell(
       onTap: () => _showThemeDialog(context),
       borderRadius: BorderRadius.circular(8),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.grey.shade100,
+          color: colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
@@ -505,7 +820,7 @@ class _ThemeSelector extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 4),
-            Icon(Icons.arrow_drop_down_rounded, size: 20, color: Colors.grey.shade700),
+            Icon(Icons.arrow_drop_down_rounded, size: 20, color: colorScheme.onSurfaceVariant),
           ],
         ),
       ),
@@ -524,14 +839,14 @@ class _ThemeSelector extends StatelessWidget {
   }
 
   void _showThemeDialog(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colorScheme = Theme.of(context).colorScheme;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) {
         return Container(
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+            color: colorScheme.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: SafeArea(
@@ -543,7 +858,7 @@ class _ThemeSelector extends StatelessWidget {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
+                    color: colorScheme.onSurfaceVariant.withOpacity(0.5),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -623,19 +938,20 @@ class _ThemeOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return ListTile(
       leading: Container(
         width: 40,
         height: 40,
         decoration: BoxDecoration(
           color: isSelected
-              ? const Color(0xFF007AFF).withOpacity(0.1)
-              : Colors.grey.shade100,
+              ? colorScheme.primary.withOpacity(0.1)
+              : colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(10),
         ),
         child: Icon(
           icon,
-          color: isSelected ? const Color(0xFF007AFF) : Colors.grey.shade700,
+          color: isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant,
           size: 22,
         ),
       ),
@@ -649,13 +965,13 @@ class _ThemeOption extends StatelessWidget {
         subtitle,
         style: TextStyle(
           fontSize: 13,
-          color: Colors.grey.shade600,
+          color: colorScheme.onSurfaceVariant,
         ),
       ),
       trailing: isSelected
-          ? const Icon(
+          ? Icon(
               Icons.check_circle_rounded,
-              color: Color(0xFF007AFF),
+              color: colorScheme.primary,
             )
           : null,
       onTap: onTap,

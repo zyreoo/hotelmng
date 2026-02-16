@@ -5,6 +5,7 @@ import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
 import '../utils/currency_formatter.dart';
+import '../widgets/loading_empty_states.dart';
 import 'add_booking_page.dart';
 
 class BookingsListPage extends StatefulWidget {
@@ -26,7 +27,9 @@ class _BookingsListPageState extends State<BookingsListPage> {
   String _selectedStatus = 'All';
   DateTime? _filterStartDate;
   DateTime? _filterEndDate;
-  
+  String _sortBy = 'date'; // date, name, status, amount
+  bool _sortAscending = false; // false = newest / highest first
+
   static final List<String> _statusOptions = [
     'All',
     ...BookingModel.statusOptions,
@@ -120,9 +123,139 @@ class _BookingsListPageState extends State<BookingsListPage> {
         return matchesSearch && matchesStatus && matchesDateRange;
       }).toList();
 
-      // Sort by check-in date (most recent first)
-      _filteredBookings.sort((a, b) => b.checkIn.compareTo(a.checkIn));
+      // Sort
+      final mult = _sortAscending ? 1 : -1;
+      switch (_sortBy) {
+        case 'date':
+          _filteredBookings.sort((a, b) => mult * a.checkIn.compareTo(b.checkIn));
+          break;
+        case 'name':
+          _filteredBookings.sort((a, b) => mult * a.userName.toLowerCase().compareTo(b.userName.toLowerCase()));
+          break;
+        case 'status':
+          _filteredBookings.sort((a, b) => mult * a.status.compareTo(b.status));
+          break;
+        case 'amount':
+          _filteredBookings.sort((a, b) => mult * a.amountOfMoneyPaid.compareTo(b.amountOfMoneyPaid));
+          break;
+        default:
+          _filteredBookings.sort((a, b) => mult * a.checkIn.compareTo(b.checkIn));
+      }
     });
+  }
+
+  Future<void> _updateBookingStatus(BookingModel booking, String newStatus) async {
+    final userId = AuthScopeData.of(context).uid;
+    final hotelId = HotelProvider.of(context).hotelId;
+    if (userId == null || hotelId == null || booking.id == null) return;
+    try {
+      final updated = booking.copyWith(status: newStatus);
+      await _firebaseService.updateBooking(userId, hotelId, updated);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Status updated to $newStatus'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: const Color(0xFF34C759),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+        await _loadBookings(userId, hotelId);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update: $e'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: const Color(0xFFFF3B30),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    }
+  }
+
+  void _showSortOptions() {
+    final options = [
+      ('date', 'Check-in date'),
+      ('name', 'Guest name'),
+      ('status', 'Status'),
+      ('amount', 'Amount'),
+    ];
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 12),
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Sort by',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _sortAscending = !_sortAscending;
+                            _filterBookings();
+                          });
+                          Navigator.pop(context);
+                        },
+                        child: Text(_sortAscending ? 'Oldest first' : 'Newest first'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...options.map((opt) {
+                  final (value, label) = opt;
+                  final isSelected = _sortBy == value;
+                  return ListTile(
+                    leading: Icon(
+                      isSelected ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
+                      color: isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    title: Text(label),
+                    onTap: () {
+                      setState(() {
+                        _sortBy = value;
+                        _filterBookings();
+                      });
+                      Navigator.pop(context);
+                    },
+                  );
+                }),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _selectDateRange() async {
@@ -134,17 +267,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
           ? DateTimeRange(start: _filterStartDate!, end: _filterEndDate!)
           : null,
       builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: const Color(0xFF007AFF),
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: Colors.grey.shade900,
-            ),
-          ),
-          child: child!,
-        );
+        return child!;
       },
     );
 
@@ -180,7 +303,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
       case 'Waiting list':
         return const Color(0xFFAF52DE);
       default:
-        return Colors.grey;
+        return Theme.of(context).colorScheme.onSurfaceVariant;
     }
   }
 
@@ -213,8 +336,8 @@ class _BookingsListPageState extends State<BookingsListPage> {
                     '${_filteredBookings.length} ${_filteredBookings.length == 1 ? 'booking' : 'bookings'}',
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                           color: Theme.of(context).brightness == Brightness.dark
-                              ? Colors.grey.shade400
-                              : Colors.grey.shade600,
+                              ? Theme.of(context).colorScheme.onSurfaceVariant
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                   ),
                 ],
@@ -229,11 +352,11 @@ class _BookingsListPageState extends State<BookingsListPage> {
                   // Search bar
                   Container(
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.surface,
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Theme.of(context).colorScheme.shadow.withOpacity(0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 2),
                         ),
@@ -243,16 +366,16 @@ class _BookingsListPageState extends State<BookingsListPage> {
                       controller: _searchController,
                       decoration: InputDecoration(
                         hintText: 'Search by name, phone, or email...',
-                        hintStyle: TextStyle(color: Colors.grey.shade400),
+                        hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                         prefixIcon: Icon(
                           Icons.search_rounded,
-                          color: Colors.grey.shade400,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                         suffixIcon: _searchController.text.isNotEmpty
                             ? IconButton(
                                 icon: Icon(
                                   Icons.clear_rounded,
-                                  color: Colors.grey.shade400,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                                 onPressed: () {
                                   _searchController.clear();
@@ -293,6 +416,19 @@ class _BookingsListPageState extends State<BookingsListPage> {
                               ? _clearDateFilter
                               : null,
                         ),
+                        const SizedBox(width: 8),
+                        // Sort
+                        _FilterChip(
+                          label: _sortBy == 'date'
+                              ? 'Date'
+                              : _sortBy == 'name'
+                                  ? 'Name'
+                                  : _sortBy == 'status'
+                                      ? 'Status'
+                                      : 'Amount',
+                          icon: _sortAscending ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                          onTap: _showSortOptions,
+                        ),
                       ],
                     ),
                   ),
@@ -305,7 +441,11 @@ class _BookingsListPageState extends State<BookingsListPage> {
             // Bookings list
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? SkeletonListLoader(
+                      itemCount: 8,
+                      itemHeight: 140,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                    )
                   : _error != null
                       ? Center(
                           child: Padding(
@@ -317,34 +457,10 @@ class _BookingsListPageState extends State<BookingsListPage> {
                           ),
                         )
                       : _filteredBookings.isEmpty
-                          ? Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.search_off_rounded,
-                                    size: 64,
-                                    color: Colors.grey.shade300,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    'No bookings found',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Try adjusting your filters',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey.shade400,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                          ? const EmptyStateWidget(
+                              icon: Icons.event_busy_rounded,
+                              title: 'No bookings found',
+                              subtitle: 'Try adjusting your filters or add a new booking',
                             )
                           : RefreshIndicator(
                               onRefresh: () async {
@@ -367,6 +483,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
                                     currencyFormatter: currencyFormatter,
                                     statusColor: _getStatusColor(booking.status),
                                     onTap: () => _openBooking(booking),
+                                    onStatusChange: (newStatus) => _updateBookingStatus(booking, newStatus),
                                   );
                                 },
                               ),
@@ -384,9 +501,9 @@ class _BookingsListPageState extends State<BookingsListPage> {
       backgroundColor: Colors.transparent,
       builder: (context) {
         return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: SafeArea(
             child: Column(
@@ -397,7 +514,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -424,7 +541,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
                           : Icons.radio_button_unchecked_rounded,
                       color: isSelected
                           ? const Color(0xFF007AFF)
-                          : Colors.grey.shade400,
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     title: Text(
                       status,
@@ -433,7 +550,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
                             isSelected ? FontWeight.w600 : FontWeight.normal,
                         color: isSelected
                             ? const Color(0xFF007AFF)
-                            : Colors.grey.shade900,
+                            : Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                     onTap: () {
@@ -489,15 +606,15 @@ class _FilterChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: Colors.grey.shade300,
+            color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
             width: 1,
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Theme.of(context).colorScheme.shadow.withOpacity(0.03),
               blurRadius: 4,
               offset: const Offset(0, 1),
             ),
@@ -523,11 +640,88 @@ class _FilterChip extends StatelessWidget {
                 child: Icon(
                   Icons.close_rounded,
                   size: 16,
-                  color: Colors.grey.shade500,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Status chip that opens a menu via showMenu (avoids PopupMenuButton during hit-test).
+class _StatusChipWithMenu extends StatelessWidget {
+  final String label;
+  final Color statusColor;
+  final ValueChanged<String> onSelected;
+
+  const _StatusChipWithMenu({
+    required this.label,
+    required this.statusColor,
+    required this.onSelected,
+  });
+
+  Future<void> _showMenu(BuildContext context) async {
+    // Defer menu open to avoid mouse_tracker assertion (!_debugDuringDeviceUpdate).
+    await Future.delayed(const Duration(milliseconds: 100));
+    if (!context.mounted) return;
+    final RenderBox? box = context.findRenderObject() as RenderBox?;
+    if (box == null || !context.mounted) return;
+    final overlay = Navigator.of(context).overlay;
+    if (overlay == null || !context.mounted) return;
+    final RenderBox overlayBox = overlay.context.findRenderObject() as RenderBox;
+    final position = box.localToGlobal(Offset.zero, ancestor: overlayBox);
+    final size = MediaQuery.of(context).size;
+    final top = position.dy + box.size.height;
+    final relativeRect = RelativeRect.fromLTRB(
+      position.dx,
+      top,
+      size.width - position.dx,
+      size.height - top,
+    );
+    final value = await showMenu<String>(
+      context: context,
+      position: relativeRect,
+      items: BookingModel.statusOptions
+          .map((status) => PopupMenuItem<String>(
+                value: status,
+                child: Text(status),
+              ))
+          .toList(),
+    );
+    if (value != null && context.mounted) onSelected(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _showMenu(context),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: statusColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: statusColor,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(Icons.arrow_drop_down_rounded, size: 18, color: statusColor),
+            ],
+          ),
         ),
       ),
     );
@@ -539,24 +733,29 @@ class _BookingCard extends StatelessWidget {
   final CurrencyFormatter currencyFormatter;
   final Color statusColor;
   final VoidCallback onTap;
+  final ValueChanged<String>? onStatusChange;
 
   const _BookingCard({
     required this.booking,
     required this.currencyFormatter,
     required this.statusColor,
     required this.onTap,
+    this.onStatusChange,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: colorScheme.shadow.withOpacity(isDark ? 0.2 : 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -590,30 +789,37 @@ class _BookingCard extends StatelessWidget {
                             booking.userPhone,
                             style: TextStyle(
                               fontSize: 14,
-                              color: Colors.grey.shade600,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: statusColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        booking.status,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: statusColor,
+                    if (onStatusChange != null)
+                      _StatusChipWithMenu(
+                        label: booking.status,
+                        statusColor: statusColor,
+                        onSelected: onStatusChange!,
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          booking.status,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: statusColor,
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -693,14 +899,14 @@ class _InfoRow extends StatelessWidget {
         Icon(
           icon,
           size: 16,
-          color: Colors.grey.shade400,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         const SizedBox(width: 6),
         Text(
           '$label: ',
           style: TextStyle(
             fontSize: 13,
-            color: Colors.grey.shade600,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
         Expanded(

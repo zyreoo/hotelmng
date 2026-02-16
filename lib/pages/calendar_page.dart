@@ -7,6 +7,7 @@ import '../models/booking_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
+import '../widgets/loading_empty_states.dart';
 import 'add_booking_page.dart';
 import 'room_management_page.dart';
 
@@ -97,7 +98,7 @@ class _CalendarPageState extends State<CalendarPage> {
       case 'Waiting list':
         return const Color(0xFFAF52DE);
       default:
-        return Colors.grey;
+        return const Color(0xFF8E8E93);
     }
   }
 
@@ -109,7 +110,7 @@ class _CalendarPageState extends State<CalendarPage> {
         return const Color(0xFFFF9500);
       case 'not_required':
       default:
-        return Colors.white.withOpacity(0.6);
+        return const Color(0xFF8E8E93);
     }
   }
 
@@ -335,7 +336,7 @@ class _CalendarPageState extends State<CalendarPage> {
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.15),
+                      color: Theme.of(context).colorScheme.shadow.withOpacity(0.15),
                       blurRadius: 20,
                       offset: const Offset(0, 10),
                     ),
@@ -350,7 +351,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w600,
                         fontSize: 17,
-                        color: Colors.black,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -358,14 +359,14 @@ class _CalendarPageState extends State<CalendarPage> {
                       'Go to date',
                       style: TextStyle(
                         fontSize: 13,
-                        color: Colors.grey.shade600,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 20),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: Material(
-                        color: Colors.white,
+                        color: Theme.of(context).colorScheme.surface,
                         borderRadius: BorderRadius.circular(10),
                         child: InkWell(
                           onTap: () async {
@@ -390,22 +391,22 @@ class _CalendarPageState extends State<CalendarPage> {
                                 Icon(
                                   Icons.calendar_today_rounded,
                                   size: 20,
-                                  color: Colors.grey.shade600,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                                 const SizedBox(width: 12),
                                 Text(
                                   DateFormat('EEEE, MMM d, yyyy').format(date),
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w500,
-                                    color: Colors.black87,
+                                    color: Theme.of(context).colorScheme.onSurface,
                                   ),
                                 ),
                                 const Spacer(),
                                 Icon(
                                   Icons.chevron_right_rounded,
                                   size: 22,
-                                  color: Colors.grey.shade400,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                               ],
                             ),
@@ -444,7 +445,7 @@ class _CalendarPageState extends State<CalendarPage> {
                               },
                               style: FilledButton.styleFrom(
                                 backgroundColor: const Color(0xFF007AFF),
-                                foregroundColor: Colors.white,
+                                foregroundColor: Theme.of(context).colorScheme.onPrimary,
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 12,
                                 ),
@@ -1116,10 +1117,155 @@ class _CalendarPageState extends State<CalendarPage> {
     });
   }
 
+  Future<void> _showDayViewDialog() async {
+    final selectedDate = await showDatePicker(
+      context: context,
+      initialDate: _lastSearchedDate ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF007AFF),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (selectedDate == null) return;
+
+    // Get bookings for the selected date
+    final bookingsForDay = <BookingModel>[];
+    for (final entry in _bookingModelsById.entries) {
+      final booking = entry.value;
+      final checkInDate = DateTime(
+        booking.checkIn.year,
+        booking.checkIn.month,
+        booking.checkIn.day,
+      );
+      final checkOutDate = DateTime(
+        booking.checkOut.year,
+        booking.checkOut.month,
+        booking.checkOut.day,
+      );
+      final targetDate = DateTime(
+        selectedDate.year,
+        selectedDate.month,
+        selectedDate.day,
+      );
+
+      // Check if booking overlaps the selected date
+      if (!targetDate.isBefore(checkInDate) && targetDate.isBefore(checkOutDate)) {
+        bookingsForDay.add(booking);
+      }
+    }
+
+    if (!mounted) return;
+
+    // Show dialog with bookings for that day
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) => Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? const Color(0xFF1C1C1E)
+                : Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Handle
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 12),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              // Header
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            DateFormat('EEEE, MMM d, yyyy').format(selectedDate),
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${bookingsForDay.length} booking${bookingsForDay.length != 1 ? 's' : ''}',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              // Bookings list
+              Expanded(
+                child                    : bookingsForDay.isEmpty
+                    ? const EmptyStateWidget(
+                        icon: Icons.event_busy_rounded,
+                        title: 'No bookings for this date',
+                        subtitle: 'Select another date or add a new booking',
+                      )
+                    : ListView.builder(
+                        controller: scrollController,
+                        padding: const EdgeInsets.all(16),
+                        itemCount: bookingsForDay.length,
+                        itemBuilder: (context, index) {
+                          final booking = bookingsForDay[index];
+                          return _DayViewBookingCard(
+                            booking: booking,
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => AddBookingPage(existingBooking: booking),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -1139,6 +1285,7 @@ class _CalendarPageState extends State<CalendarPage> {
                             ?.copyWith(
                               fontWeight: FontWeight.bold,
                               fontSize: 34,
+                              color: Theme.of(context).colorScheme.onSurface,
                             ),
                       ),
                       const SizedBox(height: 8),
@@ -1156,7 +1303,7 @@ class _CalendarPageState extends State<CalendarPage> {
                               Icon(
                                 Icons.search_rounded,
                                 size: 18,
-                                color: Colors.grey.shade600,
+                                color: Theme.of(context).colorScheme.onSurface,
                               ),
                               const SizedBox(width: 6),
                               Text(
@@ -1164,7 +1311,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                   'MMM d, yyyy',
                                 ).format(_lastSearchedDate ?? _earliestDate),
                                 style: Theme.of(context).textTheme.bodyLarge
-                                    ?.copyWith(color: Colors.grey.shade600),
+                                    ?.copyWith(color: Theme.of(context).colorScheme.onSurface),
                               ),
                             ],
                           ),
@@ -1174,6 +1321,16 @@ class _CalendarPageState extends State<CalendarPage> {
                   ),
                   Row(
                     children: [
+                      IconButton(
+                        onPressed: _showDayViewDialog,
+                        icon: const Icon(Icons.view_day_rounded, size: 24),
+                        tooltip: 'Day View',
+                        style: IconButton.styleFrom(
+                          foregroundColor: Theme.of(context).colorScheme.primary,
+                          backgroundColor: Colors.transparent,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
                       TextButton.icon(
                         onPressed: () async {
                           await Navigator.push(
@@ -1187,7 +1344,8 @@ class _CalendarPageState extends State<CalendarPage> {
                         icon: const Icon(Icons.meeting_room_rounded, size: 20),
                         label: const Text('Manage rooms'),
                         style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFF007AFF),
+                          foregroundColor: Theme.of(context).colorScheme.primary,
+                          backgroundColor: Colors.transparent,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1209,7 +1367,7 @@ class _CalendarPageState extends State<CalendarPage> {
                           },
                           style: IconButton.styleFrom(
                             backgroundColor: const Color(0xFF007AFF),
-                            foregroundColor: Colors.white,
+                            foregroundColor: Theme.of(context).colorScheme.onPrimary,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -1231,11 +1389,11 @@ class _CalendarPageState extends State<CalendarPage> {
                       ? Container(
                           margin: const EdgeInsets.symmetric(horizontal: 24),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: Theme.of(context).colorScheme.surface,
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.08),
+                                color: Theme.of(context).colorScheme.shadow.withOpacity(0.08),
                                 blurRadius: 16,
                                 offset: const Offset(0, 4),
                               ),
@@ -1248,7 +1406,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                 Icon(
                                   Icons.meeting_room_rounded,
                                   size: 64,
-                                  color: Colors.grey.shade400,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                                 const SizedBox(height: 16),
                                 Text(
@@ -1260,7 +1418,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                   padding: const EdgeInsets.symmetric(horizontal: 48),
                                   child: Text(
                                     'Add rooms to see the calendar and assign bookings to rooms.',
-                                    style: TextStyle(color: Colors.grey.shade600),
+                                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                                     textAlign: TextAlign.center,
                                   ),
                                 ),
@@ -1291,11 +1449,11 @@ class _CalendarPageState extends State<CalendarPage> {
                               child: Container(
                                 margin: const EdgeInsets.symmetric(horizontal: 24),
                                 decoration: BoxDecoration(
-                                  color: Colors.white,
+                                  color: Theme.of(context).colorScheme.surface,
                                   borderRadius: BorderRadius.circular(16),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withOpacity(0.08),
+                                      color: Theme.of(context).colorScheme.shadow.withOpacity(0.08),
                                       blurRadius: 16,
                                       offset: const Offset(0, 4),
                                     ),
@@ -1384,16 +1542,16 @@ class _CalendarPageState extends State<CalendarPage> {
                         height: _headerHeight,
                         child: Container(
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF9F9F9),
+                            color: Theme.of(context).colorScheme.surface,
                             border: Border(
                               bottom: BorderSide(
-                                color: Colors.grey.shade300,
+                                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
                                 width: 1,
                               ),
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
+                                color: Theme.of(context).colorScheme.shadow.withOpacity(0.05),
                                 blurRadius: 4,
                                 offset: const Offset(0, 2),
                               ),
@@ -1406,10 +1564,10 @@ class _CalendarPageState extends State<CalendarPage> {
                                 width: _dayLabelWidth,
                                 height: _headerHeight,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFEFEFF4),
+                                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
                                   border: Border(
                                     right: BorderSide(
-                                      color: Colors.grey.shade300,
+                                      color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
                                     ),
                                   ),
                                 ),
@@ -1417,18 +1575,18 @@ class _CalendarPageState extends State<CalendarPage> {
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      const Icon(
+                                      Icon(
                                         Icons.hotel_rounded,
                                         size: 14,
-                                        color: Color(0xFF007AFF),
+                                        color: Theme.of(context).colorScheme.primary,
                                       ),
                                       const SizedBox(width: 4),
-                                      const Text(
+                                      Text(
                                         'Rooms',
                                         style: TextStyle(
                                           fontWeight: FontWeight.w600,
                                           fontSize: 12,
-                                          color: Color(0xFF007AFF),
+                                          color: Theme.of(context).colorScheme.primary,
                                           letterSpacing: 0.2,
                                         ),
                                       ),
@@ -1450,7 +1608,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                         decoration: BoxDecoration(
                                           border: Border(
                                             right: BorderSide(
-                                              color: Colors.white,
+                                              color: Theme.of(context).colorScheme.surface,
                                               width: 1,
                                             ),
                                           ),
@@ -1458,10 +1616,10 @@ class _CalendarPageState extends State<CalendarPage> {
                                         child: Center(
                                           child: Text(
                                             'Room $room',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontWeight: FontWeight.w600,
                                               fontSize: 13,
-                                              color: Colors.black87,
+                                              color: Theme.of(context).colorScheme.onSurface,
                                               letterSpacing: 0.3,
                                             ),
                                           ),
@@ -1483,7 +1641,7 @@ class _CalendarPageState extends State<CalendarPage> {
                         bottom: 0,
                         width: _dayLabelWidth,
                         child: Container(
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.surface,
                           child: ScrollConfiguration(
                             behavior: ScrollConfiguration.of(
                               context,
@@ -1542,7 +1700,10 @@ class _CalendarPageState extends State<CalendarPage> {
                 ),
               ),
             ),
+                            // Waiting list then legend
                             _buildWaitingListSection(),
+                            const SizedBox(height: 16),
+                            _buildLegendSection(),
                           ],
                         ),
             ),
@@ -1577,7 +1738,70 @@ class _CalendarPageState extends State<CalendarPage> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
+          child: Icon(Icons.add_rounded, color: Theme.of(context).colorScheme.onPrimary, size: 28),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLegendSection() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(24, 0, 24, 0),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Status Legend',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 16,
+                runSpacing: 8,
+                children: [
+                  _LegendItem(
+                    color: _statusColor('Confirmed'),
+                    label: 'Confirmed',
+                  ),
+                  _LegendItem(
+                    color: _statusColor('Pending'),
+                    label: 'Pending',
+                  ),
+                  _LegendItem(
+                    color: _statusColor('Paid'),
+                    label: 'Paid',
+                  ),
+                  _LegendItem(
+                    color: _statusColor('Unpaid'),
+                    label: 'Unpaid',
+                  ),
+                  _LegendItem(
+                    color: _statusColor('Cancelled'),
+                    label: 'Cancelled',
+                  ),
+                  _LegendItem(
+                    color: _statusColor('Waiting list'),
+                    label: 'Waiting list',
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1611,7 +1835,7 @@ class _CalendarPageState extends State<CalendarPage> {
             leading: Icon(
               Icons.list_alt_rounded,
               color: _waitingListBookings.isEmpty
-                  ? Colors.grey.shade400
+                  ? Theme.of(context).colorScheme.onSurfaceVariant
                   : const Color(0xFFAF52DE),
               size: 24,
             ),
@@ -1627,7 +1851,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: _waitingListBookings.isEmpty
-                    ? Colors.grey.shade600
+                    ? Theme.of(context).colorScheme.onSurfaceVariant
                     : const Color(0xFFAF52DE),
               ),
             ),
@@ -1639,7 +1863,7 @@ class _CalendarPageState extends State<CalendarPage> {
                     'No reservations on the waiting list. Bookings saved as "Waiting list" (e.g. over capacity) appear here.',
                     style: TextStyle(
                       fontSize: 13,
-                      color: Colors.grey.shade600,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       height: 1.4,
                     ),
                   ),
@@ -1655,7 +1879,7 @@ class _CalendarPageState extends State<CalendarPage> {
                         'Long-press an item and drag it to a calendar cell to place it. Any booking there will move to the waiting list.',
                         style: TextStyle(
                           fontSize: 11,
-                          color: Colors.grey.shade600,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           height: 1.3,
                         ),
                       ),
@@ -1699,7 +1923,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                 '${b.numberOfRooms} room(s)',
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: Colors.grey.shade600,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                             ],
@@ -1728,7 +1952,7 @@ class _CalendarPageState extends State<CalendarPage> {
                           '${DateFormat('MMM d', 'en').format(b.checkIn)} – ${DateFormat('MMM d', 'en').format(b.checkOut)} · ${b.numberOfRooms} room(s)',
                           style: TextStyle(
                             fontSize: 12,
-                            color: Colors.grey.shade600,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                         ),
                         trailing: const Icon(
@@ -1757,7 +1981,7 @@ class _CalendarPageState extends State<CalendarPage> {
                         '${DateFormat('MMM d', 'en').format(b.checkIn)} – ${DateFormat('MMM d', 'en').format(b.checkOut)} · ${b.numberOfRooms} room(s)',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.grey.shade600,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                       trailing: const Icon(
@@ -1798,7 +2022,7 @@ class _CalendarPageState extends State<CalendarPage> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.15),
+                color: Theme.of(context).colorScheme.shadow.withOpacity(0.15),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
@@ -1934,10 +2158,10 @@ class _CalendarPageState extends State<CalendarPage> {
       decoration: BoxDecoration(
         color: isToday
             ? const Color(0xFF007AFF).withOpacity(0.05)
-            : Colors.white,
+            : Theme.of(context).colorScheme.surface,
         border: Border(
-          top: BorderSide(color: Colors.grey.shade200, width: 1),
-          bottom: BorderSide(color: Colors.grey.shade200, width: 1),
+          top: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.3), width: 1),
+          bottom: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.3), width: 1),
         ),
       ),
       child: Row(
@@ -1968,7 +2192,7 @@ class _CalendarPageState extends State<CalendarPage> {
             top: 0,
             bottom: 0,
             width: 1,
-            child: Container(color: Colors.grey.shade200),
+            child: Container(color: Theme.of(context).colorScheme.outline.withOpacity(0.3)),
           ),
 
           // Background for the whole date row (filled, not rounded)
@@ -1976,7 +2200,7 @@ class _CalendarPageState extends State<CalendarPage> {
             child: Container(
               color: isToday
                   ? const Color(0xFF007AFF).withOpacity(0.08)
-                  : Colors.white,
+                  : Theme.of(context).colorScheme.surface,
             ),
           ),
 
@@ -1996,7 +2220,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       style: TextStyle(
                         fontSize: 10,
                         height: 1.0,
-                        color: Colors.grey.shade600,
+                        color: Theme.of(context).colorScheme.onSurface,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -2008,8 +2232,8 @@ class _CalendarPageState extends State<CalendarPage> {
                         height: 1.0,
                         fontWeight: isToday ? FontWeight.bold : FontWeight.w600,
                         color: isToday
-                            ? const Color(0xFF007AFF)
-                            : Colors.black87,
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                   ],
@@ -2048,9 +2272,9 @@ class _CalendarPageState extends State<CalendarPage> {
               ? const Color(0xFFAF52DE).withOpacity(0.25)
               : isSelected
                   ? const Color(0xFF007AFF).withOpacity(0.2)
-                  : Colors.white,
+                  : Theme.of(context).colorScheme.surface,
           border: Border(
-            right: BorderSide(color: Colors.grey.shade200, width: 1),
+            right: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.3), width: 1),
             top: isSelected
                 ? BorderSide(
                     color: const Color(0xFF007AFF).withOpacity(0.5),
@@ -2165,7 +2389,7 @@ class _CalendarPageState extends State<CalendarPage> {
                         boxShadow: booking.isFirstNight
                             ? [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
+                                  color: Theme.of(context).colorScheme.shadow.withOpacity(0.1),
                                   blurRadius: 4,
                                   offset: const Offset(0, 2),
                                 ),
@@ -2250,7 +2474,7 @@ class _CalendarPageState extends State<CalendarPage> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.15),
+                color: Theme.of(context).colorScheme.shadow.withOpacity(0.15),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
@@ -2381,7 +2605,7 @@ class _CalendarPageState extends State<CalendarPage> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -2401,15 +2625,15 @@ class _CalendarPageState extends State<CalendarPage> {
               children: [
                 Text(
                   label,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w500,
-                    color: Colors.black87,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -2427,7 +2651,7 @@ class _CalendarPageState extends State<CalendarPage> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -2447,7 +2671,7 @@ class _CalendarPageState extends State<CalendarPage> {
               children: [
                 Text(
                   'Status',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 6),
                 Container(
@@ -2491,7 +2715,7 @@ class _CalendarPageState extends State<CalendarPage> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.15),
+                color: Theme.of(context).colorScheme.shadow.withOpacity(0.15),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
@@ -2519,7 +2743,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w600,
                   fontSize: 17,
-                  color: Colors.black,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 8),
@@ -2527,7 +2751,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Text(
                   'This will permanently delete the booking. This action cannot be undone.',
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                  style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -2542,7 +2766,7 @@ class _CalendarPageState extends State<CalendarPage> {
                         onPressed: () => Navigator.pop(ctx, true),
                         style: FilledButton.styleFrom(
                           backgroundColor: Colors.red,
-                          foregroundColor: Colors.white,
+                          foregroundColor: Theme.of(context).colorScheme.onPrimary,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10),
@@ -2592,7 +2816,7 @@ class _CalendarPageState extends State<CalendarPage> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.15),
+                color: Theme.of(context).colorScheme.shadow.withOpacity(0.15),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
@@ -2788,7 +3012,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.2),
+                color: Theme.of(context).colorScheme.shadow.withOpacity(0.2),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
@@ -2805,7 +3029,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w600,
                     fontSize: 20,
-                    color: Colors.black,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -2817,7 +3041,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                   'You have unsaved changes. Do you want to save before closing?',
                   style: TextStyle(
                     fontSize: 15,
-                    color: Colors.grey.shade600,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     height: 1.35,
                   ),
                   textAlign: TextAlign.center,
@@ -2867,9 +3091,9 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: Theme.of(context).colorScheme.surface,
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.grey.shade300),
+                              border: Border.all(color: Theme.of(context).colorScheme.outline.withOpacity(0.5)),
                             ),
                             child: const Center(
                               child: Text(
@@ -2993,7 +3217,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w600,
               fontSize: 17,
-              color: Colors.black,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 20),
@@ -3034,7 +3258,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                   'Price',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.grey.shade600,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -3050,7 +3274,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                         'No price breakdown',
                         style: TextStyle(
                           fontSize: 13,
-                          color: Colors.grey.shade600,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -3062,7 +3286,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                         '${b.numberOfNights} night${b.numberOfNights == 1 ? '' : 's'} × ${b.numberOfRooms} room${b.numberOfRooms == 1 ? '' : 's'} × ${b.pricePerNight} = ${b.roomSubtotal}',
                         style: TextStyle(
                           fontSize: 13,
-                          color: Colors.grey.shade700,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -3078,7 +3302,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                                 '${s.name} — ${s.quantity} × ${s.unitPrice}',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: Colors.grey.shade700,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                               Text(
@@ -3086,7 +3310,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                                 style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w500,
-                                  color: Colors.grey.shade800,
+                                  color: Theme.of(context).colorScheme.onSurface,
                                 ),
                               ),
                             ],
@@ -3101,7 +3325,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: Colors.grey.shade800,
+                              color: Theme.of(context).colorScheme.onSurface,
                             ),
                           ),
                           Text(
@@ -3124,7 +3348,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: Colors.grey.shade800,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
                         Text(
@@ -3146,7 +3370,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                   'Advance payment',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.grey.shade600,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -3159,7 +3383,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                         'No advance required',
                         style: TextStyle(
                           fontSize: 13,
-                          color: Colors.grey.shade600,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -3171,7 +3395,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                         '${b.advancePercent}% of total — required: ${b.advanceAmountRequired}',
                         style: TextStyle(
                           fontSize: 13,
-                          color: Colors.grey.shade700,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     const SizedBox(height: 6),
@@ -3181,7 +3405,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                         labelText: 'Advance paid',
                         hintText: '0',
                         filled: true,
-                        fillColor: Colors.white,
+                        fillColor: Theme.of(context).colorScheme.surface,
                         prefixIcon: const Icon(
                           Icons.payments_rounded,
                           size: 18,
@@ -3206,7 +3430,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                       decoration: InputDecoration(
                         labelText: 'Advance payment method',
                         filled: true,
-                        fillColor: Colors.white,
+                        fillColor: Theme.of(context).colorScheme.surface,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -3231,7 +3455,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                       'Advance received?',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey.shade600,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -3275,7 +3499,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                             Icon(
                               Icons.account_balance_wallet_rounded,
                               size: 16,
-                              color: Colors.grey.shade700,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                             const SizedBox(width: 8),
                             Text(
@@ -3285,14 +3509,14 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                                 fontWeight: FontWeight.w600,
                                 color: remaining > 0
                                     ? const Color(0xFFFF9500)
-                                    : Colors.grey.shade800,
+                                    : Theme.of(context).colorScheme.onSurface,
                               ),
                             ),
                             Text(
                               ' (total ${b.calculatedTotal} − advance $advancePaid)',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.grey.shade600,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ],
@@ -3308,7 +3532,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                   'Status',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.grey.shade600,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -3317,7 +3541,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                   initialValue: _status,
                   decoration: InputDecoration(
                     filled: true,
-                    fillColor: Colors.white,
+                    fillColor: Theme.of(context).colorScheme.surface,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -3350,7 +3574,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                     labelText: 'Amount paid',
                     hintText: '0',
                     filled: true,
-                    fillColor: Colors.white,
+                    fillColor: Theme.of(context).colorScheme.surface,
                     prefixIcon: const Icon(Icons.payments_rounded),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -3372,7 +3596,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                   decoration: InputDecoration(
                     labelText: 'Payment method',
                     filled: true,
-                    fillColor: Colors.white,
+                    fillColor: Theme.of(context).colorScheme.surface,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -3396,7 +3620,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                     labelText: 'Notes',
                     hintText: 'Optional notes...',
                     filled: true,
-                    fillColor: Colors.white,
+                    fillColor: Theme.of(context).colorScheme.surface,
                     alignLabelWithHint: true,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -3441,7 +3665,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                     label: const Text('Save changes'),
                     style: FilledButton.styleFrom(
                       backgroundColor: const Color(0xFF34C759),
-                      foregroundColor: Colors.white,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -3457,7 +3681,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                     onPressed: widget.onEditFull,
                     style: FilledButton.styleFrom(
                       backgroundColor: const Color(0xFF007AFF),
-                      foregroundColor: Colors.white,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -3541,4 +3765,196 @@ class Booking {
     required this.totalNights,
     this.advancePaymentStatus = 'not_required',
   });
+}
+
+class _LegendItem extends StatelessWidget {
+  final Color color;
+  final String label;
+
+  const _LegendItem({
+    required this.color,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 16,
+          height: 16,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+              color: color,
+              width: 2,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DayViewBookingCard extends StatelessWidget {
+  final BookingModel booking;
+  final VoidCallback onTap;
+
+  const _DayViewBookingCard({
+    required this.booking,
+    required this.onTap,
+  });
+
+  Color _getStatusColor(BuildContext context, String status) {
+    switch (status) {
+      case 'Confirmed':
+        return const Color(0xFF34C759);
+      case 'Pending':
+        return const Color(0xFFFF9500);
+      case 'Cancelled':
+        return const Color(0xFFFF3B30);
+      case 'Paid':
+        return const Color(0xFF007AFF);
+      case 'Unpaid':
+        return const Color(0xFF8E8E93);
+      case 'Waiting list':
+        return const Color(0xFFAF52DE);
+      default:
+        return Theme.of(context).colorScheme.onSurfaceVariant;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = _getStatusColor(context, booking.status);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      booking.userName,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      booking.status,
+                      style: TextStyle(
+                        color: statusColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    Icons.phone_rounded,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    booking.userPhone,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    Icons.calendar_today_rounded,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${DateFormat('MMM d').format(booking.checkIn)} - ${DateFormat('MMM d, yyyy').format(booking.checkOut)}',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Icon(
+                    Icons.nights_stay_rounded,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${booking.numberOfNights} night${booking.numberOfNights != 1 ? 's' : ''}',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+              if (booking.selectedRooms?.isNotEmpty == true) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.bed_rounded,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        booking.selectedRooms!.join(', '),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

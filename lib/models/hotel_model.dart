@@ -12,6 +12,9 @@ class HotelModel {
   
   /// Currency symbol for display (e.g. '€', '$', 'RON').
   final String currencySymbol;
+  
+  /// Total number of rooms in the hotel (for occupancy calculations).
+  final int totalRooms;
 
   HotelModel({
     this.id,
@@ -20,6 +23,7 @@ class HotelModel {
     DateTime? createdAt,
     this.currencyCode = 'EUR',
     this.currencySymbol = '€',
+    this.totalRooms = 10,
   }) : createdAt = createdAt ?? DateTime.now();
 
   Map<String, dynamic> toFirestore() {
@@ -29,6 +33,7 @@ class HotelModel {
       'createdAt': createdAt.toIso8601String(),
       'currencyCode': currencyCode,
       'currencySymbol': currencySymbol,
+      'totalRooms': totalRooms,
     };
   }
 
@@ -42,6 +47,7 @@ class HotelModel {
           : DateTime.now(),
       currencyCode: data['currencyCode']?.toString() ?? 'EUR',
       currencySymbol: data['currencySymbol']?.toString() ?? '€',
+      totalRooms: (data['totalRooms'] as num?)?.toInt() ?? 10,
     );
   }
 
@@ -52,6 +58,7 @@ class HotelModel {
     DateTime? createdAt,
     String? currencyCode,
     String? currencySymbol,
+    int? totalRooms,
   }) {
     return HotelModel(
       id: id ?? this.id,
@@ -60,6 +67,7 @@ class HotelModel {
       createdAt: createdAt ?? this.createdAt,
       currencyCode: currencyCode ?? this.currencyCode,
       currencySymbol: currencySymbol ?? this.currencySymbol,
+      totalRooms: totalRooms ?? this.totalRooms,
     );
   }
 }

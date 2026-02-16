@@ -89,8 +89,9 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -104,13 +105,14 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                   Icon(
                     Icons.hotel_rounded,
                     size: 64,
-                    color: const Color(0xFF007AFF).withOpacity(0.8),
+                    color: colorScheme.primary.withOpacity(0.8),
                   ),
                   const SizedBox(height: 16),
                   Text(
                     'Your Hotel',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                           fontWeight: FontWeight.bold,
+                          color: colorScheme.onSurface,
                         ),
                     textAlign: TextAlign.center,
                   ),
@@ -118,7 +120,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                   Text(
                     'Create a hotel or select one to get started. All data (bookings, clients, services) is stored under your hotel.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey.shade600,
+                          color: colorScheme.onSurfaceVariant,
                         ),
                     textAlign: TextAlign.center,
                   ),
@@ -133,7 +135,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: colorScheme.surfaceContainerHighest,
                       prefixIcon: const Icon(Icons.business_rounded),
                     ),
                     textCapitalization: TextCapitalization.words,
@@ -155,19 +157,19 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                     child: FilledButton.icon(
                       onPressed: _loading ? null : _createHotel,
                       icon: _loading
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 20,
                               height: 20,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: Colors.white,
+                                color: colorScheme.onPrimary,
                               ),
                             )
                           : const Icon(Icons.add_rounded),
                       label: Text(_loading ? 'Creating…' : 'Create hotel'),
                       style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF007AFF),
-                        foregroundColor: Colors.white,
+                        backgroundColor: colorScheme.primary,
+                        foregroundColor: colorScheme.onPrimary,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -181,14 +183,18 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                   Text(
                     'Or select an existing hotel',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: Colors.grey.shade600,
+                          color: colorScheme.onSurfaceVariant,
                         ),
                   ),
                   const SizedBox(height: 12),
                   if (!_listLoaded)
-                    const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: CircularProgressIndicator()),
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: colorScheme.primary,
+                        ),
+                      ),
                     )
                   else if (_myHotels.isEmpty)
                     Padding(
@@ -196,7 +202,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                       child: Text(
                         'No hotels yet. Create one above.',
                         style: TextStyle(
-                          color: Colors.grey.shade600,
+                          color: colorScheme.onSurfaceVariant,
                           fontSize: 14,
                         ),
                         textAlign: TextAlign.center,
@@ -207,7 +213,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: Material(
-                          color: Colors.white,
+                          color: colorScheme.surface,
                           borderRadius: BorderRadius.circular(12),
                           child: InkWell(
                             onTap: _loading
@@ -223,32 +229,34 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                                 children: [
                                   Icon(
                                     Icons.hotel_rounded,
-                                    color: Colors.grey.shade600,
+                                    color: colorScheme.onSurfaceVariant,
                                     size: 24,
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: Text(
                                       hotel.name,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w500,
+                                        color: colorScheme.onSurface,
                                       ),
                                     ),
                                   ),
                                   if (_loading)
-                                    const SizedBox(
+                                    SizedBox(
                                       width: 20,
                                       height: 20,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
+                                        color: colorScheme.primary,
                                       ),
                                     )
                                   else
-                                    const Icon(
+                                    Icon(
                                       Icons.arrow_forward_ios_rounded,
                                       size: 14,
-                                      color: Color(0xFF007AFF),
+                                      color: colorScheme.primary,
                                     ),
                                 ],
                               ),
@@ -264,7 +272,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                     },
                     child: Text(
                       'Sign out',
-                      style: TextStyle(color: Colors.grey.shade600),
+                      style: TextStyle(color: colorScheme.onSurfaceVariant),
                     ),
                   ),
                 ],

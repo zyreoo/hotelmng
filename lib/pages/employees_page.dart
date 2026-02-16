@@ -126,7 +126,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
     final userId = AuthScopeData.of(context).uid;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: StreamBuilder<List<EmployerModel>>(
           stream: _employerstream(userId, hotelId),
@@ -160,13 +160,14 @@ class _EmployeesPageState extends State<EmployeesPage> {
                             ?.copyWith(
                               fontWeight: FontWeight.bold,
                               fontSize: 34,
+                              color: Theme.of(context).colorScheme.onSurface,
                             ),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         '${employees.length} members',
                         style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: Colors.grey.shade600,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                     ],
@@ -205,14 +206,12 @@ class _EmployeesPageState extends State<EmployeesPage> {
                                 _selectedFilter = filter;
                               });
                             },
-                            backgroundColor: Colors.white,
-                            selectedColor: const Color(
-                              0xFF007AFF,
-                            ).withOpacity(0.1),
+                            backgroundColor: Theme.of(context).colorScheme.surface,
+                            selectedColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
                             labelStyle: TextStyle(
                               color: isSelected
-                                  ? const Color(0xFF007AFF)
-                                  : Colors.grey.shade700,
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Theme.of(context).colorScheme.onSurfaceVariant,
                               fontWeight: isSelected
                                   ? FontWeight.w600
                                   : FontWeight.w500,
@@ -221,8 +220,8 @@ class _EmployeesPageState extends State<EmployeesPage> {
                               borderRadius: BorderRadius.circular(12),
                               side: BorderSide(
                                 color: isSelected
-                                    ? const Color(0xFF007AFF).withOpacity(0.3)
-                                    : Colors.grey.shade200,
+                                    ? Theme.of(context).colorScheme.primary.withOpacity(0.3)
+                                    : Theme.of(context).colorScheme.outline.withOpacity(0.3),
                               ),
                             ),
                             showCheckmark: false,
@@ -270,8 +269,8 @@ class _EmployeesPageState extends State<EmployeesPage> {
             MaterialPageRoute(builder: (context) => const AddEmployeePage()),
           );
         },
-        backgroundColor: const Color(0xFF007AFF),
-        child: const Icon(Icons.person_add, color: Colors.white),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        child: Icon(Icons.person_add, color: Theme.of(context).colorScheme.onPrimary),
       ),
     );
   }
@@ -363,7 +362,7 @@ class _EmployeeCard extends StatelessWidget {
                       employee.role,
                       style: TextStyle(
                         fontSize: 14,
-                        color: Colors.grey.shade600,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -380,14 +379,14 @@ class _EmployeeCard extends StatelessWidget {
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.grey.shade100,
+                            color: Theme.of(context).colorScheme.surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
                             employee.department,
                             style: TextStyle(
                               fontSize: 11,
-                              color: Colors.grey.shade700,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -400,7 +399,7 @@ class _EmployeeCard extends StatelessWidget {
 
               // Action button
               IconButton(
-                icon: Icon(Icons.more_vert, color: Colors.grey.shade400),
+                icon: Icon(Icons.more_vert, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 onPressed: () {
                   _showEmployeeOptions(context);
                 },
@@ -413,9 +412,10 @@ class _EmployeeCard extends StatelessWidget {
   }
 
   void _showEmployeeOptions(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -428,7 +428,7 @@ class _EmployeeCard extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey.shade300,
+                color: colorScheme.onSurfaceVariant.withOpacity(0.5),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -477,12 +477,13 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: isActive
             ? const Color(0xFF34C759).withOpacity(0.1)
-            : Colors.grey.shade200,
+            : colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
@@ -492,7 +493,7 @@ class _StatusBadge extends StatelessWidget {
             width: 6,
             height: 6,
             decoration: BoxDecoration(
-              color: isActive ? const Color(0xFF34C759) : Colors.grey.shade500,
+              color: isActive ? const Color(0xFF34C759) : colorScheme.onSurfaceVariant,
               shape: BoxShape.circle,
             ),
           ),
@@ -502,7 +503,7 @@ class _StatusBadge extends StatelessWidget {
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: isActive ? const Color(0xFF34C759) : Colors.grey.shade700,
+              color: isActive ? const Color(0xFF34C759) : colorScheme.onSurfaceVariant,
             ),
           ),
         ],

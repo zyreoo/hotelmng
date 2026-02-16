@@ -176,8 +176,9 @@ class _UserPageState extends State<UserPage> {
     final horizontalPadding = screenWidth >= 768 ? 24.0 : 16.0;
     final isNarrow = screenWidth < 400;
 
+    final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : CustomScrollView(
@@ -196,7 +197,7 @@ class _UserPageState extends State<UserPage> {
                               IconButton(
                                 icon: const Icon(Icons.arrow_back_ios_rounded),
                                 onPressed: () => Navigator.pop(context),
-                                color: const Color(0xFF007AFF),
+                                color: colorScheme.primary,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
                               ),
@@ -206,7 +207,7 @@ class _UserPageState extends State<UserPage> {
                               width: 48,
                               height: 48,
                               decoration: BoxDecoration(
-                                color: const Color(0xFF007AFF).withOpacity(0.1),
+                                color: colorScheme.primary.withOpacity(0.1),
                                 shape: BoxShape.circle,
                               ),
                               child: Center(
@@ -214,10 +215,10 @@ class _UserPageState extends State<UserPage> {
                                   _employee.name.isNotEmpty
                                       ? _employee.name[0].toUpperCase()
                                       : '?',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 20,
                                     fontWeight: FontWeight.w600,
-                                    color: Color(0xFF007AFF),
+                                    color: colorScheme.primary,
                                   ),
                                 ),
                               ),
@@ -235,6 +236,7 @@ class _UserPageState extends State<UserPage> {
                                         ?.copyWith(
                                           fontWeight: FontWeight.bold,
                                           fontSize: 34,
+                                          color: colorScheme.onSurface,
                                         ),
                                   ),
                                   const SizedBox(height: 4),
@@ -244,7 +246,7 @@ class _UserPageState extends State<UserPage> {
                                         .textTheme
                                         .bodyLarge
                                         ?.copyWith(
-                                          color: Colors.grey.shade600,
+                                          color: colorScheme.onSurfaceVariant,
                                         ),
                                   ),
                                 ],
@@ -264,16 +266,16 @@ class _UserPageState extends State<UserPage> {
                                   setState(() => _employee = updated);
                                 }
                               },
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.edit_outlined,
                                 size: 18,
-                                color: Color(0xFF007AFF),
+                                color: colorScheme.primary,
                               ),
-                              label: const Text(
+                              label: Text(
                                 'Edit',
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
-                                  color: Color(0xFF007AFF),
+                                  color: colorScheme.primary,
                                 ),
                               ),
                             ),
@@ -321,7 +323,7 @@ class _UserPageState extends State<UserPage> {
                               value: _employee.status,
                               valueColor: _employee.status == 'Active'
                                   ? const Color(0xFF34C759)
-                                  : Colors.grey.shade600,
+                                  : null,
                             ),
                           ],
                         ),
@@ -343,6 +345,7 @@ class _UserPageState extends State<UserPage> {
                               ?.copyWith(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 20,
+                                color: colorScheme.onSurface,
                               ),
                         ),
                         const SizedBox(height: 12),
@@ -411,6 +414,7 @@ class _UserPageState extends State<UserPage> {
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w600,
                         fontSize: 20,
+                        color: colorScheme.onSurface,
                       ),
                     ),
                   ),
@@ -444,11 +448,11 @@ class _UserPageState extends State<UserPage> {
                           startingDayOfWeek: StartingDayOfWeek.monday,
                           calendarStyle: CalendarStyle(
                             todayDecoration: BoxDecoration(
-                              color: const Color(0xFF007AFF).withOpacity(0.3),
+                              color: colorScheme.primary.withOpacity(0.3),
                               shape: BoxShape.circle,
                             ),
-                            selectedDecoration: const BoxDecoration(
-                              color: Color(0xFF007AFF),
+                            selectedDecoration: BoxDecoration(
+                              color: colorScheme.primary,
                               shape: BoxShape.circle,
                             ),
                             markerDecoration: const BoxDecoration(
@@ -460,17 +464,18 @@ class _UserPageState extends State<UserPage> {
                           headerStyle: HeaderStyle(
                             formatButtonVisible: false,
                             titleCentered: true,
-                            titleTextStyle: const TextStyle(
+                            titleTextStyle: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w600,
+                              color: colorScheme.onSurface,
                             ),
-                            leftChevronIcon: const Icon(
+                            leftChevronIcon: Icon(
                               Icons.chevron_left,
-                              color: Color(0xFF007AFF),
+                              color: colorScheme.primary,
                             ),
-                            rightChevronIcon: const Icon(
+                            rightChevronIcon: Icon(
                               Icons.chevron_right,
-                              color: Color(0xFF007AFF),
+                              color: colorScheme.primary,
                             ),
                           ),
                           eventLoader: (day) {
@@ -541,7 +546,7 @@ class _UserPageState extends State<UserPage> {
                               Icon(
                                 Icons.calendar_today_outlined,
                                 size: 48,
-                                color: Colors.grey.shade400,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
                               const SizedBox(height: 16),
                               Text(
@@ -549,7 +554,7 @@ class _UserPageState extends State<UserPage> {
                                 style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.w600,
-                                  color: Colors.grey.shade800,
+                                  color: Theme.of(context).colorScheme.onSurface,
                                 ),
                               ),
                               const SizedBox(height: 8),
@@ -558,7 +563,7 @@ class _UserPageState extends State<UserPage> {
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   fontSize: 14,
-                                  color: Colors.grey.shade600,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                             ],
@@ -594,15 +599,16 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Row(
       children: [
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: const Color(0xFF007AFF).withOpacity(0.1),
+            color: colorScheme.primary.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(icon, size: 20, color: const Color(0xFF007AFF)),
+          child: Icon(icon, size: 20, color: colorScheme.primary),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -611,7 +617,7 @@ class _InfoRow extends StatelessWidget {
             children: [
               Text(
                 label,
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
               ),
               const SizedBox(height: 2),
               Text(
@@ -619,7 +625,7 @@ class _InfoRow extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: valueColor ?? Colors.black87,
+                  color: valueColor ?? colorScheme.onSurface,
                 ),
               ),
             ],
@@ -669,9 +675,9 @@ class _StatCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               title,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: Colors.grey.shade600),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),
@@ -688,6 +694,7 @@ class _ShiftCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -699,8 +706,8 @@ class _ShiftCard extends StatelessWidget {
               height: 60,
               decoration: BoxDecoration(
                 color: isToday
-                    ? const Color(0xFF007AFF).withOpacity(0.1)
-                    : Colors.grey.shade100,
+                    ? colorScheme.primary.withOpacity(0.1)
+                    : colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
@@ -712,8 +719,8 @@ class _ShiftCard extends StatelessWidget {
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: isToday
-                          ? const Color(0xFF007AFF)
-                          : Colors.grey.shade600,
+                          ? colorScheme.primary
+                          : colorScheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -722,7 +729,7 @@ class _ShiftCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: isToday ? const Color(0xFF007AFF) : Colors.black87,
+                      color: isToday ? colorScheme.primary : colorScheme.onSurface,
                     ),
                   ),
                 ],
@@ -735,10 +742,10 @@ class _ShiftCard extends StatelessWidget {
                 children: [
                   Text(
                     DateFormat('EEEE').format(shift.date),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
-                      color: Colors.black87,
+                      color: colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -746,14 +753,14 @@ class _ShiftCard extends StatelessWidget {
                     '${shift.startTime} – ${shift.endTime}',
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.grey.shade600,
+                      color: colorScheme.onSurfaceVariant,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     shift.role,
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                    style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
                   ),
                 ],
               ),

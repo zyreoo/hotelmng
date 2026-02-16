@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'firebase_options.dart';
 import 'services/auth_provider.dart';
 import 'services/hotel_provider.dart';
 import 'services/theme_provider.dart';
+import 'widgets/stayora_logo.dart';
 import 'pages/login_page.dart';
 import 'pages/hotel_setup_page.dart';
 import 'pages/dashboard_page.dart';
 import 'pages/calendar_page.dart';
 import 'pages/bookings_list_page.dart';
+import 'pages/clients_page.dart';
 import 'pages/employees_page.dart';
+import 'pages/schedule.dart';
 import 'pages/add_booking_page.dart';
 import 'pages/settings_page.dart';
 
@@ -55,7 +59,7 @@ class _MaterialAppWithTheme extends StatelessWidget {
     final themeMode = ThemeProvider.of(context).themeMode;
 
     return MaterialApp(
-      title: 'Hotel Management',
+      title: 'STAYORA',
       debugShowCheckedModeBanner: false,
       themeMode: themeMode,
       theme: _buildLightTheme(),
@@ -69,11 +73,23 @@ class _MaterialAppWithTheme extends StatelessWidget {
       seedColor: const Color(0xFF007AFF),
       brightness: Brightness.light,
     );
+    final baseTextTheme = GoogleFonts.manropeTextTheme();
 
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: const Color(0xFFF5F5F7),
+      textTheme: baseTextTheme.copyWith(
+        headlineLarge: baseTextTheme.headlineLarge?.copyWith(
+          fontSize: 34,
+          fontWeight: FontWeight.bold,
+          color: Colors.black,
+        ),
+        bodyLarge: baseTextTheme.bodyLarge?.copyWith(
+          fontSize: 16,
+          color: Colors.black87,
+        ),
+      ),
       
       // Cards with frosted glass effect
       cardTheme: CardThemeData(
@@ -131,101 +147,115 @@ class _MaterialAppWithTheme extends StatelessWidget {
         space: 1,
       ),
       
-      // Text theme with proper contrast
-      textTheme: const TextTheme(
-        headlineLarge: TextStyle(
-          fontSize: 34,
-          fontWeight: FontWeight.bold,
-          color: Colors.black,
-        ),
-        bodyLarge: TextStyle(
-          fontSize: 16,
-          color: Colors.black87,
-        ),
-      ),
     );
   }
 
   ThemeData _buildDarkTheme() {
     final colorScheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF0A84FF),
+      seedColor: const Color(0xFF007AFF),
       brightness: Brightness.dark,
+      surface: const Color(0xFF1C1C1E),
     );
+    final baseTextTheme = GoogleFonts.manropeTextTheme(ThemeData.dark().textTheme);
 
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: const Color(0xFF000000),
+      textTheme: baseTextTheme.copyWith(
+        headlineLarge: baseTextTheme.headlineLarge?.copyWith(
+          fontSize: 34,
+          fontWeight: FontWeight.bold,
+          color: colorScheme.onSurface,
+        ),
+        bodyLarge: baseTextTheme.bodyLarge?.copyWith(
+          fontSize: 16,
+          color: colorScheme.onSurface,
+        ),
+        bodyMedium: baseTextTheme.bodyMedium?.copyWith(color: colorScheme.onSurface),
+        bodySmall: baseTextTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+      ),
       
-      // Cards with elevated surface
+      // Cards - use surface so they're clearly visible
       cardTheme: CardThemeData(
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
-        color: const Color(0xFF1C1C1E),
+        color: colorScheme.surface,
         shadowColor: Colors.black.withOpacity(0.3),
       ),
       
-      // AppBar
-      appBarTheme: const AppBarTheme(
-        backgroundColor: Color(0xFF000000),
-        foregroundColor: Colors.white,
+      // AppBar - black background, white text
+      appBarTheme: AppBarTheme(
+        backgroundColor: const Color(0xFF000000),
+        foregroundColor: colorScheme.onSurface,
         elevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(
           fontSize: 34,
           fontWeight: FontWeight.bold,
-          color: Colors.white,
+          color: colorScheme.onSurface,
         ),
+        iconTheme: IconThemeData(color: colorScheme.onSurface),
+      ),
+      
+      // Input fields - dark fill, white/light text
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xFF2C2C2E),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.5)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: colorScheme.primary, width: 2),
+        ),
+        labelStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+        hintStyle: TextStyle(color: colorScheme.onSurfaceVariant.withOpacity(0.7)),
       ),
       
       // Navigation Bar (Material 3) - elevated surface
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: const Color(0xFF1C1C1E),
+        backgroundColor: colorScheme.surface,
         indicatorColor: colorScheme.primary.withOpacity(0.2),
         labelTextStyle: MaterialStateProperty.resolveWith((states) {
           if (states.contains(MaterialState.selected)) {
-            return const TextStyle(
+            return TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: Colors.white,
+              color: colorScheme.onSurface,
             );
           }
           return TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w500,
-            color: Colors.grey.shade400,
+            color: colorScheme.onSurfaceVariant,
           );
         }),
         iconTheme: MaterialStateProperty.resolveWith((states) {
           if (states.contains(MaterialState.selected)) {
             return IconThemeData(color: colorScheme.primary);
           }
-          return IconThemeData(color: Colors.grey.shade500);
+          return IconThemeData(color: colorScheme.onSurfaceVariant);
         }),
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         height: 65,
       ),
       
-      // Divider with better contrast
-      dividerTheme: const DividerThemeData(
-        color: Color(0xFF2C2C2E),
+      // Divider
+      dividerTheme: DividerThemeData(
+        color: colorScheme.outline.withOpacity(0.3),
         thickness: 1,
         space: 1,
       ),
       
-      // Text theme with proper contrast for dark mode
-      textTheme: const TextTheme(
-        headlineLarge: TextStyle(
-          fontSize: 34,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-        ),
-        bodyLarge: TextStyle(
-          fontSize: 16,
-          color: Color(0xFFE5E5E7),
-        ),
+      // ListTile / list items
+      listTileTheme: ListTileThemeData(
+        textColor: colorScheme.onSurface,
+        iconColor: colorScheme.onSurfaceVariant,
       ),
     );
   }
@@ -255,9 +285,9 @@ class _AuthGate extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = AuthScopeData.of(context);
     if (!auth.authChecked) {
-      return const Scaffold(
-        backgroundColor: Color(0xFFF5F5F7),
-        body: Center(child: CircularProgressIndicator()),
+      return Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
     if (auth.user == null) {
@@ -296,8 +326,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     DashboardPage(),
     AddBookingPage(),
     BookingsListPage(),
+    ClientsPage(),
     CalendarPage(),
     EmployeesPage(),
+    SchedulePage(),
     SettingsPage(),
   ];
 
@@ -305,8 +337,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     _NavItem(Icons.dashboard_rounded, 'Dashboard'),
     _NavItem(Icons.add_circle_outline_rounded, 'Add Booking'),
     _NavItem(Icons.list_alt_rounded, 'Bookings'),
+    _NavItem(Icons.person_rounded, 'Clients'),
     _NavItem(Icons.calendar_month_rounded, 'Calendar'),
     _NavItem(Icons.people_rounded, 'Employees'),
+    _NavItem(Icons.schedule_rounded, 'Shifts'),
     _NavItem(Icons.settings_rounded, 'Settings'),
   ];
 
@@ -324,10 +358,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 Container(
                   width: 240,
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+                    color: colorScheme.surface,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
+                        color: colorScheme.shadow.withOpacity(isDark ? 0.3 : 0.05),
                         blurRadius: 10,
                         offset: const Offset(2, 0),
                       ),
@@ -340,32 +374,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                         // App Logo/Title
                         Padding(
                           padding: const EdgeInsets.all(24.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: colorScheme.primary,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(
-                                  Icons.hotel_rounded,
-                                  color: Colors.white,
-                                  size: 24,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                'Hotel Management',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: isDark ? Colors.white : Colors.black,
-                                ),
-                              ),
-                            ],
+                          child: StayoraLogo(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                         const Divider(height: 1),
@@ -444,7 +455,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               item.icon,
               color: isSelected
                   ? colorScheme.primary
-                  : (isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+                  : colorScheme.onSurfaceVariant,
               size: 24,
             ),
             const SizedBox(width: 12),
@@ -455,7 +466,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                 color: isSelected
                     ? colorScheme.primary
-                    : (isDark ? Colors.grey.shade300 : Colors.grey.shade700),
+                    : colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -477,12 +488,12 @@ class _SignOutTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = AuthScopeData.of(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+    final colorScheme = Theme.of(context).colorScheme;
+
     return ListTile(
       leading: Icon(
         Icons.logout_rounded,
-        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+        color: colorScheme.onSurfaceVariant,
         size: 24,
       ),
       title: Text(
@@ -490,7 +501,7 @@ class _SignOutTile extends StatelessWidget {
         style: TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w500,
-          color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+          color: colorScheme.onSurfaceVariant,
         ),
       ),
       onTap: () async {
@@ -512,11 +523,9 @@ class _SignOutDrawer extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.all(24),
-            child: Text(
-              'Account',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+            child: StayoraLogo(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
             ),
           ),
           const Divider(height: 1),

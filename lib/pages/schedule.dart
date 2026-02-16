@@ -87,6 +87,7 @@ class _SchedulePageState extends State<SchedulePage> {
       context: context,
       barrierDismissible: true,
       builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
         return StatefulBuilder(
           builder: (context, setModalState) {
             return Dialog(
@@ -96,7 +97,7 @@ class _SchedulePageState extends State<SchedulePage> {
               child: Container(
                 constraints: const BoxConstraints(maxWidth: 340),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF2F2F7),
+                  color: scheme.surface,
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
@@ -110,12 +111,12 @@ class _SchedulePageState extends State<SchedulePage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const SizedBox(height: 28),
-                    const Text(
+                    Text(
                       'Go to Week',
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 20,
-                        color: Colors.black87,
+                        color: scheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -123,7 +124,7 @@ class _SchedulePageState extends State<SchedulePage> {
                       'Pick a date to show that week',
                       style: TextStyle(
                         fontSize: 15,
-                        color: Colors.grey.shade600,
+                        color: scheme.onSurfaceVariant,
                         height: 1.35,
                       ),
                     ),
@@ -131,7 +132,7 @@ class _SchedulePageState extends State<SchedulePage> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: Material(
-                        color: Colors.white,
+                        color: scheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(12),
                         child: InkWell(
                           onTap: () async {
@@ -156,23 +157,23 @@ class _SchedulePageState extends State<SchedulePage> {
                                 Icon(
                                   Icons.calendar_today_rounded,
                                   size: 20,
-                                  color: Colors.grey.shade600,
+                                  color: scheme.onSurfaceVariant,
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
                                     DateFormat('EEEE, MMM d, yyyy').format(date),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w500,
-                                      color: Colors.black87,
+                                      color: scheme.onSurface,
                                     ),
                                   ),
                                 ),
                                 Icon(
                                   Icons.chevron_right_rounded,
                                   size: 22,
-                                  color: Colors.grey.shade400,
+                                  color: scheme.onSurfaceVariant,
                                 ),
                               ],
                             ),
@@ -216,16 +217,16 @@ class _SchedulePageState extends State<SchedulePage> {
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(vertical: 16),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF007AFF),
+                                    color: scheme.primary,
                                     borderRadius: BorderRadius.circular(12),
                                   ),
-                                  child: const Center(
+                                  child: Center(
                                     child: Text(
                                       'Go to Week',
                                       style: TextStyle(
                                         fontSize: 17,
                                         fontWeight: FontWeight.w600,
-                                        color: Colors.white,
+                                        color: scheme.onPrimary,
                                       ),
                                     ),
                                   ),
@@ -243,13 +244,13 @@ class _SchedulePageState extends State<SchedulePage> {
                                 borderRadius: BorderRadius.circular(12),
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(vertical: 16),
-                                  child: const Center(
+                                  child: Center(
                                     child: Text(
                                       'Cancel',
                                       style: TextStyle(
                                         fontSize: 17,
                                         fontWeight: FontWeight.w600,
-                                        color: Color(0xFF007AFF),
+                                        color: scheme.primary,
                                       ),
                                     ),
                                   ),
@@ -1009,6 +1010,7 @@ class _SchedulePageState extends State<SchedulePage> {
         children: List.generate(7, (dayIndex) {
           final shift = _getShift(employeeId, dayIndex);
           final isSelected = _isCellSelected(employeeId, dayIndex);
+          final scheme = Theme.of(context).colorScheme;
 
           return GestureDetector(
             onTap: shift != null
@@ -1019,12 +1021,12 @@ class _SchedulePageState extends State<SchedulePage> {
               height: _employeeRowHeight,
               decoration: BoxDecoration(
                 color: isSelected
-                    ? const Color(0xFF007AFF).withOpacity(0.2)
+                    ? scheme.primary.withOpacity(0.2)
                     : shift != null
                         ? const Color(0xFF34C759).withOpacity(0.15)
-                        : Colors.white,
+                        : scheme.surface,
                 border: Border.all(
-                  color: Colors.grey.shade300,
+                  color: scheme.outlineVariant,
                   width: 0.5,
                 ),
               ),
@@ -1046,7 +1048,7 @@ class _SchedulePageState extends State<SchedulePage> {
                             shift.role,
                             style: TextStyle(
                               fontSize: 10,
-                              color: Colors.grey.shade700,
+                              color: scheme.onSurfaceVariant,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -1068,8 +1070,9 @@ class _SchedulePageState extends State<SchedulePage> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _hotelId == null ? null : _openAddShiftFromFab,
         icon: const Icon(Icons.add_rounded),
@@ -1098,6 +1101,7 @@ class _SchedulePageState extends State<SchedulePage> {
                             ?.copyWith(
                               fontWeight: FontWeight.bold,
                               fontSize: 34,
+                              color: colorScheme.onSurface,
                             ),
                       ),
                       const SizedBox(height: 8),
@@ -1112,8 +1116,8 @@ class _SchedulePageState extends State<SchedulePage> {
                               });
                             },
                             style: IconButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: const Color(0xFF007AFF),
+                              backgroundColor: colorScheme.surfaceContainerHighest,
+                              foregroundColor: colorScheme.primary,
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -1131,7 +1135,7 @@ class _SchedulePageState extends State<SchedulePage> {
                                   Icon(
                                     Icons.search_rounded,
                                     size: 18,
-                                    color: Colors.grey.shade600,
+                                    color: colorScheme.onSurfaceVariant,
                                   ),
                                   const SizedBox(width: 6),
                                   Text(
@@ -1139,7 +1143,7 @@ class _SchedulePageState extends State<SchedulePage> {
                                     style: Theme.of(context)
                                         .textTheme
                                         .bodyLarge
-                                        ?.copyWith(color: Colors.grey.shade600),
+                                        ?.copyWith(color: colorScheme.onSurfaceVariant),
                                   ),
                                 ],
                               ),
@@ -1155,8 +1159,8 @@ class _SchedulePageState extends State<SchedulePage> {
                               });
                             },
                             style: IconButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: const Color(0xFF007AFF),
+                              backgroundColor: colorScheme.surfaceContainerHighest,
+                              foregroundColor: colorScheme.primary,
                             ),
                           ),
                         ],
@@ -1201,7 +1205,7 @@ class _SchedulePageState extends State<SchedulePage> {
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 24),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: colorScheme.surface,
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
@@ -1301,10 +1305,10 @@ class _SchedulePageState extends State<SchedulePage> {
                         height: _headerHeight,
                         child: Container(
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF9F9F9),
+                            color: colorScheme.surfaceContainerHighest,
                             border: Border(
                               bottom: BorderSide(
-                                color: Colors.grey.shade300,
+                                color: colorScheme.outlineVariant,
                                 width: 1,
                               ),
                             ),
@@ -1323,10 +1327,10 @@ class _SchedulePageState extends State<SchedulePage> {
                                 width: _employeeLabelWidth,
                                 height: _headerHeight,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFEFEFF4),
+                                  color: colorScheme.surfaceContainerHigh,
                                   border: Border(
                                     right: BorderSide(
-                                      color: Colors.grey.shade300,
+                                      color: colorScheme.outlineVariant,
                                     ),
                                   ),
                                 ),
@@ -1334,18 +1338,18 @@ class _SchedulePageState extends State<SchedulePage> {
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      const Icon(
+                                      Icon(
                                         Icons.people_rounded,
                                         size: 14,
-                                        color: Color(0xFF007AFF),
+                                        color: colorScheme.primary,
                                       ),
                                       const SizedBox(width: 4),
-                                      const Text(
+                                      Text(
                                         'Employees',
                                         style: TextStyle(
                                           fontWeight: FontWeight.w600,
                                           fontSize: 12,
-                                          color: Color(0xFF007AFF),
+                                          color: colorScheme.primary,
                                           letterSpacing: 0.2,
                                         ),
                                       ),
@@ -1369,7 +1373,7 @@ class _SchedulePageState extends State<SchedulePage> {
                                         decoration: BoxDecoration(
                                           border: Border(
                                             right: BorderSide(
-                                              color: Colors.grey.shade200,
+                                              color: colorScheme.outlineVariant,
                                               width: 1,
                                             ),
                                           ),
@@ -1380,10 +1384,10 @@ class _SchedulePageState extends State<SchedulePage> {
                                             children: [
                                               Text(
                                                 dayName,
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   fontWeight: FontWeight.w600,
                                                   fontSize: 12,
-                                                  color: Colors.black87,
+                                                  color: colorScheme.onSurface,
                                                   letterSpacing: 0.2,
                                                 ),
                                                 maxLines: 1,
@@ -1394,7 +1398,7 @@ class _SchedulePageState extends State<SchedulePage> {
                                                 DateFormat('MMM d').format(date),
                                                 style: TextStyle(
                                                   fontSize: 11,
-                                                  color: Colors.grey.shade600,
+                                                  color: colorScheme.onSurfaceVariant,
                                                   fontWeight: FontWeight.w500,
                                                 ),
                                               ),
@@ -1418,7 +1422,7 @@ class _SchedulePageState extends State<SchedulePage> {
                         bottom: 0,
                         width: _employeeLabelWidth,
                         child: Container(
-                          color: Colors.white,
+                          color: colorScheme.surface,
                           child: SingleChildScrollView(
                             controller: _stickyDayLabelsScrollController,
                             physics: const NeverScrollableScrollPhysics(),
@@ -1428,14 +1432,14 @@ class _SchedulePageState extends State<SchedulePage> {
                                   width: _employeeLabelWidth,
                                   height: _employeeRowHeight,
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFF9F9F9),
+                                    color: colorScheme.surfaceContainerHighest,
                                     border: Border(
                                       bottom: BorderSide(
-                                        color: Colors.grey.shade300,
+                                        color: colorScheme.outlineVariant,
                                         width: 0.5,
                                       ),
                                       right: BorderSide(
-                                        color: Colors.grey.shade300,
+                                        color: colorScheme.outlineVariant,
                                         width: 1,
                                       ),
                                     ),
@@ -1452,10 +1456,10 @@ class _SchedulePageState extends State<SchedulePage> {
                                       children: [
                                         Text(
                                           employee.name,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 13,
                                             fontWeight: FontWeight.w600,
-                                            color: Colors.black87,
+                                            color: colorScheme.onSurface,
                                           ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
@@ -1465,7 +1469,7 @@ class _SchedulePageState extends State<SchedulePage> {
                                           employee.role,
                                           style: TextStyle(
                                             fontSize: 11,
-                                            color: Colors.grey.shade600,
+                                            color: colorScheme.onSurfaceVariant,
                                           ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
@@ -2211,13 +2215,14 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Dialog(
       backgroundColor: Colors.transparent,
       elevation: 0,
       child: Container(
         constraints: const BoxConstraints(maxWidth: 380),
         decoration: BoxDecoration(
-          color: const Color(0xFFF2F2F7),
+          color: scheme.surface,
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
@@ -2235,14 +2240,14 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 24),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 20),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Text(
                       'Add Shift',
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 20,
-                        color: Colors.black87,
+                        color: scheme.onSurface,
                       ),
                     ),
                   ),
@@ -2256,7 +2261,7 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: Colors.grey.shade700,
+                          color: scheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -2302,35 +2307,39 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: Colors.grey.shade700,
+                          color: scheme.onSurfaceVariant,
                         ),
                       ),
                     ),
                     const SizedBox(height: 6),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Row(
-                        children: List.generate(7, (dayIndex) {
-                          final selected = _pickedDays.contains(dayIndex);
-                          final dayName = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][dayIndex];
-                          final date = widget.weekStart!.add(Duration(days: dayIndex));
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: FilterChip(
-                              label: Text('$dayName ${date.day}'),
-                              selected: selected,
-                              onSelected: (v) {
-                                setState(() {
-                                  if (v == true) {
-                                    _pickedDays.add(dayIndex);
-                                  } else {
-                                    _pickedDays.remove(dayIndex);
-                                  }
-                                });
-                              },
-                            ),
-                          );
-                        }),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: List.generate(7, (dayIndex) {
+                            final selected = _pickedDays.contains(dayIndex);
+                            final dayName = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][dayIndex];
+                            final date = widget.weekStart!.add(Duration(days: dayIndex));
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: FilterChip(
+                                label: Text('$dayName ${date.day}'),
+                                selected: selected,
+                                onSelected: (v) {
+                                  setState(() {
+                                    if (v == true) {
+                                      _pickedDays.add(dayIndex);
+                                    } else {
+                                      _pickedDays.remove(dayIndex);
+                                    }
+                                  });
+                                },
+                              ),
+                            );
+                          }),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -2343,7 +2352,7 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: Colors.grey.shade700,
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
                   ),
@@ -2364,7 +2373,7 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                         'No presets yet. Enter times below and tap "Save as preset" to add one.',
                         style: TextStyle(
                           fontSize: 13,
-                          color: Colors.grey.shade600,
+                          color: scheme.onSurfaceVariant,
                           height: 1.35,
                         ),
                       ),
@@ -2396,13 +2405,13 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                                     decoration: BoxDecoration(
                                       color: isSelected
-                                          ? const Color(0xFF007AFF).withOpacity(0.15)
-                                          : Colors.white,
+                                          ? scheme.primary.withOpacity(0.15)
+                                          : scheme.surfaceContainerHighest,
                                       borderRadius: BorderRadius.circular(10),
                                       border: Border.all(
                                         color: isSelected
-                                            ? const Color(0xFF007AFF)
-                                            : Colors.grey.shade300,
+                                            ? scheme.primary
+                                            : scheme.outlineVariant,
                                       ),
                                     ),
                                     child: Column(
@@ -2414,7 +2423,7 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                                           style: TextStyle(
                                             fontSize: 14,
                                             fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                                            color: isSelected ? const Color(0xFF007AFF) : Colors.black87,
+                                            color: isSelected ? scheme.primary : scheme.onSurface,
                                           ),
                                         ),
                                         const SizedBox(height: 2),
@@ -2422,7 +2431,7 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                                           '${p.startTime} – ${p.endTime}',
                                           style: TextStyle(
                                             fontSize: 11,
-                                            color: Colors.grey.shade600,
+                                            color: scheme.onSurfaceVariant,
                                           ),
                                         ),
                                       ],
@@ -2440,13 +2449,13 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                                     child: Container(
                                       padding: const EdgeInsets.all(6),
                                       decoration: BoxDecoration(
-                                        color: Colors.grey.shade100,
+                                        color: scheme.surfaceContainerHigh,
                                         borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: Icon(
                                         Icons.edit_outlined,
                                         size: 18,
-                                        color: Colors.grey.shade700,
+                                        color: scheme.onSurfaceVariant,
                                       ),
                                     ),
                                   ),
@@ -2469,7 +2478,7 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                             labelText: 'Start time',
                             hintText: 'e.g. 09:00',
                             filled: true,
-                            fillColor: Colors.white,
+                            fillColor: scheme.surfaceContainerHighest,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -2491,7 +2500,7 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                             labelText: 'End time',
                             hintText: 'e.g. 17:00',
                             filled: true,
-                            fillColor: Colors.white,
+                            fillColor: scheme.surfaceContainerHighest,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -2512,7 +2521,7 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                           decoration: InputDecoration(
                             labelText: 'Role',
                             filled: true,
-                            fillColor: Colors.white,
+                            fillColor: scheme.surfaceContainerHighest,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),

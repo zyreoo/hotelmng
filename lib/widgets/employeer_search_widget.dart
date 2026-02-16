@@ -248,6 +248,8 @@ class _EmployeeSearchWidgetState extends State<EmployeeSearchWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -256,11 +258,15 @@ class _EmployeeSearchWidgetState extends State<EmployeeSearchWidget> {
           decoration: InputDecoration(
             labelText: 'Search Employee',
             hintText: 'Type name, phone, or role...',
+            prefixIcon: Icon(
+              Icons.search_rounded,
+              color: Colors.grey.shade600,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
             ),
             filled: true,
-            fillColor: Colors.grey.shade50,
+            fillColor: isDark ? const Color(0xFF1C1C1E) : Colors.grey.shade50,
             suffixIcon: _selectedEmployee != null
                 ? IconButton(
                     icon: const Icon(Icons.close_rounded),
@@ -276,12 +282,7 @@ class _EmployeeSearchWidgetState extends State<EmployeeSearchWidget> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         ),
                       )
-                    : IconButton(
-                        icon: const Icon(Icons.person_add_rounded),
-                        onPressed: _showCreateEmployeeDialog,
-                        color: const Color(0xFF007AFF),
-                        tooltip: 'Create new employee',
-                      ),
+                    : null,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
               vertical: 16,
@@ -290,6 +291,73 @@ class _EmployeeSearchWidgetState extends State<EmployeeSearchWidget> {
           style: const TextStyle(fontSize: 16),
           onChanged: _searchEmployees,
         ),
+        
+        // Search results dropdown (fixed height so ListView gets bounded constraints)
+        if (_searchResults.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 300,
+            child: Container(
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+              itemCount: _searchResults.length,
+              separatorBuilder: (context, index) => Divider(
+                height: 1,
+                color: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
+              ),
+              itemBuilder: (context, index) {
+                final employee = _searchResults[index];
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: const Color(0xFF007AFF).withOpacity(0.1),
+                    child: Text(
+                      employee.name.isNotEmpty
+                          ? employee.name[0].toUpperCase()
+                          : '?',
+                      style: const TextStyle(
+                        color: Color(0xFF007AFF),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  title: Text(
+                    employee.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  subtitle: Text(
+                    '${employee.role}${employee.department.isNotEmpty ? ' • ${employee.department}' : ''}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                    ),
+                  ),
+                  onTap: () => _selectEmployee(employee),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
+                );
+              },
+              ),
+            ),
+          ),
+        ],
       ],  
     );
   }

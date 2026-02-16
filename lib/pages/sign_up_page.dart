@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_provider.dart';
+import '../widgets/stayora_logo.dart';
 
 /// Create account with email and password.
 class SignUpPage extends StatefulWidget {
@@ -73,12 +74,10 @@ class _SignUpPageState extends State<SignUpPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colorScheme = Theme.of(context).colorScheme;
     
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Create account'),
-      ),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -89,13 +88,20 @@ class _SignUpPageState extends State<SignUpPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  StayoraLogo(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
                   Text(
                     'Create an account to manage your hotels.',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: Colors.grey.shade700,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
                         ),
+                    textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 32),
                   TextField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
@@ -107,7 +113,7 @@ class _SignUpPageState extends State<SignUpPage> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       filled: true,
-                      fillColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+                      fillColor: colorScheme.surfaceContainerHighest,
                       prefixIcon: const Icon(Icons.email_outlined),
                     ),
                     onSubmitted: (_) => _signUp(),
@@ -117,13 +123,13 @@ class _SignUpPageState extends State<SignUpPage> {
                     controller: _passwordController,
                     obscureText: _obscurePassword,
                     decoration: InputDecoration(
-                      labelText: 'Password (min 6 characters)',
+                      labelText: 'Password',
                       hintText: '••••••••',
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                       filled: true,
-                      fillColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+                      fillColor: colorScheme.surfaceContainerHighest,
                       prefixIcon: const Icon(Icons.lock_outline_rounded),
                       suffixIcon: IconButton(
                         icon: Icon(
@@ -148,7 +154,7 @@ class _SignUpPageState extends State<SignUpPage> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       filled: true,
-                      fillColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+                      fillColor: colorScheme.surfaceContainerHighest,
                       prefixIcon: const Icon(Icons.lock_outline_rounded),
                       suffixIcon: IconButton(
                         icon: Icon(
@@ -164,44 +170,23 @@ class _SignUpPageState extends State<SignUpPage> {
                   ),
                   if (_error != null) ...[
                     const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFF3B30).withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: const Color(0xFFFF3B30).withOpacity(0.3),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            _error!,
-                            style: const TextStyle(
-                              color: Color(0xFFFF3B30),
-                              fontSize: 13,
-                            ),
-                          ),
-                          if (_isEmailAlreadyInUse) ...[
-                            const SizedBox(height: 12),
-                            FilledButton.icon(
-                              onPressed: () => Navigator.of(context).pop(),
-                              icon: const Icon(Icons.login_rounded, size: 20),
-                              label: const Text('Sign in instead'),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF007AFF),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
+                    Text(
+                      _error!,
+                      style: const TextStyle(
+                        color: Color(0xFFFF3B30),
+                        fontSize: 13,
                       ),
                     ),
+                    if (_isEmailAlreadyInUse) ...[
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: _loading ? null : () => Navigator.of(context).pop(),
+                        child: Text(
+                          'Sign in instead',
+                          style: TextStyle(color: colorScheme.primary),
+                        ),
+                      ),
+                    ],
                   ],
                   const SizedBox(height: 24),
                   SizedBox(
@@ -209,20 +194,20 @@ class _SignUpPageState extends State<SignUpPage> {
                     child: FilledButton(
                       onPressed: _loading ? null : _signUp,
                       style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF007AFF),
-                        foregroundColor: Colors.white,
+                        backgroundColor: colorScheme.primary,
+                        foregroundColor: colorScheme.onPrimary,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                       child: _loading
-                          ? const SizedBox(
+                          ? SizedBox(
                               height: 22,
                               width: 22,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: Colors.white,
+                                color: colorScheme.onPrimary,
                               ),
                             )
                           : const Text('Create account'),
@@ -231,7 +216,10 @@ class _SignUpPageState extends State<SignUpPage> {
                   const SizedBox(height: 16),
                   TextButton(
                     onPressed: _loading ? null : () => Navigator.of(context).pop(),
-                    child: const Text('Already have an account? Sign in'),
+                    child: Text(
+                      'Already have an account? Sign in',
+                      style: TextStyle(color: colorScheme.primary),
+                    ),
                   ),
                 ],
               ),

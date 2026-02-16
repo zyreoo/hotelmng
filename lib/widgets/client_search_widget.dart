@@ -214,6 +214,7 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -224,12 +225,12 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
             hintText: 'Type name or phone number...',
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             filled: true,
-            fillColor: Colors.grey.shade50,
+            fillColor: colorScheme.surfaceContainerHighest,
             suffixIcon: _selectedClient != null
                 ? IconButton(
                     icon: const Icon(Icons.close_rounded),
                     onPressed: _clearSelection,
-                    color: Colors.grey.shade600,
+                    color: colorScheme.onSurfaceVariant,
                   )
                 : _isSearching
                 ? const Padding(
@@ -253,9 +254,9 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
           Container(
             margin: const EdgeInsets.only(top: 8),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: colorScheme.surface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade200),
+              border: Border.all(color: colorScheme.outlineVariant),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.05),
@@ -283,7 +284,7 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
                           width: 40,
                           height: 40,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF007AFF).withOpacity(0.1),
+                            color: colorScheme.primary.withOpacity(0.1),
                             shape: BoxShape.circle,
                           ),
                           child: Center(
@@ -291,8 +292,8 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
                               client.name.isNotEmpty
                                   ? client.name[0].toUpperCase()
                                   : '?',
-                              style: const TextStyle(
-                                color: Color(0xFF007AFF),
+                              style: TextStyle(
+                                color: colorScheme.primary,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -305,9 +306,10 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
                             children: [
                               Text(
                                 client.name,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
+                                  color: colorScheme.onSurface,
                                 ),
                               ),
                               const SizedBox(height: 2),
@@ -315,7 +317,7 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
                                 client.phone,
                                 style: TextStyle(
                                   fontSize: 14,
-                                  color: Colors.grey.shade600,
+                                  color: colorScheme.onSurfaceVariant,
                                 ),
                               ),
                               if (client.email != null &&
@@ -324,7 +326,7 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
                                   client.email!,
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: Colors.grey.shade500,
+                                    color: colorScheme.onSurfaceVariant,
                                   ),
                                 ),
                             ],
@@ -342,22 +344,22 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
             margin: const EdgeInsets.only(top: 12),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFF007AFF).withOpacity(0.1),
+              color: colorScheme.primary.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.check_circle_rounded,
-                  color: Color(0xFF007AFF),
+                  color: colorScheme.primary,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     'Selected: ${_selectedClient!.name}',
-                    style: const TextStyle(
-                      color: Color(0xFF007AFF),
+                    style: TextStyle(
+                      color: colorScheme.primary,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
