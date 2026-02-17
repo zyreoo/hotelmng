@@ -4,6 +4,7 @@ import '../models/employer_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
+import '../utils/stayora_colors.dart';
 import '../widgets/stayora_logo.dart';
 
 class AddEmployeePage extends StatefulWidget {
@@ -227,7 +228,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
             SnackBar(
               content: Text('${employer.name} updated'),
               behavior: SnackBarBehavior.floating,
-              backgroundColor: const Color(0xFF34C759),
+              backgroundColor: StayoraColors.success,
             ),
           );
           Navigator.pop(context, employer);
@@ -257,7 +258,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
             SnackBar(
               content: Text('Employee ${employer.name} added'),
               behavior: SnackBarBehavior.floating,
-              backgroundColor: const Color(0xFF34C759),
+              backgroundColor: StayoraColors.success,
             ),
           );
           Navigator.pop(context, true);

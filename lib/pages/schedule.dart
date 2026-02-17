@@ -7,6 +7,7 @@ import '../models/employer_model.dart';
 import '../models/shift_model.dart';
 import '../services/auth_provider.dart';
 import '../services/hotel_provider.dart';
+import '../utils/stayora_colors.dart';
 import '../widgets/stayora_logo.dart';
 
 class SchedulePage extends StatefulWidget {
@@ -718,7 +719,7 @@ class _SchedulePageState extends State<SchedulePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Shifts created successfully'),
-          backgroundColor: Color(0xFF34C759),
+          backgroundColor: StayoraColors.success,
         ),
       );
     } catch (e) {
@@ -746,7 +747,7 @@ class _SchedulePageState extends State<SchedulePage> {
         child: Container(
           constraints: const BoxConstraints(maxWidth: 340),
           decoration: BoxDecoration(
-            color: const Color(0xFFF2F2F7),
+            color: StayoraColors.surfaceLight,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
@@ -914,7 +915,7 @@ class _SchedulePageState extends State<SchedulePage> {
         child: Container(
           constraints: const BoxConstraints(maxWidth: 300),
           decoration: BoxDecoration(
-            color: const Color(0xFFF2F2F7),
+            color: StayoraColors.surfaceLight,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
@@ -1026,7 +1027,7 @@ class _SchedulePageState extends State<SchedulePage> {
                 color: isSelected
                     ? scheme.primary.withOpacity(0.2)
                     : shift != null
-                        ? const Color(0xFF34C759).withOpacity(0.15)
+                        ? StayoraColors.success.withOpacity(0.15)
                         : scheme.surface,
                 border: Border.all(
                   color: scheme.outlineVariant,
@@ -1043,7 +1044,7 @@ class _SchedulePageState extends State<SchedulePage> {
                             style: const TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
-                              color: Color(0xFF34C759),
+                              color: StayoraColors.success,
                             ),
                           ),
                           const SizedBox(height: 2),
@@ -1077,10 +1078,11 @@ class _SchedulePageState extends State<SchedulePage> {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'schedule_fab',
         onPressed: _hotelId == null ? null : _openAddShiftFromFab,
         icon: const Icon(Icons.add_rounded),
         label: const Text('Add shift'),
-        backgroundColor: const Color(0xFF34C759),
+        backgroundColor: StayoraColors.success,
         foregroundColor: Colors.white,
       ),
       body: SafeArea(
@@ -1558,7 +1560,7 @@ class _PresetNameDialogState extends State<_PresetNameDialog> {
       child: Container(
         constraints: const BoxConstraints(maxWidth: 340),
         decoration: BoxDecoration(
-          color: const Color(0xFFF2F2F7),
+          color: StayoraColors.surfaceLight,
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
@@ -1632,7 +1634,7 @@ class _PresetNameDialogState extends State<_PresetNameDialog> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF34C759),
+                              color: StayoraColors.success,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Center(
@@ -1737,7 +1739,7 @@ class _EditPresetDialogState extends State<_EditPresetDialog> {
         child: Container(
           constraints: const BoxConstraints(maxWidth: 300),
           decoration: BoxDecoration(
-            color: const Color(0xFFF2F2F7),
+            color: StayoraColors.surfaceLight,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
@@ -1783,7 +1785,7 @@ class _EditPresetDialogState extends State<_EditPresetDialog> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFF3B30),
+                              color: StayoraColors.error,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: const Center(
@@ -1847,7 +1849,7 @@ class _EditPresetDialogState extends State<_EditPresetDialog> {
       child: Container(
         constraints: const BoxConstraints(maxWidth: 360),
         decoration: BoxDecoration(
-          color: const Color(0xFFF2F2F7),
+          color: StayoraColors.surfaceLight,
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
@@ -1991,7 +1993,7 @@ class _EditPresetDialogState extends State<_EditPresetDialog> {
                             child: Container(
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF34C759),
+                                color: StayoraColors.success,
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: const Center(
@@ -2021,7 +2023,7 @@ class _EditPresetDialogState extends State<_EditPresetDialog> {
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: const Color(0xFFFF3B30)),
+                                border: Border.all(color: StayoraColors.error),
                               ),
                               child: const Center(
                                 child: Text(
@@ -2029,7 +2031,7 @@ class _EditPresetDialogState extends State<_EditPresetDialog> {
                                   style: TextStyle(
                                     fontSize: 17,
                                     fontWeight: FontWeight.w600,
-                                    color: Color(0xFFFF3B30),
+                                    color: StayoraColors.error,
                                   ),
                                 ),
                               ),
@@ -2177,7 +2179,7 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Preset saved'),
-        backgroundColor: Color(0xFF34C759),
+        backgroundColor: StayoraColors.success,
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -2204,7 +2206,7 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Preset updated'),
-          backgroundColor: Color(0xFF34C759),
+          backgroundColor: StayoraColors.success,
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -2585,7 +2587,7 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                               );
                             },
                             style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFF34C759),
+                              backgroundColor: StayoraColors.success,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(

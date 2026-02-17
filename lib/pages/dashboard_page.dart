@@ -7,6 +7,7 @@ import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
 import '../utils/currency_formatter.dart';
 import '../utils/money_input_formatter.dart';
+import '../utils/stayora_colors.dart';
 import '../widgets/loading_empty_states.dart';
 import 'add_booking_page.dart';
 
@@ -22,46 +23,56 @@ class _DashboardPageState extends State<DashboardPage> {
   List<BookingModel> _bookings = [];
   bool _loading = true;
   String? _error;
+  dynamic _bookingsSubscription;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final hotelId = HotelProvider.of(context).hotelId;
     final userId = AuthScopeData.of(context).uid;
-    if (hotelId != null && userId != null) _loadBookings(userId, hotelId);
-  }
-
-  Future<void> _loadBookings(String userId, String hotelId) async {
+    if (hotelId == null || userId == null) return;
+    _bookingsSubscription?.cancel();
+    final checkInAfter = DateTime.now().subtract(const Duration(days: 120));
     setState(() {
       _loading = true;
       _error = null;
     });
-    try {
-      // Wide range so we get all bookings overlapping "today" and this month
-      final now = DateTime.now();
-      final start = now.subtract(const Duration(days: 120));
-      final end = now.add(const Duration(days: 60));
-      final list = await _firebaseService.getBookings(
-        userId,
-        hotelId,
-        startDate: start,
-        endDate: end,
-      );
-      if (mounted) {
-        setState(() {
-          _bookings = list;
-          _loading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _bookings = [];
-          _loading = false;
-          _error = e.toString();
-        });
-      }
-    }
+    _bookingsSubscription = _firebaseService
+        .bookingsStream(userId, hotelId, checkInOnOrAfter: checkInAfter)
+        .listen(
+      (snapshot) {
+        final list = snapshot.docs
+            .map((doc) => BookingModel.fromFirestore(doc.data(), doc.id))
+            .toList();
+        if (mounted) {
+          setState(() {
+            _bookings = list;
+            _loading = false;
+            _error = null;
+          });
+        }
+      },
+      onError: (e) {
+        if (mounted) {
+          setState(() {
+            _bookings = [];
+            _loading = false;
+            _error = e.toString();
+          });
+        }
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _bookingsSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadBookings(String userId, String hotelId) async {
+    // Trigger a refresh by re-subscribing (stream will emit current data)
+    didChangeDependencies();
   }
 
   /// Bookings that are not cancelled.
@@ -287,7 +298,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     child: ElevatedButton(
                       onPressed: () => Navigator.pop(context, true),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF34C759),
+                        backgroundColor: StayoraColors.success,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
@@ -322,7 +333,7 @@ class _DashboardPageState extends State<DashboardPage> {
             SnackBar(
               content: const Text('Advance marked as received'),
               behavior: SnackBarBehavior.floating,
-              backgroundColor: const Color(0xFF34C759),
+              backgroundColor: StayoraColors.success,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -335,7 +346,7 @@ class _DashboardPageState extends State<DashboardPage> {
             SnackBar(
               content: Text('Failed to update: $e'),
               behavior: SnackBarBehavior.floating,
-              backgroundColor: const Color(0xFFFF3B30),
+              backgroundColor: StayoraColors.error,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -451,7 +462,7 @@ class _DashboardPageState extends State<DashboardPage> {
                         BarChartRodData(
                           toY: y,
                           fromY: 0,
-                          color: const Color(0xFF007AFF),
+                          color: StayoraColors.blue,
                           width: 20,
                           borderRadius: const BorderRadius.vertical(
                             top: Radius.circular(4),
@@ -508,10 +519,10 @@ class _DashboardPageState extends State<DashboardPage> {
                       style: Theme.of(context).textTheme.headlineLarge
                           ?.copyWith(fontWeight: FontWeight.bold, fontSize: 34),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 4),
                     Text(
                       'Overview of your hotel',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
@@ -535,13 +546,14 @@ class _DashboardPageState extends State<DashboardPage> {
                       ),
                     )
                   : _error != null
-                  ? SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Text(
-                          _error!,
-                          style: const TextStyle(color: Color(0xFFFF3B30)),
-                        ),
+                  ? SliverFillRemaining(
+                      child: ErrorStateWidget(
+                        message: _error!,
+                        onRetry: () {
+                          if (hotelId != null && userId != null) {
+                            _loadBookings(userId, hotelId);
+                          }
+                        },
                       ),
                     )
                   : _bookings.isEmpty
@@ -574,8 +586,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                   advancesPending: _advancesPendingList,
                                   currencyFormatter: currencyFormatter,
                                   onBookingTap: (booking) {
-                                    Navigator.push(
-                                      context,
+                                    Navigator.of(context, rootNavigator: false).push(
                                       MaterialPageRoute(
                                         builder: (_) => AddBookingPage(
                                           existingBooking: booking,
@@ -604,7 +615,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                   title: 'Occupied today',
                                   value: '$_occupiedToday / ${hotel?.totalRooms ?? 0}',
                                   icon: Icons.bed_rounded,
-                                  color: const Color(0xFF34C759),
+                                  color: StayoraColors.success,
                                   trend: 'rooms',
                                 ),
                                 const SizedBox(height: 12),
@@ -612,7 +623,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                   title: 'Occupancy rate',
                                   value: '${_occupancyPercentage(hotel?.totalRooms ?? 10)}%',
                                   icon: Icons.pie_chart_rounded,
-                                  color: const Color(0xFF007AFF),
+                                  color: StayoraColors.blue,
                                   trend: 'today',
                                 ),
                                 const SizedBox(height: 12),
@@ -620,7 +631,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                   title: 'Check-ins today',
                                   value: '$_checkInsToday',
                                   icon: Icons.login_rounded,
-                                  color: const Color(0xFFFF9500),
+                                  color: StayoraColors.warning,
                                   trend: 'bookings',
                                 ),
                                 const SizedBox(height: 12),
@@ -630,7 +641,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                     _revenueThisMonth,
                                   ),
                                   icon: Icons.attach_money_rounded,
-                                  color: const Color(0xFF5856D6),
+                                  color: StayoraColors.purple,
                                   trend:
                                       'sum of amount paid (check-in this month)',
                                 ),
@@ -641,7 +652,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                     _revenueTotal,
                                   ),
                                   icon: Icons.account_balance_wallet_rounded,
-                                  color: const Color(0xFF007AFF),
+                                  color: StayoraColors.blue,
                                   trend: 'sum of amount paid (all bookings)',
                                 ),
                               ] else ...[
@@ -652,7 +663,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                         title: 'Occupied today',
                                         value: '$_occupiedToday / ${hotel?.totalRooms ?? 0}',
                                         icon: Icons.bed_rounded,
-                                        color: const Color(0xFF34C759),
+                                        color: StayoraColors.success,
                                         trend: 'rooms',
                                       ),
                                     ),
@@ -662,7 +673,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                         title: 'Occupancy rate',
                                         value: '${_occupancyPercentage(hotel?.totalRooms ?? 10)}%',
                                         icon: Icons.pie_chart_rounded,
-                                        color: const Color(0xFF007AFF),
+                                        color: StayoraColors.blue,
                                         trend: 'today',
                                       ),
                                     ),
@@ -676,7 +687,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                         title: 'Check-ins today',
                                         value: '$_checkInsToday',
                                         icon: Icons.login_rounded,
-                                        color: const Color(0xFFFF9500),
+                                        color: StayoraColors.warning,
                                         trend: 'bookings',
                                       ),
                                     ),
@@ -696,7 +707,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                           _revenueThisMonth,
                                         ),
                                         icon: Icons.attach_money_rounded,
-                                        color: const Color(0xFF5856D6),
+                                        color: StayoraColors.purple,
                                         trend:
                                             'sum of amount paid (check-in this month)',
                                       ),
@@ -710,7 +721,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                         ),
                                         icon: Icons
                                             .account_balance_wallet_rounded,
-                                        color: const Color(0xFF007AFF),
+                                        color: StayoraColors.blue,
                                         trend:
                                             'sum of amount paid (all bookings)',
                                       ),
@@ -846,12 +857,12 @@ class _RemindersCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFF9500).withOpacity(0.1),
+                    color: StayoraColors.warning.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(
                     Icons.notifications_active_rounded,
-                    color: Color(0xFFFF9500),
+                    color: StayoraColors.warning,
                     size: 20,
                   ),
                 ),
@@ -877,7 +888,7 @@ class _RemindersCard extends StatelessWidget {
                     width: 4,
                     height: 20,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF34C759),
+                      color: StayoraColors.success,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -935,7 +946,7 @@ class _RemindersCard extends StatelessWidget {
                     width: 4,
                     height: 20,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF007AFF),
+                      color: StayoraColors.blue,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -993,7 +1004,7 @@ class _RemindersCard extends StatelessWidget {
                     width: 4,
                     height: 20,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFF9500),
+                      color: StayoraColors.warning,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -1070,12 +1081,12 @@ class _ReminderItem extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: showWarning
-            ? const Color(0xFFFF9500).withOpacity(0.05)
+            ? StayoraColors.warning.withOpacity(0.05)
             : colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: showWarning
-              ? const Color(0xFFFF9500).withOpacity(0.2)
+              ? StayoraColors.warning.withOpacity(0.2)
               : colorScheme.outline.withOpacity(0.3),
           width: 1,
         ),
@@ -1094,14 +1105,77 @@ class _ReminderItem extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        booking.userName,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: colorScheme.onSurface,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              booking.userName,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.onSurface,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (booking.checkedInAt != null)
+                            Container(
+                              margin: const EdgeInsets.only(left: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: StayoraColors.teal.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: StayoraColors.teal.withOpacity(0.4),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.check_circle_rounded,
+                                    size: 10,
+                                    color: StayoraColors.teal,
+                                  ),
+                                  const SizedBox(width: 3),
+                                  const Text(
+                                    'Checked in',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: StayoraColors.teal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else if (booking.checkedOutAt == null)
+                            Container(
+                              margin: const EdgeInsets.only(left: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colorScheme.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: colorScheme.outline.withOpacity(0.3),
+                                ),
+                              ),
+                              child: Text(
+                                'Not yet',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w500,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -1122,7 +1196,7 @@ class _ReminderItem extends StatelessWidget {
                   child: TextButton(
                     onPressed: onMarkAdvanceReceived,
                     style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF34C759),
+                      foregroundColor: StayoraColors.success,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,

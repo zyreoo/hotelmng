@@ -159,6 +159,28 @@ class FirebaseService {
     await _roomsRef(userId, hotelId).doc(roomId).update({'name': name.trim()});
   }
 
+  Future<void> updateRoomHousekeeping(
+    String userId,
+    String hotelId,
+    String roomId,
+    String housekeepingStatus,
+  ) async {
+    if (!isInitialized) throw Exception('Firebase not initialized.');
+    await _roomsRef(userId, hotelId)
+        .doc(roomId)
+        .update({'housekeepingStatus': housekeepingStatus});
+  }
+
+  Future<void> updateRoomTags(
+    String userId,
+    String hotelId,
+    String roomId,
+    List<String> tags,
+  ) async {
+    if (!isInitialized) throw Exception('Firebase not initialized.');
+    await _roomsRef(userId, hotelId).doc(roomId).update({'tags': tags});
+  }
+
   Future<void> deleteRoom(String userId, String hotelId, String roomId) async {
     if (!isInitialized) throw Exception('Firebase not initialized.');
     await _roomsRef(userId, hotelId).doc(roomId).delete();
@@ -319,7 +341,9 @@ class FirebaseService {
     await _bookingsRef(userId, hotelId).doc(bookingId).delete();
   }
 
-  /// Stream of bookings for calendar (hotel-scoped).
+  /// Stream of bookings for calendar (hotel-scoped), with optional single-field
+  /// date filter. Only one inequality field is used to avoid composite-index
+  /// requirements; further filtering can be done in memory.
   Stream<QuerySnapshot<Map<String, dynamic>>> bookingsSnapshot(
     String userId,
     String hotelId, {
@@ -336,6 +360,25 @@ class FirebaseService {
     }
     if (endDate != null) {
       q = q.where('checkOut', isLessThanOrEqualTo: endDate.toIso8601String());
+    }
+    return q.orderBy('checkIn').snapshots();
+  }
+
+  /// Real-time stream of bookings with check-in on or after [checkInOnOrAfter].
+  /// Uses a single inequality so no composite index is needed. Keeps the result
+  /// set small so add/update/delete stays fast.
+  Stream<QuerySnapshot<Map<String, dynamic>>> bookingsStream(
+    String userId,
+    String hotelId, {
+    DateTime? checkInOnOrAfter,
+  }) {
+    if (!isInitialized) return const Stream.empty();
+    Query<Map<String, dynamic>> q = _bookingsRef(userId, hotelId);
+    if (checkInOnOrAfter != null) {
+      q = q.where(
+        'checkIn',
+        isGreaterThanOrEqualTo: checkInOnOrAfter.toIso8601String(),
+      );
     }
     return q.orderBy('checkIn').snapshots();
   }

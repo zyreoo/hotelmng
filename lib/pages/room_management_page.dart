@@ -3,6 +3,7 @@ import '../models/room_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
+import '../utils/stayora_colors.dart';
 import '../widgets/stayora_logo.dart';
 
 /// Manage rooms: add, edit name, delete. Shown from the calendar.
@@ -81,7 +82,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
           SnackBar(
             content: Text('Room "$name" added'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFF34C759),
+            backgroundColor: StayoraColors.success,
           ),
         );
       }
@@ -110,7 +111,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
           SnackBar(
             content: const Text('Room updated'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFF34C759),
+            backgroundColor: StayoraColors.success,
           ),
         );
       }
@@ -124,6 +125,179 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
         );
       }
     }
+  }
+
+  Future<void> _cycleHousekeepingStatus(
+      String userId, String hotelId, RoomModel room) async {
+    if (room.id == null) return;
+    final statuses = RoomModel.housekeepingStatuses;
+    final currentIdx = statuses.indexOf(room.housekeepingStatus);
+    final nextStatus = statuses[(currentIdx + 1) % statuses.length];
+    try {
+      await _firebaseService.updateRoomHousekeeping(
+          userId, hotelId, room.id!, nextStatus);
+      if (mounted) _loadRooms(userId, hotelId);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _editTags(
+      String userId, String hotelId, RoomModel room) async {
+    if (room.id == null) return;
+    final tags = await _showTagsDialog(context, tags: room.tags);
+    if (tags == null || !mounted) return;
+    try {
+      await _firebaseService.updateRoomTags(userId, hotelId, room.id!, tags);
+      if (mounted) _loadRooms(userId, hotelId);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to update tags: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  static Future<List<String>?> _showTagsDialog(
+    BuildContext context, {
+    required List<String> tags,
+  }) async {
+    final controller = TextEditingController();
+    List<String> current = List<String>.from(tags);
+    return showDialog<List<String>>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(builder: (ctx, setS) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            title: Text(
+              'Room Tags',
+              style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+                fontSize: 20,
+              ),
+            ),
+            content: SizedBox(
+              width: 320,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'e.g. Sea view, Ground floor, Accessible',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (current.isNotEmpty)
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: current.map((tag) {
+                        return Chip(
+                          label: Text(tag,
+                              style: const TextStyle(fontSize: 13)),
+                          deleteIcon:
+                              const Icon(Icons.close_rounded, size: 16),
+                          onDeleted: () {
+                            setS(() => current.remove(tag));
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: controller,
+                          textCapitalization:
+                              TextCapitalization.sentences,
+                          decoration: InputDecoration(
+                            hintText: 'Add tag…',
+                            filled: true,
+                            fillColor: Theme.of(ctx)
+                                .colorScheme
+                                .surfaceContainerHighest,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            isDense: true,
+                          ),
+                          onSubmitted: (v) {
+                            final t = v.trim();
+                            if (t.isNotEmpty && !current.contains(t)) {
+                              setS(() => current.add(t));
+                              controller.clear();
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: () {
+                          final t = controller.text.trim();
+                          if (t.isNotEmpty && !current.contains(t)) {
+                            setS(() => current.add(t));
+                            controller.clear();
+                          }
+                        },
+                        icon: const Icon(Icons.add_rounded),
+                        style: IconButton.styleFrom(
+                          backgroundColor: StayoraLogo.stayoraBlue
+                              .withOpacity(0.1),
+                          foregroundColor: StayoraLogo.stayoraBlue,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                style: TextButton.styleFrom(
+                  foregroundColor: StayoraLogo.stayoraBlue,
+                ),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(current),
+                style: FilledButton.styleFrom(
+                  backgroundColor: StayoraLogo.stayoraBlue,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  elevation: 0,
+                ),
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        });
+      },
+    );
   }
 
   Future<void> _deleteRoom(String userId, String hotelId, RoomModel room) async {
@@ -150,7 +324,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(true),
               style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFFFF3B30),
+                foregroundColor: StayoraColors.error,
               ),
               child: const Text('Delete'),
             ),
@@ -456,62 +630,203 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
                             }
                             final index = i ~/ 2;
                             final room = _rooms[index];
+                            final hkColor = StayoraColors.housekeepingColor(
+                              room.housekeepingStatus,
+                            );
+                            final hkLabel = RoomModel.housekeepingLabels[
+                                room.housekeepingStatus] ??
+                                'Clean';
                             return Material(
                               color: Colors.transparent,
-                              child: InkWell(
-                                onTap: canEdit
-                                    ? () => _editRoom(userId, hotelId, room)
-                                    : null,
-                                borderRadius: BorderRadius.circular(0),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 20,
-                                    vertical: 14,
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        width: 40,
-                                        height: 40,
-                                        decoration: BoxDecoration(
-                                          color: StayoraLogo.stayoraBlue
-                                              .withOpacity(0.12),
-                                          borderRadius: BorderRadius.circular(10),
-                                        ),
-                                        child: Icon(
-                                          Icons.door_front_door_rounded,
-                                          size: 22,
-                                          color: StayoraLogo.stayoraBlue,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 16),
-                                      Expanded(
-                                        child: Text(
-                                          room.name,
-                                          style: theme.textTheme.titleMedium?.copyWith(
-                                            fontWeight: FontWeight.w500,
-                                            color: colorScheme.onSurface,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 12,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          width: 40,
+                                          height: 40,
+                                          decoration: BoxDecoration(
+                                            color: StayoraLogo.stayoraBlue
+                                                .withOpacity(0.12),
+                                            borderRadius:
+                                                BorderRadius.circular(10),
                                           ),
-                                        ),
-                                      ),
-                                      if (canEdit) ...[
-                                        IconButton(
-                                          onPressed: () => _deleteRoom(userId, hotelId, room),
-                                          icon: const Icon(
-                                            Icons.delete_outline_rounded,
+                                          child: Icon(
+                                            Icons.door_front_door_rounded,
                                             size: 22,
-                                            color: Color(0xFFFF3B30),
+                                            color: StayoraLogo.stayoraBlue,
                                           ),
-                                          tooltip: 'Delete room',
                                         ),
-                                        Icon(
-                                          Icons.chevron_right_rounded,
-                                          size: 22,
-                                          color: colorScheme.onSurfaceVariant,
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: InkWell(
+                                            onTap: canEdit
+                                                ? () => _editRoom(
+                                                    userId, hotelId, room)
+                                                : null,
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                            child: Text(
+                                              room.name,
+                                              style: theme.textTheme.titleMedium
+                                                  ?.copyWith(
+                                                fontWeight: FontWeight.w500,
+                                                color: colorScheme.onSurface,
+                                              ),
+                                            ),
+                                          ),
                                         ),
+                                        if (canEdit) ...[
+                                          // Housekeeping status chip
+                                          GestureDetector(
+                                            onTap: () => _cycleHousekeepingStatus(
+                                                userId, hotelId, room),
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical: 5,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: hkColor.withOpacity(0.1),
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
+                                                border: Border.all(
+                                                  color:
+                                                      hkColor.withOpacity(0.5),
+                                                ),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Container(
+                                                    width: 7,
+                                                    height: 7,
+                                                    decoration: BoxDecoration(
+                                                      shape: BoxShape.circle,
+                                                      color: hkColor,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 5),
+                                                  Text(
+                                                    hkLabel,
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: hkColor,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          IconButton(
+                                            onPressed: () => _deleteRoom(
+                                                userId, hotelId, room),
+                                            icon: const Icon(
+                                              Icons.delete_outline_rounded,
+                                              size: 20,
+                                              color: StayoraColors.error,
+                                            ),
+                                            tooltip: 'Delete room',
+                                            padding: EdgeInsets.zero,
+                                            constraints:
+                                                const BoxConstraints(),
+                                          ),
+                                        ],
                                       ],
+                                    ),
+                                    // Tags row
+                                    if (canEdit) ...[
+                                      const SizedBox(height: 8),
+                                      Wrap(
+                                        spacing: 6,
+                                        runSpacing: 4,
+                                        children: [
+                                          ...room.tags.map((tag) => Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 3,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: colorScheme
+                                                      .surfaceContainerHighest,
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                          20),
+                                                  border: Border.all(
+                                                    color: colorScheme.outline
+                                                        .withOpacity(0.3),
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  tag,
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w500,
+                                                    color: colorScheme
+                                                        .onSurfaceVariant,
+                                                  ),
+                                                ),
+                                              )),
+                                          GestureDetector(
+                                            onTap: () => _editTags(
+                                                userId, hotelId, room),
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical: 3,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: StayoraLogo.stayoraBlue
+                                                    .withOpacity(0.06),
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
+                                                border: Border.all(
+                                                  color: StayoraLogo.stayoraBlue
+                                                      .withOpacity(0.3),
+                                                ),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                    Icons.edit_rounded,
+                                                    size: 11,
+                                                    color:
+                                                        StayoraLogo.stayoraBlue,
+                                                  ),
+                                                  const SizedBox(width: 3),
+                                                  Text(
+                                                    room.tags.isEmpty
+                                                        ? 'Add tags'
+                                                        : 'Edit tags',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                      color: StayoraLogo
+                                                          .stayoraBlue,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ],
-                                  ),
+                                  ],
                                 ),
                               ),
                             );

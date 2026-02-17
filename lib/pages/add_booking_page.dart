@@ -9,6 +9,7 @@ import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
 import '../utils/currency_formatter.dart';
 import '../utils/money_input_formatter.dart';
+import '../utils/stayora_colors.dart';
 import '../widgets/client_search_widget.dart';
 import 'services_page.dart';
 
@@ -506,59 +507,6 @@ class _AddBookingPageState extends State<AddBookingPage> {
     return _checkOutDate!.difference(_checkInDate!).inDays;
   }
 
-  Future<void> _duplicateBooking() async {
-    if (widget.existingBooking == null) return;
-
-    // Show confirmation dialog
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Duplicate Booking'),
-        content: const Text(
-          'This will create a copy of this booking with the same details. You can then edit the dates and other information.',
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF007AFF),
-              foregroundColor: Theme.of(context).colorScheme.onPrimary,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text('Duplicate'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    // Create a new booking with the same details (but no ID)
-    final duplicated = widget.existingBooking!.copyWith(
-      id: null, // Clear ID so a new one is created
-      status: 'Pending', // Reset to pending
-    );
-
-    // Navigate to add booking page with the duplicated booking
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => AddBookingPage(existingBooking: duplicated),
-        ),
-      );
-    }
-  }
-
   Future<void> _submitBooking() async {
     if (_formKey.currentState!.validate()) {
       // Validate client selection or new client form
@@ -629,10 +577,11 @@ class _AddBookingPageState extends State<AddBookingPage> {
         return;
       }
 
-      // Show loading
+      // Show loading on the same navigator as this page so we can close it correctly
       showDialog(
         context: context,
         barrierDismissible: false,
+        useRootNavigator: false,
         builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
@@ -788,7 +737,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                   'No capacity for these dates — added to waiting list. You can move it to confirmed when a room becomes available.',
                 ),
                 behavior: SnackBarBehavior.floating,
-                backgroundColor: Color(0xFFAF52DE),
+                backgroundColor: StayoraColors.purple,
               ),
             );
           } else {
@@ -803,7 +752,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                       : 'Booking created for ${userToUse.name}$roomInfo',
                 ),
                 behavior: SnackBarBehavior.floating,
-                backgroundColor: const Color(0xFF34C759),
+                backgroundColor: StayoraColors.success,
               ),
             );
           }
@@ -828,6 +777,76 @@ class _AddBookingPageState extends State<AddBookingPage> {
           );
         }
       }
+    }
+  }
+
+  Future<void> _confirmDeleteBooking() async {
+    final booking = widget.existingBooking;
+    if (booking == null || booking.id == null) return;
+    final userId = AuthScopeData.of(context).uid;
+    final hotelId = HotelProvider.of(context).hotelId;
+    if (userId == null || hotelId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Delete booking?',
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+            fontSize: 17,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+        content: Text(
+          'This will permanently delete the booking for ${booking.userName}. This action cannot be undone.',
+          style: TextStyle(
+            fontSize: 14,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: StayoraColors.blue)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await _firebaseService.deleteBooking(userId, hotelId, booking.id!);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Booking for ${booking.userName} deleted'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: StayoraColors.blue,
+        ),
+      );
+      if (Navigator.canPop(context)) {
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to delete: $e'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
     }
   }
 
@@ -856,7 +875,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                             IconButton(
                               icon: const Icon(Icons.arrow_back_ios_rounded),
                               onPressed: () => Navigator.pop(context),
-                              color: const Color(0xFF007AFF),
+                              color: StayoraColors.blue,
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(),
                             ),
@@ -889,6 +908,13 @@ class _AddBookingPageState extends State<AddBookingPage> {
                               ],
                             ),
                           ),
+                          if (widget.existingBooking != null)
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded),
+                              onPressed: _confirmDeleteBooking,
+                              color: Theme.of(context).colorScheme.error,
+                              tooltip: 'Delete booking',
+                            ),
                         ],
                       ),
                     ],
@@ -1106,7 +1132,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                             });
                                           }
                                         },
-                                        color: const Color(0xFF007AFF),
+                                        color: StayoraColors.blue,
                                       ),
                                       GestureDetector(
                                         onTap: () async {
@@ -1142,7 +1168,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                             _numberOfGuests++;
                                           });
                                         },
-                                        color: const Color(0xFF007AFF),
+                                        color: StayoraColors.blue,
                                       ),
                                     ],
                                   ),
@@ -1332,7 +1358,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                             );
                                           }
                                         },
-                                        color: const Color(0xFF007AFF),
+                                        color: StayoraColors.blue,
                                       ),
                                       GestureDetector(
                                         onTap: () async {
@@ -1367,7 +1393,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                             _numberOfRooms + 1,
                                           );
                                         },
-                                        color: const Color(0xFF007AFF),
+                                        color: StayoraColors.blue,
                                       ),
                                     ],
                                   ),
@@ -1387,7 +1413,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               value ?? false;
                                         });
                                       },
-                                      activeColor: const Color(0xFF007AFF),
+                                      activeColor: StayoraColors.blue,
                                     ),
                                     Expanded(
                                       child: Column(
@@ -1438,7 +1464,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         }
                                       });
                                     },
-                                    activeColor: const Color(0xFF007AFF),
+                                    activeColor: StayoraColors.blue,
                                   ),
                                   Expanded(
                                     child: Column(
@@ -1477,6 +1503,54 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     children: List.generate(_numberOfRooms, (
                                       index,
                                     ) {
+                                      final availableOptions = _roomNames
+                                          .where(
+                                            (room) =>
+                                                !_selectedRooms.contains(room) ||
+                                                _selectedRooms[index] == room,
+                                          )
+                                          .toList();
+                                      final currentValue = index <
+                                                  _selectedRooms.length &&
+                                              _selectedRooms[index].isNotEmpty
+                                          ? _selectedRooms[index]
+                                          : null;
+                                      final valueNotInList = currentValue !=
+                                          null &&
+                                          !availableOptions
+                                              .contains(currentValue);
+                                      final items = [
+                                        ...availableOptions.map(
+                                          (room) => DropdownMenuItem(
+                                            value: room,
+                                            child: Text(
+                                              'Room $room',
+                                              style: TextStyle(
+                                                color: Theme.of(context).colorScheme.onSurface,
+                                                fontSize: 16,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        if (valueNotInList)
+                                          DropdownMenuItem(
+                                            value: currentValue,
+                                            child: Text(
+                                              'Room $currentValue (no longer available)',
+                                              style: TextStyle(
+                                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                                fontSize: 16,
+                                              ),
+                                            ),
+                                          ),
+                                      ];
+                                      final dropdownValue = (currentValue !=
+                                                  null &&
+                                              (availableOptions.contains(
+                                                    currentValue) ||
+                                                  valueNotInList))
+                                          ? currentValue
+                                          : null;
                                       return Padding(
                                         padding: EdgeInsets.only(
                                           bottom: index < _numberOfRooms - 1
@@ -1484,12 +1558,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               : 0,
                                         ),
                                         child: DropdownButtonFormField<String>(
-                                          initialValue:
-                                              index < _selectedRooms.length &&
-                                                  _selectedRooms[index]
-                                                      .isNotEmpty
-                                              ? _selectedRooms[index]
-                                              : null,
+                                          value: dropdownValue,
                                           decoration: InputDecoration(
                                             labelText: _numberOfRooms == 1
                                                 ? 'Select Room'
@@ -1515,28 +1584,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                             color: Theme.of(context).colorScheme.onSurface,
                                           ),
                                           dropdownColor: Theme.of(context).colorScheme.surface,
-                                          items: _roomNames
-                                              .where(
-                                                (room) =>
-                                                    !_selectedRooms.contains(
-                                                      room,
-                                                    ) ||
-                                                    _selectedRooms[index] ==
-                                                        room,
-                                              )
-                                              .map((room) {
-                                                return DropdownMenuItem(
-                                                  value: room,
-                                                  child: Text(
-                                                    'Room $room',
-                                                    style: TextStyle(
-                                                      color: Theme.of(context).colorScheme.onSurface,
-                                                      fontSize: 16,
-                                                    ),
-                                                  ),
-                                                );
-                                              })
-                                              .toList(),
+                                          items: items,
                                           onChanged: (value) {
                                             setState(() {
                                               if (index <
@@ -1577,23 +1625,21 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 Container(
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
-                                    color: const Color(
-                                      0xFF007AFF,
-                                    ).withOpacity(0.1),
+                                    color: StayoraColors.blue.withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Row(
                                     children: [
                                       const Icon(
                                         Icons.bed_rounded,
-                                        color: Color(0xFF007AFF),
+                                        color: StayoraColors.blue,
                                         size: 20,
                                       ),
                                       const SizedBox(width: 8),
                                       Text(
                                         '$_numberOfNights ${_numberOfNights == 1 ? 'night' : 'nights'}',
                                         style: const TextStyle(
-                                          color: Color(0xFF007AFF),
+                                          color: StayoraColors.blue,
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),
@@ -1690,7 +1736,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         currencyFormatter.formatCompact(_roomSubtotal),
                                         style: const TextStyle(
                                           fontWeight: FontWeight.w600,
-                                          color: Color(0xFF007AFF),
+                                          color: StayoraColors.blue,
                                         ),
                                         overflow: TextOverflow.ellipsis,
                                       ),
@@ -1717,8 +1763,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   Flexible(
                                     child: TextButton.icon(
                                       onPressed: () async {
-                                        await Navigator.push(
-                                          context,
+                                        await Navigator.of(context, rootNavigator: false).push(
                                           MaterialPageRoute(
                                             builder: (context) =>
                                                 const ServicesPage(),
@@ -1735,7 +1780,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       style: TextButton.styleFrom(
-                                        foregroundColor: const Color(0xFF007AFF),
+                                        foregroundColor: StayoraColors.blue,
                                       ),
                                     ),
                                   ),
@@ -1795,7 +1840,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                                         qty - 1,
                                                       )
                                                   : null,
-                                              color: const Color(0xFF007AFF),
+                                              color: StayoraColors.blue,
                                             ),
                                             GestureDetector(
                                               onTap: () async {
@@ -1833,7 +1878,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                                 service,
                                                 qty + 1,
                                               ),
-                                              color: const Color(0xFF007AFF),
+                                              color: StayoraColors.blue,
                                             ),
                                           ],
                                         ),
@@ -1887,7 +1932,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w600,
                                         fontSize: 15,
-                                        color: Color(0xFF007AFF),
+                                        color: StayoraColors.blue,
                                       ),
                                     ),
                                   ],
@@ -1918,7 +1963,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 17,
-                                      color: Color(0xFF007AFF),
+                                      color: StayoraColors.blue,
                                     ),
                                   ),
                                 ],
@@ -2103,7 +2148,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               _advanceStatus = 'pending';
                                               _amountPaidController.clear();
                                             }),
-                                        selectedColor: const Color(0xFFFF9500)
+                                        selectedColor: StayoraColors.warning
                                             .withOpacity(0.3),
                                       ),
                                       const SizedBox(width: 8),
@@ -2113,7 +2158,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         onSelected: (v) => setState(() {
                                               _advanceStatus = 'received';
                                             }),
-                                        selectedColor: const Color(0xFF34C759)
+                                        selectedColor: StayoraColors.success
                                             .withOpacity(0.3),
                                       ),
                                     ],
@@ -2138,7 +2183,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                           fontSize: 14,
                                           fontWeight: FontWeight.w600,
                                           color: _remainingBalance > 0
-                                              ? const Color(0xFFFF9500)
+                                              ? StayoraColors.warning
                                               : Theme.of(context).colorScheme.onSurface,
                                         ),
                                         overflow: TextOverflow.ellipsis,
@@ -2152,7 +2197,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   children: [
                                     Icon(Icons.check_circle_rounded,
                                         size: 18,
-                                        color: const Color(0xFF34C759)),
+                                        color: StayoraColors.success),
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
@@ -2365,44 +2410,13 @@ class _AddBookingPageState extends State<AddBookingPage> {
 
                       const SizedBox(height: 32),
 
-                      // Action buttons
-                      if (widget.existingBooking != null) ...[
-                        // Duplicate button for existing bookings
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: _duplicateBooking,
-                            icon: const Icon(Icons.content_copy_rounded),
-                            label: const Text(
-                              'Duplicate Booking',
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF007AFF),
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              side: const BorderSide(
-                                color: Color(0xFF007AFF),
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-
                       // Save Button
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
                           onPressed: _submitBooking,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF007AFF),
+                            backgroundColor: StayoraColors.blue,
                             foregroundColor: Theme.of(context).colorScheme.onPrimary,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
@@ -2456,7 +2470,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF007AFF), width: 2),
+          borderSide: const BorderSide(color: StayoraColors.blue, width: 2),
         ),
         filled: true,
         fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,

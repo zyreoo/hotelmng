@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../utils/stayora_colors.dart';
 
 import '../models/employer_model.dart';
 import '../services/firebase_service.dart';
@@ -88,11 +89,11 @@ class _EmployeesPageState extends State<EmployeesPage> {
   }
 
   static const List<Color> _avatarColors = [
-    Color(0xFF007AFF),
-    Color(0xFF34C759),
-    Color(0xFFFF9500),
-    Color(0xFFFF3B30),
-    Color(0xFFAF52DE),
+    StayoraColors.blue,
+    StayoraColors.success,
+    StayoraColors.warning,
+    StayoraColors.error,
+    StayoraColors.purple,
   ];
 
   static Employee _employerToEmployee(EmployerModel employer, int index) {
@@ -264,6 +265,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
         ),
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'employees_fab',
         onPressed: () {
           Navigator.push(
             context,
@@ -437,17 +439,17 @@ class _EmployeeCard extends StatelessWidget {
             _BottomSheetOption(
               icon: Icons.edit_rounded,
               label: 'Edit Employee',
-              color: const Color(0xFF007AFF),
+              color: StayoraColors.blue,
             ),
             _BottomSheetOption(
               icon: Icons.schedule_rounded,
               label: 'View Schedule',
-              color: const Color(0xFF34C759),
+              color: StayoraColors.success,
             ),
             _BottomSheetOption(
               icon: Icons.delete_rounded,
               label: 'Remove Employee',
-              color: const Color(0xFFFF3B30),
+              color: StayoraColors.error,
               onPressed: () async {
                 Navigator.pop(context);
                 await onDelete?.call(employee.id);
@@ -456,7 +458,7 @@ class _EmployeeCard extends StatelessWidget {
                     SnackBar(
                       content: Text('${employee.name} removed'),
                       behavior: SnackBarBehavior.floating,
-                      backgroundColor: const Color(0xFF34C759),
+                      backgroundColor: StayoraColors.success,
                     ),
                   );
                 }
@@ -483,7 +485,7 @@ class _StatusBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: isActive
-            ? const Color(0xFF34C759).withOpacity(0.1)
+            ? StayoraColors.success.withOpacity(0.1)
             : colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(6),
       ),
@@ -494,7 +496,7 @@ class _StatusBadge extends StatelessWidget {
             width: 6,
             height: 6,
             decoration: BoxDecoration(
-              color: isActive ? const Color(0xFF34C759) : colorScheme.onSurfaceVariant,
+              color: isActive ? StayoraColors.success : colorScheme.onSurfaceVariant,
               shape: BoxShape.circle,
             ),
           ),
@@ -504,7 +506,7 @@ class _StatusBadge extends StatelessWidget {
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: isActive ? const Color(0xFF34C759) : colorScheme.onSurfaceVariant,
+              color: isActive ? StayoraColors.success : colorScheme.onSurfaceVariant,
             ),
           ),
         ],

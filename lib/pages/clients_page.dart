@@ -3,6 +3,7 @@ import '../models/booking_model.dart';
 import '../services/auth_provider.dart';
 import '../services/hotel_provider.dart';
 import '../services/firebase_service.dart';
+import '../utils/stayora_colors.dart';
 import '../widgets/loading_empty_states.dart';
 import '../utils/currency_formatter.dart';
 import 'add_booking_page.dart';
@@ -22,48 +23,54 @@ class _ClientsPageState extends State<ClientsPage> {
   bool _loading = true;
   String? _error;
   String _searchQuery = '';
+  dynamic _bookingsSubscription;
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _loadData();
-    });
-  }
-
-  Future<void> _loadData() async {
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     final userId = AuthScopeData.of(context).uid;
     final hotelId = HotelProvider.of(context).hotelId;
-
-    if (userId == null || hotelId == null) {
-      setState(() {
-        _loading = false;
-        _error = 'User or hotel not found';
-      });
-      return;
-    }
-
+    if (userId == null || hotelId == null) return;
+    _bookingsSubscription?.cancel();
+    final checkInAfter = DateTime.now().subtract(const Duration(days: 730));
     setState(() {
       _loading = true;
       _error = null;
     });
+    _bookingsSubscription = FirebaseService()
+        .bookingsStream(userId, hotelId, checkInOnOrAfter: checkInAfter)
+        .listen(
+      (snapshot) {
+        final bookings = snapshot.docs
+            .map((doc) => BookingModel.fromFirestore(doc.data(), doc.id))
+            .toList();
+        if (!mounted) return;
+        _allBookings = bookings;
+        _buildClientsList();
+        setState(() {
+          _loading = false;
+          _error = null;
+        });
+      },
+      onError: (e) {
+        if (!mounted) return;
+        setState(() {
+          _loading = false;
+          _error = 'Failed to load clients: $e';
+        });
+      },
+    );
+  }
 
-    try {
-      final bookings = await FirebaseService().getBookings(userId, hotelId);
-      if (!mounted) return;
-      _allBookings = bookings;
-      _buildClientsList();
-      setState(() {
-        _loading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = 'Failed to load clients: $e';
-      });
-    }
+  @override
+  void dispose() {
+    _bookingsSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadData() async {
+    // Trigger refresh by re-subscribing
+    didChangeDependencies();
   }
 
   void _buildClientsList() {
@@ -131,7 +138,7 @@ class _ClientsPageState extends State<ClientsPage> {
           SnackBar(
             content: Text('Status updated to $newStatus'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFF34C759),
+            backgroundColor: StayoraColors.success,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
@@ -142,7 +149,7 @@ class _ClientsPageState extends State<ClientsPage> {
           SnackBar(
             content: Text('Failed to update: $e'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFFFF3B30),
+            backgroundColor: StayoraColors.error,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
@@ -220,14 +227,9 @@ class _ClientsPageState extends State<ClientsPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                     )
                   : _error != null
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Text(
-                              _error!,
-                              style: const TextStyle(color: Color(0xFFFF3B30)),
-                            ),
-                          ),
+                      ? ErrorStateWidget(
+                          message: _error!,
+                          onRetry: _loadData,
                         )
                       : _filteredClients.isEmpty
                           ? EmptyStateWidget(
@@ -305,7 +307,7 @@ class _ClientsPageState extends State<ClientsPage> {
                           width: 56,
                           height: 56,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF007AFF).withOpacity(0.1),
+                            color: StayoraColors.blue.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(28),
                           ),
                           child: Center(
@@ -314,7 +316,7 @@ class _ClientsPageState extends State<ClientsPage> {
                               style: const TextStyle(
                                 fontSize: 24,
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF007AFF),
+                                color: StayoraColors.blue,
                               ),
                             ),
                           ),
@@ -402,8 +404,7 @@ class _ClientsPageState extends State<ClientsPage> {
                       currencyFormatter: currencyFormatter,
                       onTap: () {
                         Navigator.pop(context);
-                        Navigator.push(
-                          context,
+                        Navigator.of(context, rootNavigator: false).push(
                           MaterialPageRoute(
                             builder: (_) => AddBookingPage(existingBooking: booking),
                           ),
@@ -472,7 +473,7 @@ class _ClientCard extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF007AFF).withOpacity(0.1),
+                  color: StayoraColors.blue.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(24),
                 ),
                 child: Center(
@@ -481,7 +482,7 @@ class _ClientCard extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF007AFF),
+                      color: StayoraColors.blue,
                     ),
                   ),
                 ),
@@ -511,7 +512,7 @@ class _ClientCard extends StatelessWidget {
                     Text(
                       '${client.totalBookings} booking${client.totalBookings != 1 ? 's' : ''} · ${currencyFormatter.formatCompact(client.totalSpent)}',
                       style: TextStyle(
-                        color: const Color(0xFF007AFF),
+                        color: StayoraColors.blue,
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
                       ),
@@ -668,21 +669,7 @@ class _BookingListItem extends StatelessWidget {
   }
 
   Color _getStatusColor(BuildContext context, String status) {
-    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
-    switch (status) {
-      case 'Pending':
-        return const Color(0xFFFF9500);
-      case 'Confirmed':
-        return const Color(0xFF007AFF);
-      case 'Checked In':
-        return const Color(0xFF34C759);
-      case 'Checked Out':
-        return muted;
-      case 'Cancelled':
-        return const Color(0xFFFF3B30);
-      default:
-        return muted;
-    }
+    return StayoraColors.forStatus(status);
   }
 
   @override
@@ -770,7 +757,7 @@ class _BookingListItem extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF007AFF),
+                  color: StayoraColors.blue,
                 ),
               ),
             ],

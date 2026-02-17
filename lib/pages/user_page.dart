@@ -5,6 +5,7 @@ import 'package:table_calendar/table_calendar.dart';
 import '../models/employer_model.dart';
 import '../services/auth_provider.dart';
 import '../services/hotel_provider.dart';
+import '../utils/stayora_colors.dart';
 import '../widgets/stayora_logo.dart';
 import 'add_employee_page.dart';
 
@@ -323,7 +324,7 @@ class _UserPageState extends State<UserPage> {
                               label: 'Status',
                               value: _employee.status,
                               valueColor: _employee.status == 'Active'
-                                  ? const Color(0xFF34C759)
+                                  ? StayoraColors.success
                                   : null,
                             ),
                           ],
@@ -364,7 +365,7 @@ class _UserPageState extends State<UserPage> {
                                     title: 'Days This Week',
                                     value: daysThisWeek.toString(),
                                     icon: Icons.calendar_today_rounded,
-                                    color: const Color(0xFF34C759),
+                                    color: StayoraColors.success,
                                   ),
                                 ],
                               )
@@ -384,7 +385,7 @@ class _UserPageState extends State<UserPage> {
                                       title: 'Days This Week',
                                       value: daysThisWeek.toString(),
                                       icon: Icons.calendar_today_rounded,
-                                      color: const Color(0xFF34C759),
+                                      color: StayoraColors.success,
                                     ),
                                   ),
                                 ],
@@ -394,7 +395,7 @@ class _UserPageState extends State<UserPage> {
                           title: 'Hours Last Month',
                           value: hoursLastMonth.toStringAsFixed(1),
                           icon: Icons.access_time_rounded,
-                          color: const Color(0xFFFF9500),
+                          color: StayoraColors.warning,
                         ),
                       ],
                     ),
@@ -457,7 +458,7 @@ class _UserPageState extends State<UserPage> {
                               shape: BoxShape.circle,
                             ),
                             markerDecoration: const BoxDecoration(
-                              color: Color(0xFF34C759),
+                              color: StayoraColors.success,
                               shape: BoxShape.circle,
                             ),
                             markersMaxCount: 1,

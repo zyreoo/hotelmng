@@ -6,6 +6,7 @@ import 'firebase_options.dart';
 import 'services/auth_provider.dart';
 import 'services/hotel_provider.dart';
 import 'services/theme_provider.dart';
+import 'utils/stayora_colors.dart';
 import 'widgets/stayora_logo.dart';
 import 'pages/login_page.dart';
 import 'pages/hotel_setup_page.dart';
@@ -72,6 +73,9 @@ class _MaterialAppWithTheme extends StatelessWidget {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: const Color(0xFF007AFF),
       brightness: Brightness.light,
+      // Slightly richer onSurfaceVariant so grey text meets WCAG AA on the
+      // light (#F5F5F7) background.
+      onSurfaceVariant: const Color(0xFF555555),
     );
     final base = GoogleFonts.interTextTheme();
     return ThemeData(
@@ -79,32 +83,37 @@ class _MaterialAppWithTheme extends StatelessWidget {
       colorScheme: colorScheme,
       scaffoldBackgroundColor: const Color(0xFFF5F5F7),
       textTheme: base.copyWith(
-        displayLarge: base.displayLarge?.copyWith(fontWeight: FontWeight.bold),
+        // Displays & headlines stay bold – they ARE the hierarchy anchors.
+        displayLarge:  base.displayLarge?.copyWith(fontWeight: FontWeight.bold),
         displayMedium: base.displayMedium?.copyWith(fontWeight: FontWeight.bold),
-        displaySmall: base.displaySmall?.copyWith(fontWeight: FontWeight.bold),
+        displaySmall:  base.displaySmall?.copyWith(fontWeight: FontWeight.bold),
         headlineLarge: base.headlineLarge?.copyWith(
           fontSize: 34,
           fontWeight: FontWeight.bold,
           color: Colors.black,
         ),
         headlineMedium: base.headlineMedium?.copyWith(fontWeight: FontWeight.w600),
-        headlineSmall: base.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
-        titleLarge: base.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+        headlineSmall:  base.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
+        // Titles remain semibold – section headers and card titles.
+        titleLarge:  base.titleLarge?.copyWith(fontWeight: FontWeight.w600),
         titleMedium: base.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-        titleSmall: base.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+        titleSmall:  base.titleSmall?.copyWith(fontWeight: FontWeight.w500),
+        // Body text drops to regular / medium so it reads as content,
+        // not as a competing heading.
         bodyLarge: base.bodyLarge?.copyWith(
           fontSize: 16,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w500,
           color: Colors.black87,
         ),
-        bodyMedium: base.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-        bodySmall: base.bodySmall?.copyWith(fontWeight: FontWeight.w600),
-        labelLarge: base.labelLarge?.copyWith(fontWeight: FontWeight.w600),
-        labelMedium: base.labelMedium?.copyWith(fontWeight: FontWeight.w600),
-        labelSmall: base.labelSmall?.copyWith(fontWeight: FontWeight.w600),
+        bodyMedium: base.bodyMedium?.copyWith(fontWeight: FontWeight.w400),
+        bodySmall:  base.bodySmall?.copyWith(fontWeight: FontWeight.w400),
+        // Labels: buttons stay w600; smaller labels lighten.
+        labelLarge:  base.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+        labelMedium: base.labelMedium?.copyWith(fontWeight: FontWeight.w500),
+        labelSmall:  base.labelSmall?.copyWith(fontWeight: FontWeight.w400),
       ),
       
-      // Cards with frosted glass effect
+      // Cards
       cardTheme: CardThemeData(
         elevation: 0,
         shape: RoundedRectangleBorder(
@@ -112,6 +121,41 @@ class _MaterialAppWithTheme extends StatelessWidget {
         ),
         color: Colors.white,
         shadowColor: Colors.black.withOpacity(0.05),
+      ),
+
+      // Input fields – now consistent in light mode (matching dark).
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.4)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.4)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: colorScheme.primary, width: 2),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: StayoraColors.error),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: StayoraColors.error, width: 2),
+        ),
+        labelStyle: TextStyle(
+          color: colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w400,
+        ),
+        hintStyle: TextStyle(
+          color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+          fontWeight: FontWeight.w400,
+        ),
       ),
       
       // AppBar
@@ -175,35 +219,35 @@ class _MaterialAppWithTheme extends StatelessWidget {
       colorScheme: colorScheme,
       scaffoldBackgroundColor: const Color(0xFF000000),
       textTheme: base.copyWith(
-        displayLarge: base.displayLarge?.copyWith(fontWeight: FontWeight.bold),
+        displayLarge:  base.displayLarge?.copyWith(fontWeight: FontWeight.bold),
         displayMedium: base.displayMedium?.copyWith(fontWeight: FontWeight.bold),
-        displaySmall: base.displaySmall?.copyWith(fontWeight: FontWeight.bold),
+        displaySmall:  base.displaySmall?.copyWith(fontWeight: FontWeight.bold),
         headlineLarge: base.headlineLarge?.copyWith(
           fontSize: 34,
           fontWeight: FontWeight.bold,
           color: colorScheme.onSurface,
         ),
         headlineMedium: base.headlineMedium?.copyWith(fontWeight: FontWeight.w600),
-        headlineSmall: base.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
-        titleLarge: base.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+        headlineSmall:  base.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
+        titleLarge:  base.titleLarge?.copyWith(fontWeight: FontWeight.w600),
         titleMedium: base.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-        titleSmall: base.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+        titleSmall:  base.titleSmall?.copyWith(fontWeight: FontWeight.w500),
         bodyLarge: base.bodyLarge?.copyWith(
           fontSize: 16,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w500,
           color: colorScheme.onSurface,
         ),
         bodyMedium: base.bodyMedium?.copyWith(
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w400,
           color: colorScheme.onSurface,
         ),
         bodySmall: base.bodySmall?.copyWith(
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w400,
           color: colorScheme.onSurfaceVariant,
         ),
-        labelLarge: base.labelLarge?.copyWith(fontWeight: FontWeight.w600),
-        labelMedium: base.labelMedium?.copyWith(fontWeight: FontWeight.w600),
-        labelSmall: base.labelSmall?.copyWith(fontWeight: FontWeight.w600),
+        labelLarge:  base.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+        labelMedium: base.labelMedium?.copyWith(fontWeight: FontWeight.w500),
+        labelSmall:  base.labelSmall?.copyWith(fontWeight: FontWeight.w400),
       ),
       
       // Cards - use surface so they're clearly visible
@@ -234,6 +278,7 @@ class _MaterialAppWithTheme extends StatelessWidget {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: const Color(0xFF2C2C2E),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -243,8 +288,22 @@ class _MaterialAppWithTheme extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: colorScheme.primary, width: 2),
         ),
-        labelStyle: TextStyle(color: colorScheme.onSurfaceVariant),
-        hintStyle: TextStyle(color: colorScheme.onSurfaceVariant.withOpacity(0.7)),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: StayoraColors.error),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: StayoraColors.error, width: 2),
+        ),
+        labelStyle: TextStyle(
+          color: colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w400,
+        ),
+        hintStyle: TextStyle(
+          color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+          fontWeight: FontWeight.w400,
+        ),
       ),
       
       // Navigation Bar (Material 3) - elevated surface, Stayora blue for selected
@@ -351,6 +410,12 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _selectedIndex = 0;
+
+  /// One Navigator per tab so pushed routes (Edit Booking, Room Management, etc.) stay inside the shell and keep the nav bar visible.
+  final List<GlobalKey<NavigatorState>> _navigatorKeys = List.generate(
+    9,
+    (_) => GlobalKey<NavigatorState>(),
+  );
 
   /// Desktop: 8 pages. Mobile: 9 pages (Dashboard, Add Booking, Bookings, More menu, Clients, Calendar, Employees, Schedule, Settings).
   List<Widget> get _pages {
@@ -467,11 +532,45 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   ),
                 ),
 
-                // Main Content Area
-                Expanded(child: _pages[_selectedIndex]),
+                // Main Content Area — same nested Navigator per tab so Edit Booking / Room Management keep sidebar visible
+                Expanded(
+                  child: IndexedStack(
+                    index: _selectedIndex,
+                    children: List.generate(9, (i) {
+                      return Navigator(
+                        key: _navigatorKeys[i],
+                        initialRoute: '/',
+                        onGenerateRoute: (RouteSettings settings) {
+                          if (settings.name == '/') {
+                            return MaterialPageRoute<void>(
+                              builder: (_) => _pages[i],
+                            );
+                          }
+                          return null;
+                        },
+                      );
+                    }),
+                  ),
+                ),
               ],
             )
-          : _pages[_selectedIndex], // Mobile: full screen
+          : IndexedStack(
+              index: _selectedIndex,
+              children: List.generate(9, (i) {
+                return Navigator(
+                  key: _navigatorKeys[i],
+                  initialRoute: '/',
+                  onGenerateRoute: (RouteSettings settings) {
+                    if (settings.name == '/') {
+                      return MaterialPageRoute<void>(
+                        builder: (_) => _pages[i],
+                      );
+                    }
+                    return null;
+                  },
+                );
+              }),
+            ),
       drawer: isDesktop ? null : const Drawer(child: _SignOutDrawer()),
       // Bottom Navigation Bar (Mobile) - 4 items: Dashboard, Add Booking, Bookings, More
       bottomNavigationBar: isDesktop

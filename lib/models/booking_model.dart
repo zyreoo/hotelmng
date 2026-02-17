@@ -75,6 +75,8 @@ class BookingModel {
     this.advanceAmountPaid = 0,
     this.advancePaymentMethod,
     this.advanceStatus,
+    this.checkedInAt,
+    this.checkedOutAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
   int get numberOfNights {
@@ -97,6 +99,12 @@ class BookingModel {
       advancePercent != null && advancePercent! > 0
           ? (calculatedTotal * advancePercent! / 100).round()
           : 0;
+
+  /// Optional: timestamp when the guest physically checked in.
+  final DateTime? checkedInAt;
+
+  /// Optional: timestamp when the guest physically checked out.
+  final DateTime? checkedOutAt;
 
   /// Advance payment status for display: not_required, waiting, paid. Uses stored advanceStatus when set, else derived from amount.
   String get advancePaymentStatus {
@@ -142,6 +150,8 @@ class BookingModel {
         'advancePaymentMethod': advancePaymentMethod,
       if (advanceStatus != null && advanceStatus!.isNotEmpty)
         'advanceStatus': advanceStatus,
+      if (checkedInAt != null) 'checkedInAt': checkedInAt!.toIso8601String(),
+      if (checkedOutAt != null) 'checkedOutAt': checkedOutAt!.toIso8601String(),
     };
   }
 
@@ -191,6 +201,12 @@ class BookingModel {
           : int.tryParse(data['advanceAmountPaid']?.toString() ?? '0') ?? 0,
       advancePaymentMethod: data['advancePaymentMethod']?.toString(),
       advanceStatus: data['advanceStatus']?.toString(),
+      checkedInAt: data['checkedInAt'] != null
+          ? DateTime.tryParse(data['checkedInAt'].toString())
+          : null,
+      checkedOutAt: data['checkedOutAt'] != null
+          ? DateTime.tryParse(data['checkedOutAt'].toString())
+          : null,
     );
   }
 
@@ -218,6 +234,10 @@ class BookingModel {
     int? advanceAmountPaid,
     String? advancePaymentMethod,
     String? advanceStatus,
+    DateTime? checkedInAt,
+    DateTime? checkedOutAt,
+    bool clearCheckedInAt = false,
+    bool clearCheckedOutAt = false,
   }) {
     return BookingModel(
       id: id ?? this.id,
@@ -242,6 +262,8 @@ class BookingModel {
       advanceAmountPaid: advanceAmountPaid ?? this.advanceAmountPaid,
       advancePaymentMethod: advancePaymentMethod ?? this.advancePaymentMethod,
       advanceStatus: advanceStatus ?? this.advanceStatus,
+      checkedInAt: clearCheckedInAt ? null : (checkedInAt ?? this.checkedInAt),
+      checkedOutAt: clearCheckedOutAt ? null : (checkedOutAt ?? this.checkedOutAt),
     );
   }
 }

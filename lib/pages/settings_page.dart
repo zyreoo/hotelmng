@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/auth_provider.dart';
 import '../services/hotel_provider.dart';
 import '../services/theme_provider.dart';
+import '../utils/stayora_colors.dart';
 import '../widgets/stayora_logo.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -60,7 +61,7 @@ class _SettingsPageState extends State<SettingsPage> {
           SnackBar(
             content: Text('Currency updated to $currencyCode'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFF34C759),
+            backgroundColor: StayoraColors.success,
           ),
         );
       }
@@ -70,7 +71,7 @@ class _SettingsPageState extends State<SettingsPage> {
           SnackBar(
             content: Text('Failed to update currency: $e'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFFFF3B30),
+            backgroundColor: StayoraColors.error,
           ),
         );
       }
@@ -201,7 +202,7 @@ class _SettingsPageState extends State<SettingsPage> {
           SnackBar(
             content: const Text('Hotel name updated successfully'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFF34C759),
+            backgroundColor: StayoraColors.success,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
@@ -214,7 +215,7 @@ class _SettingsPageState extends State<SettingsPage> {
           SnackBar(
             content: Text('Failed to update hotel name: $e'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFFFF3B30),
+            backgroundColor: StayoraColors.error,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
@@ -358,7 +359,7 @@ class _SettingsPageState extends State<SettingsPage> {
           SnackBar(
             content: const Text('Total rooms updated successfully'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFF34C759),
+            backgroundColor: StayoraColors.success,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
@@ -371,7 +372,7 @@ class _SettingsPageState extends State<SettingsPage> {
           SnackBar(
             content: Text('Failed to update total rooms: $e'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFFFF3B30),
+            backgroundColor: StayoraColors.error,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
@@ -498,7 +499,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       _SettingsTile(
                         icon: Icons.logout_rounded,
                         title: 'Sign Out',
-                        titleColor: const Color(0xFFFF3B30),
+                        titleColor: StayoraColors.error,
                         onTap: () => _showSignOutDialog(context, auth),
                       ),
                     ],
@@ -670,7 +671,7 @@ class _SettingsPageState extends State<SettingsPage> {
               await auth.signOut();
             },
             style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFFFF3B30),
+              foregroundColor: StayoraColors.error,
             ),
             child: const Text('Sign Out'),
           ),
@@ -755,12 +756,12 @@ class _SettingsTile extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: (titleColor ?? const Color(0xFF007AFF)).withOpacity(0.1),
+          color: (titleColor ?? StayoraColors.blue).withOpacity(0.1),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Icon(
           icon,
-          color: titleColor ?? const Color(0xFF007AFF),
+          color: titleColor ?? StayoraColors.blue,
           size: 22,
         ),
       ),

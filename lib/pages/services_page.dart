@@ -5,6 +5,7 @@ import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
 import '../utils/currency_formatter.dart';
 import '../utils/money_input_formatter.dart';
+import '../utils/stayora_colors.dart';
 import '../widgets/stayora_logo.dart';
 
 class ServicesPage extends StatelessWidget {
@@ -48,7 +49,7 @@ class ServicesPage extends StatelessWidget {
                           IconButton(
                             icon: const Icon(Icons.arrow_back_ios_rounded),
                             onPressed: () => Navigator.pop(context),
-                            color: const Color(0xFF007AFF),
+                            color: StayoraColors.blue,
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
                           ),
@@ -180,6 +181,7 @@ class ServicesPage extends StatelessWidget {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'services_fab',
         onPressed: () => _showServiceDialog(context, userId, hotelId, firebaseService),
         backgroundColor: StayoraLogo.stayoraBlue,
         foregroundColor: colorScheme.onPrimary,
@@ -389,7 +391,7 @@ class ServicesPage extends StatelessWidget {
                           child: Text(
                             'Cancel',
                             style: TextStyle(
-                              color: const Color(0xFF007AFF),
+                              color: StayoraColors.blue,
                               fontWeight: FontWeight.w500,
                               fontSize: 17,
                             ),
@@ -483,7 +485,7 @@ class ServicesPage extends StatelessWidget {
             existing == null ? 'Service added' : 'Service updated',
           ),
           behavior: SnackBarBehavior.floating,
-          backgroundColor: const Color(0xFF34C759),
+          backgroundColor: StayoraColors.success,
         ),
       );
     }
@@ -526,7 +528,7 @@ class ServicesPage extends StatelessWidget {
             const SnackBar(
               content: Text('Service deleted'),
               behavior: SnackBarBehavior.floating,
-              backgroundColor: Color(0xFF34C759),
+              backgroundColor: StayoraColors.success,
             ),
           );
         }
@@ -568,12 +570,12 @@ class _ServiceCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: const Color(0xFF007AFF).withOpacity(0.1),
+                color: StayoraColors.blue.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(
                 Icons.room_service_rounded,
-                color: Color(0xFF007AFF),
+                color: StayoraColors.blue,
                 size: 24,
               ),
             ),
@@ -606,7 +608,7 @@ class _ServiceCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
-                      color: const Color(0xFF007AFF),
+                      color: StayoraColors.blue,
                     ),
                   ),
                 ],
@@ -615,7 +617,7 @@ class _ServiceCard extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.edit_outlined),
               onPressed: onEdit,
-              color: const Color(0xFF007AFF),
+              color: StayoraColors.blue,
             ),
             IconButton(
               icon: const Icon(Icons.delete_outline_rounded),

@@ -5,6 +5,7 @@ import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
 import '../utils/currency_formatter.dart';
+import '../utils/stayora_colors.dart';
 import '../widgets/loading_empty_states.dart';
 import '../widgets/stayora_logo.dart';
 import 'add_booking_page.dart';
@@ -24,6 +25,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
   List<BookingModel> _filteredBookings = [];
   bool _loading = true;
   String? _error;
+  dynamic _bookingsSubscription;
   
   String _selectedStatus = 'All';
   DateTime? _filterStartDate;
@@ -47,48 +49,53 @@ class _BookingsListPageState extends State<BookingsListPage> {
     super.didChangeDependencies();
     final hotelId = HotelProvider.of(context).hotelId;
     final userId = AuthScopeData.of(context).uid;
-    if (hotelId != null && userId != null) _loadBookings(userId, hotelId);
+    if (hotelId == null || userId == null) return;
+    _bookingsSubscription?.cancel();
+    final checkInAfter = DateTime.now().subtract(const Duration(days: 365));
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    _bookingsSubscription = _firebaseService
+        .bookingsStream(userId, hotelId, checkInOnOrAfter: checkInAfter)
+        .listen(
+      (snapshot) {
+        final list = snapshot.docs
+            .map((doc) => BookingModel.fromFirestore(doc.data(), doc.id))
+            .toList();
+        if (mounted) {
+          setState(() {
+            _allBookings = list;
+            _filteredBookings = list;
+            _loading = false;
+            _error = null;
+          });
+          _filterBookings();
+        }
+      },
+      onError: (e) {
+        if (mounted) {
+          setState(() {
+            _allBookings = [];
+            _filteredBookings = [];
+            _loading = false;
+            _error = e.toString();
+          });
+        }
+      },
+    );
   }
 
   @override
   void dispose() {
+    _bookingsSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
   Future<void> _loadBookings(String userId, String hotelId) async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final now = DateTime.now();
-      final start = now.subtract(const Duration(days: 180));
-      final end = now.add(const Duration(days: 365));
-      final list = await _firebaseService.getBookings(
-        userId,
-        hotelId,
-        startDate: start,
-        endDate: end,
-      );
-      if (mounted) {
-        setState(() {
-          _allBookings = list;
-          _filteredBookings = list;
-          _loading = false;
-        });
-        _filterBookings();
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _allBookings = [];
-          _filteredBookings = [];
-          _loading = false;
-          _error = e.toString();
-        });
-      }
-    }
+    // Re-subscribe to get latest data (e.g. pull-to-refresh)
+    didChangeDependencies();
   }
 
   void _filterBookings() {
@@ -157,7 +164,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
           SnackBar(
             content: Text('Status updated to $newStatus'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFF34C759),
+            backgroundColor: StayoraColors.success,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
@@ -169,7 +176,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
           SnackBar(
             content: Text('Failed to update: $e'),
             behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFFFF3B30),
+            backgroundColor: StayoraColors.error,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
@@ -289,24 +296,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
     _filterBookings();
   }
 
-  Color _getStatusColor(String status) {
-    switch (status) {
-      case 'Confirmed':
-        return const Color(0xFF34C759);
-      case 'Pending':
-        return const Color(0xFFFF9500);
-      case 'Cancelled':
-        return const Color(0xFFFF3B30);
-      case 'Paid':
-        return const Color(0xFF007AFF);
-      case 'Unpaid':
-        return const Color(0xFF8E8E93);
-      case 'Waiting list':
-        return const Color(0xFFAF52DE);
-      default:
-        return Theme.of(context).colorScheme.onSurfaceVariant;
-    }
-  }
+  Color _getStatusColor(String status) => StayoraColors.forStatus(status);
 
   @override
   Widget build(BuildContext context) {
@@ -448,14 +438,15 @@ class _BookingsListPageState extends State<BookingsListPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                     )
                   : _error != null
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Text(
-                              _error!,
-                              style: const TextStyle(color: Color(0xFFFF3B30)),
-                            ),
-                          ),
+                      ? ErrorStateWidget(
+                          message: _error!,
+                          onRetry: () {
+                            final hotelId = HotelProvider.of(context).hotelId;
+                            final userId = AuthScopeData.of(context).uid;
+                            if (hotelId != null && userId != null) {
+                              _loadBookings(userId, hotelId);
+                            }
+                          },
                         )
                       : _filteredBookings.isEmpty
                           ? const EmptyStateWidget(
@@ -541,7 +532,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
                           ? Icons.radio_button_checked_rounded
                           : Icons.radio_button_unchecked_rounded,
                       color: isSelected
-                          ? const Color(0xFF007AFF)
+                          ? StayoraColors.blue
                           : Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     title: Text(
@@ -550,7 +541,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
                         fontWeight:
                             isSelected ? FontWeight.w600 : FontWeight.normal,
                         color: isSelected
-                            ? const Color(0xFF007AFF)
+                            ? StayoraColors.blue
                             : Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
@@ -571,8 +562,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
   }
 
   void _openBooking(BookingModel booking) async {
-    await Navigator.push(
-      context,
+    await Navigator.of(context, rootNavigator: false).push(
       MaterialPageRoute(
         builder: (context) => AddBookingPage(existingBooking: booking),
       ),
@@ -624,14 +614,14 @@ class _FilterChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: const Color(0xFF007AFF)),
+            Icon(icon, size: 16, color: StayoraColors.blue),
             const SizedBox(width: 6),
             Text(
               label,
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
-                color: Color(0xFF007AFF),
+                color: StayoraColors.blue,
               ),
             ),
             if (onClear != null) ...[

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/stayora_colors.dart';
 
 /// Skeleton placeholder for list loading (e.g. bookings, clients).
 class SkeletonListLoader extends StatelessWidget {
@@ -132,6 +133,9 @@ class EmptyStateWidget extends StatelessWidget {
   final String title;
   final String? subtitle;
   final double iconSize;
+  /// Optional primary action button.
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   const EmptyStateWidget({
     super.key,
@@ -139,6 +143,8 @@ class EmptyStateWidget extends StatelessWidget {
     required this.title,
     this.subtitle,
     this.iconSize = 64,
+    this.actionLabel,
+    this.onAction,
   });
 
   @override
@@ -151,13 +157,11 @@ class EmptyStateWidget extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: iconSize, color: colorScheme.onSurfaceVariant),
-            const SizedBox(height: 20),
+            Icon(icon, size: iconSize, color: colorScheme.onSurfaceVariant.withOpacity(0.6)),
+            const SizedBox(height: 16),
             Text(
               title,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 color: colorScheme.onSurface,
               ),
               textAlign: TextAlign.center,
@@ -166,8 +170,78 @@ class EmptyStateWidget extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 subtitle!,
-                style: TextStyle(fontSize: 14, color: colorScheme.onSurfaceVariant),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
                 textAlign: TextAlign.center,
+              ),
+            ],
+            if (actionLabel != null && onAction != null) ...[
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: onAction,
+                child: Text(actionLabel!),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Consistent error state with icon, message and optional retry button.
+class ErrorStateWidget extends StatelessWidget {
+  final String message;
+  final String? actionLabel;
+  final VoidCallback? onRetry;
+
+  const ErrorStateWidget({
+    super.key,
+    required this.message,
+    this.actionLabel,
+    this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline_rounded,
+              size: 56,
+              color: StayoraColors.error.withOpacity(0.7),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Something went wrong',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: colorScheme.onSurface,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (onRetry != null) ...[
+              const SizedBox(height: 24),
+              OutlinedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: Text(actionLabel ?? 'Retry'),
               ),
             ],
           ],

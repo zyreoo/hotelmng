@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_provider.dart';
+import '../utils/stayora_colors.dart';
 import '../widgets/stayora_logo.dart';
 import 'sign_up_page.dart';
 
 /// App brand blue for primary buttons (matches StayoraLogo).
-const Color _stayoraBlue = Color(0xFF007AFF);
+const Color _stayoraBlue = StayoraColors.blue;
 
 /// Email/password login. Links to sign-up.
 class LoginPage extends StatefulWidget {
@@ -169,7 +170,7 @@ class _LoginPageState extends State<LoginPage> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: const Text('Password reset link sent! Check your email.'),
-              backgroundColor: const Color(0xFF34C759),
+              backgroundColor: StayoraColors.success,
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -182,7 +183,7 @@ class _LoginPageState extends State<LoginPage> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(_messageForAuthError(e)),
-              backgroundColor: const Color(0xFFFF3B30),
+              backgroundColor: StayoraColors.error,
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
@@ -269,7 +270,7 @@ class _LoginPageState extends State<LoginPage> {
                     Text(
                       _error!,
                       style: const TextStyle(
-                        color: Color(0xFFFF3B30),
+                        color: StayoraColors.error,
                         fontSize: 13,
                       ),
                     ),

@@ -4,9 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/booking_model.dart';
+import '../models/room_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
+import '../utils/stayora_colors.dart';
+import '../utils/currency_formatter.dart';
+import '../utils/money_input_formatter.dart';
 import '../widgets/loading_empty_states.dart';
 import '../widgets/stayora_logo.dart';
 import 'add_booking_page.dart';
@@ -31,8 +35,9 @@ class _CalendarPageState extends State<CalendarPage> {
       MediaQuery.of(context).size.width >= 768 ? 100.0 : 80.0;
   double get _roomColumnWidth =>
       MediaQuery.of(context).size.width >= 768 ? 120.0 : 90.0;
+  // Minimum 48 pt on mobile to meet touch-target guidelines.
   double get _dayRowHeight =>
-      MediaQuery.of(context).size.width >= 768 ? 50.0 : 45.0;
+      MediaQuery.of(context).size.width >= 768 ? 50.0 : 48.0;
 
   // Sliding window: bounded date range to avoid unbounded widget growth
   DateTime _earliestDate = DateTime.now();
@@ -54,6 +59,8 @@ class _CalendarPageState extends State<CalendarPage> {
 
   // Rooms loaded from Firestore (hotel-specific)
   List<String> _roomNames = [];
+  /// Full room models keyed by room name — used for housekeeping dots.
+  Map<String, RoomModel> _roomModelsMap = {};
   final FirebaseService _firebaseService = FirebaseService();
   bool _roomNamesLoaded = false;
 
@@ -82,6 +89,12 @@ class _CalendarPageState extends State<CalendarPage> {
   DateTime? _selectionStartDate;
   String? _selectionEndRoom;
   DateTime? _selectionEndDate;
+
+  /// When dragging a waiting-list booking over the grid, show a skeleton at this cell.
+  String? _skeletonWaitingListBookingId;
+  String? _skeletonRoom;
+  DateTime? _skeletonDate;
+
   static const List<String> statusOptions = [
     'Confirmed',
     'Pending',
@@ -91,34 +104,17 @@ class _CalendarPageState extends State<CalendarPage> {
     'Waiting list',
   ];
 
-  static Color _statusColor(String status) {
-    switch (status) {
-      case 'Confirmed':
-        return const Color(0xFF34C759);
-      case 'Pending':
-        return const Color(0xFFFF9500);
-      case 'Cancelled':
-        return const Color(0xFFFF3B30);
-      case 'Paid':
-        return const Color(0xFF007AFF);
-      case 'Unpaid':
-        return const Color(0xFF8E8E93);
-      case 'Waiting list':
-        return const Color(0xFFAF52DE);
-      default:
-        return const Color(0xFF8E8E93);
-    }
-  }
+  static Color _statusColor(String status) => StayoraColors.forStatus(status);
 
   static Color _advanceIndicatorColor(String advanceStatus) {
     switch (advanceStatus) {
       case 'paid':
-        return const Color(0xFF34C759);
+        return StayoraColors.success;
       case 'waiting':
-        return const Color(0xFFFF9500);
+        return StayoraColors.warning;
       case 'not_required':
       default:
-        return const Color(0xFF8E8E93);
+        return StayoraColors.muted;
     }
   }
 
@@ -151,6 +147,7 @@ class _CalendarPageState extends State<CalendarPage> {
       if (mounted) {
         setState(() {
           _roomNames = list.map((r) => r.name).toList();
+          _roomModelsMap = {for (final r in list) r.name: r};
           _roomNamesLoaded = true;
         });
         _subscribeToBookings();
@@ -159,6 +156,7 @@ class _CalendarPageState extends State<CalendarPage> {
       if (mounted) {
         setState(() {
           _roomNames = [];
+          _roomModelsMap = {};
           _roomNamesLoaded = true;
         });
       }
@@ -345,7 +343,7 @@ class _CalendarPageState extends State<CalendarPage> {
               child: Container(
                 constraints: const BoxConstraints(maxWidth: 320),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF2F2F7),
+                  color: StayoraColors.surfaceLight,
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
@@ -436,7 +434,7 @@ class _CalendarPageState extends State<CalendarPage> {
                             child: TextButton(
                               onPressed: () => Navigator.pop(ctx),
                               style: TextButton.styleFrom(
-                                foregroundColor: const Color(0xFF007AFF),
+                                foregroundColor: StayoraColors.blue,
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 12,
                                 ),
@@ -457,7 +455,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                 _scrollToDate(date);
                               },
                               style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF007AFF),
+                                backgroundColor: StayoraColors.blue,
                                 foregroundColor: Theme.of(context).colorScheme.onPrimary,
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 12,
@@ -693,10 +691,18 @@ class _CalendarPageState extends State<CalendarPage> {
         SnackBar(
           content: Text('${model.userName} moved to waiting list'),
           behavior: SnackBarBehavior.floating,
-          backgroundColor: const Color(0xFFAF52DE),
+          backgroundColor: StayoraColors.purple,
         ),
       );
     }
+  }
+
+  /// Returns the waiting-list booking for [bookingId], or null.
+  BookingModel? _getWaitingListBookingById(String bookingId) {
+    for (final e in _waitingListBookings) {
+      if (e.id == bookingId) return e.booking;
+    }
+    return null;
   }
 
   /// Drop a booking onto the calendar at (room, date). Works for both waiting-list and grid bookings.
@@ -778,7 +784,7 @@ class _CalendarPageState extends State<CalendarPage> {
         SnackBar(
           content: Text('${booking.userName} moved to ${targetRooms.join(", ")}'),
           behavior: SnackBarBehavior.floating,
-          backgroundColor: const Color(0xFF34C759),
+          backgroundColor: StayoraColors.success,
         ),
       );
     }
@@ -1103,7 +1109,7 @@ class _CalendarPageState extends State<CalendarPage> {
           _bookings[nightDate]![room] = Booking(
             bookingId: bookingModel.id ?? '',
             guestName: bookingModel.userName,
-            color: _statusColor(bookingModel.status),
+            color: StayoraColors.calendarColor(bookingModel.status),
             isFirstNight: i == 0,
             isLastNight: i == totalNights - 1,
             totalNights: totalNights,
@@ -1141,8 +1147,8 @@ class _CalendarPageState extends State<CalendarPage> {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: isDark
-                ? const ColorScheme.dark(primary: Color(0xFF007AFF))
-                : const ColorScheme.light(primary: Color(0xFF007AFF)),
+                ? const ColorScheme.dark(primary: StayoraColors.blue)
+                : const ColorScheme.light(primary: StayoraColors.blue),
           ),
           child: child!,
         );
@@ -1258,8 +1264,7 @@ class _CalendarPageState extends State<CalendarPage> {
                             booking: booking,
                             onTap: () {
                               Navigator.pop(context);
-                              Navigator.push(
-                                context,
+                              Navigator.of(context, rootNavigator: false).push(
                                 MaterialPageRoute(
                                   builder: (_) => AddBookingPage(existingBooking: booking),
                                 ),
@@ -1358,8 +1363,7 @@ class _CalendarPageState extends State<CalendarPage> {
                           const SizedBox(width: 4),
                           TextButton.icon(
                             onPressed: () async {
-                              await Navigator.push(
-                                context,
+                              await Navigator.of(context, rootNavigator: false).push(
                                 MaterialPageRoute<void>(
                                   builder: (_) => const RoomManagementPage(),
                                 ),
@@ -1382,7 +1386,7 @@ class _CalendarPageState extends State<CalendarPage> {
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFF007AFF).withOpacity(0.25),
+                                  color: StayoraColors.blue.withOpacity(0.25),
                                   blurRadius: 8,
                                   offset: const Offset(0, 4),
                                 ),
@@ -1394,7 +1398,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                 _scrollToDate(DateTime.now());
                               },
                               style: IconButton.styleFrom(
-                                backgroundColor: const Color(0xFF007AFF),
+                                backgroundColor: StayoraColors.blue,
                                 foregroundColor: Theme.of(context).colorScheme.onPrimary,
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
@@ -1455,8 +1459,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                 const SizedBox(height: 24),
                                 FilledButton.icon(
                                   onPressed: () async {
-                                    await Navigator.push(
-                                      context,
+                                    await Navigator.of(context, rootNavigator: false).push(
                                       MaterialPageRoute<void>(
                                         builder: (_) => const RoomManagementPage(),
                                       ),
@@ -1466,7 +1469,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                   icon: const Icon(Icons.add),
                                   label: const Text('Manage rooms'),
                                   style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFF007AFF),
+                                    backgroundColor: StayoraColors.blue,
                                   ),
                                 ),
                               ],
@@ -1549,14 +1552,24 @@ class _CalendarPageState extends State<CalendarPage> {
                                 controller: _horizontalScrollController,
                                 scrollDirection: Axis.horizontal,
                                 padding: EdgeInsets.zero,
-                                child: Column(
-                                  children: _dates.map((date) {
-                                    final isToday = isSameDay(
-                                      date,
-                                      DateTime.now(),
-                                    );
-                                    return _buildDayRow(date, isToday);
-                                  }).toList(),
+                                child: Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    Column(
+                                      children: _dates.map((date) {
+                                        final isToday = isSameDay(
+                                          date,
+                                          DateTime.now(),
+                                        );
+                                        return _buildDayRow(date, isToday);
+                                      }).toList(),
+                                    ),
+                                    // Skeleton overlay when dragging a waiting-list (or grid) booking over the calendar
+                                    if (_skeletonWaitingListBookingId != null &&
+                                        _skeletonRoom != null &&
+                                        _skeletonDate != null)
+                                      _buildDragSkeletonOverlay(),
+                                  ],
                                 ),
                               ),
                             ),
@@ -1632,6 +1645,12 @@ class _CalendarPageState extends State<CalendarPage> {
                                   physics: const NeverScrollableScrollPhysics(),
                                   child: Row(
                                     children: _displayedRoomNames.map((room) {
+                                      final roomModel = _roomModelsMap[room];
+                                      final hkStatus = roomModel?.housekeepingStatus ?? 'clean';
+                                      final hkColor = StayoraColors.housekeepingColor(hkStatus);
+                                      final firstTag = roomModel != null && roomModel.tags.isNotEmpty
+                                          ? roomModel.tags.first
+                                          : null;
                                       return Container(
                                         width: _roomColumnWidth,
                                         height: 50,
@@ -1644,14 +1663,46 @@ class _CalendarPageState extends State<CalendarPage> {
                                           ),
                                         ),
                                         child: Center(
-                                          child: Text(
-                                            'Room $room',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 13,
-                                              color: Theme.of(context).colorScheme.onSurface,
-                                              letterSpacing: 0.3,
-                                            ),
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                'Room $room',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 13,
+                                                  color: Theme.of(context).colorScheme.onSurface,
+                                                  letterSpacing: 0.3,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Container(
+                                                    width: 7,
+                                                    height: 7,
+                                                    decoration: BoxDecoration(
+                                                      shape: BoxShape.circle,
+                                                      color: hkColor,
+                                                    ),
+                                                  ),
+                                                  if (firstTag != null) ...[
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      firstTag,
+                                                      style: TextStyle(
+                                                        fontSize: 9,
+                                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                                        fontWeight: FontWeight.w500,
+                                                      ),
+                                                      overflow: TextOverflow.ellipsis,
+                                                      maxLines: 1,
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       );
@@ -1746,16 +1797,16 @@ class _CalendarPageState extends State<CalendarPage> {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF007AFF).withOpacity(0.3),
+              color: StayoraColors.blue.withOpacity(0.3),
               blurRadius: 16,
               offset: const Offset(0, 6),
             ),
           ],
         ),
         child: FloatingActionButton(
+          heroTag: 'calendar_fab',
           onPressed: () {
-            Navigator.push(
-              context,
+            Navigator.of(context, rootNavigator: false).push(
               MaterialPageRoute(builder: (context) => const AddBookingPage()),
             ).then((bookingCreated) {
               if (bookingCreated == true) {
@@ -1763,7 +1814,7 @@ class _CalendarPageState extends State<CalendarPage> {
               }
             });
           },
-          backgroundColor: const Color(0xFF007AFF),
+          backgroundColor: StayoraColors.blue,
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
@@ -1852,11 +1903,11 @@ class _CalendarPageState extends State<CalendarPage> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
               side: isHighlighted
-                  ? const BorderSide(color: Color(0xFFAF52DE), width: 2)
+                  ? const BorderSide(color: StayoraColors.purple, width: 2)
                   : BorderSide.none,
             ),
             color: isHighlighted
-                ? const Color(0xFFAF52DE).withOpacity(0.08)
+                ? StayoraColors.purple.withOpacity(0.08)
                 : null,
             child: Theme(
               data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -1866,7 +1917,7 @@ class _CalendarPageState extends State<CalendarPage> {
               Icons.list_alt_rounded,
               color: _waitingListBookings.isEmpty
                   ? Theme.of(context).colorScheme.onSurfaceVariant
-                  : const Color(0xFFAF52DE),
+                  : StayoraColors.purple,
               size: 24,
             ),
             title: Text(
@@ -1882,7 +1933,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 fontWeight: FontWeight.w600,
                 color: _waitingListBookings.isEmpty
                     ? Theme.of(context).colorScheme.onSurfaceVariant
-                    : const Color(0xFFAF52DE),
+                    : StayoraColors.purple,
               ),
             ),
             children: [
@@ -1919,6 +1970,13 @@ class _CalendarPageState extends State<CalendarPage> {
                   final payload = _WaitingListDragPayload(bookingId: e.id);
                   return LongPressDraggable<_WaitingListDragPayload>(
                     data: payload,
+                    onDragEnd: (_) {
+                      setState(() {
+                        _skeletonWaitingListBookingId = null;
+                        _skeletonRoom = null;
+                        _skeletonDate = null;
+                      });
+                    },
                     feedback: Material(
                       elevation: 4,
                       borderRadius: BorderRadius.circular(12),
@@ -1987,7 +2045,7 @@ class _CalendarPageState extends State<CalendarPage> {
                         ),
                         trailing: const Icon(
                           Icons.chevron_right_rounded,
-                          color: Color(0xFF007AFF),
+                          color: StayoraColors.blue,
                           size: 20,
                         ),
                       ),
@@ -2016,7 +2074,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       ),
                       trailing: const Icon(
                         Icons.chevron_right_rounded,
-                        color: Color(0xFF007AFF),
+                        color: StayoraColors.blue,
                         size: 20,
                       ),
                       onTap: () => _showBookingDetailsById(context, e.id),
@@ -2039,6 +2097,7 @@ class _CalendarPageState extends State<CalendarPage> {
     final hotelId = HotelProvider.of(context).hotelId;
     final userId = AuthScopeData.of(context).uid;
     if (hotelId == null || userId == null) return;
+    final nestedNavigator = Navigator.of(context, rootNavigator: false);
     showDialog(
       context: context,
       barrierDismissible: true,
@@ -2048,7 +2107,7 @@ class _CalendarPageState extends State<CalendarPage> {
         child: Container(
           constraints: const BoxConstraints(maxWidth: 520),
           decoration: BoxDecoration(
-            color: const Color(0xFFF2F2F7),
+            color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
@@ -2101,6 +2160,9 @@ class _CalendarPageState extends State<CalendarPage> {
                 doc.data()!,
                 doc.id,
               );
+              final currencyFormatterById = CurrencyFormatter.fromHotel(
+                HotelProvider.of(context).currentHotel,
+              );
               return _BookingDetailsForm(
                 key: ValueKey(fullBooking.id),
                 fullBooking: fullBooking,
@@ -2110,6 +2172,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 statusOptions: statusOptions,
                 getStatusColor: _statusColor,
                 paymentMethods: paymentMethods,
+                currencyFormatter: currencyFormatterById,
                 buildDetailRow: _buildDetailRow,
                 buildStatusRowWithStatus: _buildStatusRowWithStatus,
                 onSave: (updated) async {
@@ -2119,7 +2182,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       const SnackBar(
                         content: Text('Booking updated'),
                         behavior: SnackBarBehavior.floating,
-                        backgroundColor: Color(0xFF34C759),
+                        backgroundColor: StayoraColors.success,
                       ),
                     );
                   }
@@ -2150,32 +2213,95 @@ class _CalendarPageState extends State<CalendarPage> {
                   }
                 },
                 onEditFull: () {
-                  final navigator = Navigator.of(dialogContext);
-                  navigator.pop();
-                  navigator
-                      .push(
-                        MaterialPageRoute(
-                          builder: (context) => AddBookingPage(
-                            existingBooking: fullBooking,
-                            preselectedRoom: (fullBooking.selectedRooms?.isNotEmpty == true)
-                              ? fullBooking.selectedRooms!.first
-                              : '—',
-                            preselectedStartDate: fullBooking.checkIn,
-                            preselectedEndDate: fullBooking.checkOut,
-                            preselectedNumberOfRooms: fullBooking.numberOfRooms,
-                          ),
-                        ),
-                      )
-                      .then((bookingCreated) {
-                        if (bookingCreated == true) {
-                          _subscribeToBookings();
-                          _subscribeToWaitingList();
-                        }
-                      });
+                  Navigator.pop(dialogContext);
+                  nestedNavigator.push(
+                    MaterialPageRoute(
+                      builder: (context) => AddBookingPage(
+                        existingBooking: fullBooking,
+                        preselectedRoom: (fullBooking.selectedRooms?.isNotEmpty == true)
+                          ? fullBooking.selectedRooms!.first
+                          : '—',
+                        preselectedStartDate: fullBooking.checkIn,
+                        preselectedEndDate: fullBooking.checkOut,
+                        preselectedNumberOfRooms: fullBooking.numberOfRooms,
+                      ),
+                    ),
+                  ).then((bookingCreated) {
+                    if (bookingCreated == true) {
+                      _subscribeToBookings();
+                      _subscribeToWaitingList();
+                    }
+                  });
                 },
                 onClose: () => Navigator.pop(dialogContext),
               );
             },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Skeleton overlay showing the size of the booking being dragged (rooms × nights).
+  Widget _buildDragSkeletonOverlay() {
+    final booking = _getWaitingListBookingById(_skeletonWaitingListBookingId!) ??
+        _bookingModelsById[_skeletonWaitingListBookingId!];
+    if (booking == null) return const SizedBox.shrink();
+
+    final roomIndex = _displayedRoomNames.indexOf(_skeletonRoom!);
+    final dateIndex = _dates.indexWhere(
+      (d) =>
+          d.year == _skeletonDate!.year &&
+          d.month == _skeletonDate!.month &&
+          d.day == _skeletonDate!.day,
+    );
+    if (roomIndex < 0 || dateIndex < 0) return const SizedBox.shrink();
+
+    final nRooms = booking.numberOfRooms;
+    final nNights = booking.numberOfNights;
+    final roomEnd = roomIndex + nRooms;
+    final dateEnd = dateIndex + nNights;
+    final fitsRooms = roomEnd <= _displayedRoomNames.length;
+    final fitsDates = dateEnd <= _dates.length;
+    final isValid = fitsRooms && fitsDates;
+
+    final left = _dayLabelWidth + roomIndex * _roomColumnWidth;
+    final top = dateIndex * _dayRowHeight;
+    final width = nRooms * _roomColumnWidth;
+    final height = nNights * _dayRowHeight;
+
+    return Positioned(
+      left: left,
+      top: top,
+      child: IgnorePointer(
+        child: Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            color: (isValid
+                    ? StayoraColors.purple
+                    : StayoraColors.error)
+                .withOpacity(0.35),
+            border: Border.all(
+              color: isValid
+                  ? StayoraColors.purple
+                  : StayoraColors.error,
+              width: 2,
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Center(
+            child: Text(
+              '${booking.userName}\n$nRooms room(s) · $nNights night(s)',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ),
       ),
@@ -2187,7 +2313,7 @@ class _CalendarPageState extends State<CalendarPage> {
       height: _dayRowHeight, // Row height stays the same, gap is between rows
       decoration: BoxDecoration(
         color: isToday
-            ? const Color(0xFF007AFF).withOpacity(0.05)
+            ? StayoraColors.blue.withOpacity(0.05)
             : Theme.of(context).colorScheme.surface,
         border: Border(
           top: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.3), width: 1),
@@ -2229,7 +2355,7 @@ class _CalendarPageState extends State<CalendarPage> {
           Positioned.fill(
             child: Container(
               color: isToday
-                  ? const Color(0xFF007AFF).withOpacity(0.08)
+                  ? StayoraColors.blue.withOpacity(0.08)
                   : Theme.of(context).colorScheme.surface,
             ),
           ),
@@ -2281,8 +2407,27 @@ class _CalendarPageState extends State<CalendarPage> {
 
     return DragTarget<_WaitingListDragPayload>(
       onWillAcceptWithDetails: (details) => true,
+      onMove: (details) {
+        setState(() {
+          _skeletonWaitingListBookingId = details.data.bookingId;
+          _skeletonRoom = room;
+          _skeletonDate = date;
+        });
+      },
+      onLeave: (_) {
+        setState(() {
+          _skeletonWaitingListBookingId = null;
+          _skeletonRoom = null;
+          _skeletonDate = null;
+        });
+      },
       onAcceptWithDetails: (details) {
         _onDropWaitingListBooking(details.data.bookingId, room, date);
+        setState(() {
+          _skeletonWaitingListBookingId = null;
+          _skeletonRoom = null;
+          _skeletonDate = null;
+        });
       },
       builder: (context, candidateData, rejectedData) {
         final isHighlighted = candidateData.isNotEmpty;
@@ -2299,27 +2444,27 @@ class _CalendarPageState extends State<CalendarPage> {
         height: _dayRowHeight,
         decoration: BoxDecoration(
           color: isHighlighted
-              ? const Color(0xFFAF52DE).withOpacity(0.25)
+              ? StayoraColors.purple.withOpacity(0.25)
               : isSelected
-                  ? const Color(0xFF007AFF).withOpacity(0.2)
+                  ? StayoraColors.blue.withOpacity(0.2)
                   : Theme.of(context).colorScheme.surface,
           border: Border(
             right: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.3), width: 1),
             top: isSelected
                 ? BorderSide(
-                    color: const Color(0xFF007AFF).withOpacity(0.5),
+                    color: StayoraColors.blue.withOpacity(0.5),
                     width: 2,
                   )
                 : BorderSide.none,
             bottom: isSelected
                 ? BorderSide(
-                    color: const Color(0xFF007AFF).withOpacity(0.5),
+                    color: StayoraColors.blue.withOpacity(0.5),
                     width: 2,
                   )
                 : BorderSide.none,
             left: isSelected
                 ? BorderSide(
-                    color: const Color(0xFF007AFF).withOpacity(0.5),
+                    color: StayoraColors.blue.withOpacity(0.5),
                     width: 2,
                   )
                 : BorderSide.none,
@@ -2331,6 +2476,13 @@ class _CalendarPageState extends State<CalendarPage> {
             if (booking != null)
               LongPressDraggable<_WaitingListDragPayload>(
                 data: _WaitingListDragPayload(bookingId: booking.bookingId),
+                onDragEnd: (_) {
+                  setState(() {
+                    _skeletonWaitingListBookingId = null;
+                    _skeletonRoom = null;
+                    _skeletonDate = null;
+                  });
+                },
                 feedback: Material(
                   elevation: 4,
                   borderRadius: BorderRadius.circular(8),
@@ -2406,16 +2558,6 @@ class _CalendarPageState extends State<CalendarPage> {
                               ? const Radius.circular(8)
                               : Radius.zero,
                         ),
-                        border: booking.isFirstNight
-                            ? Border(
-                                left: BorderSide(
-                                  width: 3,
-                                  color: _advanceIndicatorColor(
-                                    booking.advancePaymentStatus,
-                                  ),
-                                ),
-                              )
-                            : null,
                         boxShadow: booking.isFirstNight
                             ? [
                                 BoxShadow(
@@ -2461,6 +2603,27 @@ class _CalendarPageState extends State<CalendarPage> {
                             )
                           : const SizedBox(),
                     ),
+                    // Advance payment dot — top-right of the first night cell
+                    if (booking.isFirstNight &&
+                        booking.advancePaymentStatus != 'not_required')
+                      Positioned(
+                        top: 5,
+                        right: 5,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _advanceIndicatorColor(
+                              booking.advancePaymentStatus,
+                            ),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.7),
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -2470,7 +2633,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 width: double.infinity,
                 height: double.infinity,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF007AFF).withOpacity(0.15),
+                  color: StayoraColors.blue.withOpacity(0.15),
                 ),
               ),
           ],
@@ -2491,6 +2654,7 @@ class _CalendarPageState extends State<CalendarPage> {
     final userId = AuthScopeData.of(context).uid;
     if (hotelId == null || userId == null) return;
     final bookingId = booking.bookingId;
+    final nestedNavigator = Navigator.of(context, rootNavigator: false);
     showDialog(
       context: context,
       barrierDismissible: true,
@@ -2500,7 +2664,7 @@ class _CalendarPageState extends State<CalendarPage> {
         child: Container(
           constraints: const BoxConstraints(maxWidth: 520),
           decoration: BoxDecoration(
-            color: const Color(0xFFF2F2F7),
+            color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
@@ -2553,6 +2717,9 @@ class _CalendarPageState extends State<CalendarPage> {
                 doc.data()!,
                 doc.id,
               );
+              final currencyFormatter = CurrencyFormatter.fromHotel(
+                HotelProvider.of(context).currentHotel,
+              );
               return _BookingDetailsForm(
                 key: ValueKey(fullBooking.id),
                 fullBooking: fullBooking,
@@ -2562,6 +2729,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 statusOptions: statusOptions,
                 getStatusColor: _statusColor,
                 paymentMethods: paymentMethods,
+                currencyFormatter: currencyFormatter,
                 buildDetailRow: _buildDetailRow,
                 buildStatusRowWithStatus: _buildStatusRowWithStatus,
                 onSave: (updated) async {
@@ -2571,7 +2739,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       const SnackBar(
                         content: Text('Booking updated'),
                         behavior: SnackBarBehavior.floating,
-                        backgroundColor: Color(0xFF34C759),
+                        backgroundColor: StayoraColors.success,
                       ),
                     );
                   }
@@ -2602,25 +2770,22 @@ class _CalendarPageState extends State<CalendarPage> {
                   }
                 },
                 onEditFull: () {
-                  final navigator = Navigator.of(dialogContext);
-                  navigator.pop();
-                  navigator
-                      .push(
-                        MaterialPageRoute(
-                          builder: (context) => AddBookingPage(
-                            existingBooking: fullBooking,
-                            preselectedRoom: room,
-                            preselectedStartDate: fullBooking.checkIn,
-                            preselectedEndDate: fullBooking.checkOut,
-                            preselectedNumberOfRooms: fullBooking.numberOfRooms,
-                          ),
-                        ),
-                      )
-                      .then((bookingCreated) {
-                        if (bookingCreated == true) {
-                          _subscribeToBookings();
-                        }
-                      });
+                  Navigator.pop(dialogContext);
+                  nestedNavigator.push(
+                    MaterialPageRoute(
+                      builder: (context) => AddBookingPage(
+                        existingBooking: fullBooking,
+                        preselectedRoom: room,
+                        preselectedStartDate: fullBooking.checkIn,
+                        preselectedEndDate: fullBooking.checkOut,
+                        preselectedNumberOfRooms: fullBooking.numberOfRooms,
+                      ),
+                    ),
+                  ).then((bookingCreated) {
+                    if (bookingCreated == true) {
+                      _subscribeToBookings();
+                    }
+                  });
                 },
                 onClose: () => Navigator.pop(dialogContext),
               );
@@ -2643,10 +2808,10 @@ class _CalendarPageState extends State<CalendarPage> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xFF007AFF).withOpacity(0.1),
+              color: StayoraColors.blue.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, size: 20, color: const Color(0xFF007AFF)),
+            child: Icon(icon, size: 20, color: StayoraColors.blue),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -2743,7 +2908,7 @@ class _CalendarPageState extends State<CalendarPage> {
         child: Container(
           constraints: const BoxConstraints(maxWidth: 300),
           decoration: BoxDecoration(
-            color: const Color(0xFFF2F2F7),
+            color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
@@ -2814,7 +2979,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       child: TextButton(
                         onPressed: () => Navigator.pop(ctx, false),
                         style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFF007AFF),
+                          foregroundColor: StayoraColors.blue,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10),
@@ -2844,7 +3009,7 @@ class _CalendarPageState extends State<CalendarPage> {
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: const Color(0xFFF2F2F7),
+            color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
@@ -2858,7 +3023,7 @@ class _CalendarPageState extends State<CalendarPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF007AFF)),
+                valueColor: AlwaysStoppedAnimation<Color>(StayoraColors.blue),
               ),
               SizedBox(height: 16),
               Text(
@@ -2883,9 +3048,8 @@ class _CalendarPageState extends State<CalendarPage> {
       const Duration(days: 1),
     ); // Check-out is the day after last night
 
-    // Navigate to Add Booking page with preselected values
-    Navigator.push(
-      context,
+    // Navigate to Add Booking page with preselected values (nested navigator so nav bar stays)
+    Navigator.of(context, rootNavigator: false).push(
       MaterialPageRoute(
         builder: (context) => AddBookingPage(
           preselectedRoom: rooms.length == 1 ? rooms.first : null,
@@ -2920,6 +3084,7 @@ class _BookingDetailsForm extends StatefulWidget {
   final List<String> statusOptions;
   final Color Function(String) getStatusColor;
   final List<String> paymentMethods;
+  final CurrencyFormatter currencyFormatter;
   final Widget Function(IconData, String, String) buildDetailRow;
   final Widget Function(String) buildStatusRowWithStatus;
   final Future<void> Function(BookingModel) onSave;
@@ -2936,6 +3101,7 @@ class _BookingDetailsForm extends StatefulWidget {
     required this.statusOptions,
     required this.getStatusColor,
     required this.paymentMethods,
+    required this.currencyFormatter,
     required this.buildDetailRow,
     required this.buildStatusRowWithStatus,
     required this.onSave,
@@ -2978,10 +3144,10 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
         ? b.status
         : widget.statusOptions.first;
     _amountController = TextEditingController(
-      text: b.amountOfMoneyPaid > 0 ? b.amountOfMoneyPaid.toString() : '',
+      text: CurrencyFormatter.formatStoredAmountForInput(b.amountOfMoneyPaid),
     );
     _advanceAmountController = TextEditingController(
-      text: b.advanceAmountPaid > 0 ? b.advanceAmountPaid.toString() : '',
+      text: CurrencyFormatter.formatStoredAmountForInput(b.advanceAmountPaid),
     );
     _paymentMethod = widget.paymentMethods.contains(b.paymentMethod)
         ? b.paymentMethod
@@ -3012,9 +3178,10 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
 
   /// True if any editable field differs from the initial/saved state.
   bool get _hasChanges {
-    final currentAmount = int.tryParse(_amountController.text.trim()) ?? 0;
-    final currentAdvance =
-        int.tryParse(_advanceAmountController.text.trim()) ?? 0;
+    final currentAmount =
+        CurrencyFormatter.parseMoneyStringToCents(_amountController.text.trim());
+    final currentAdvance = CurrencyFormatter.parseMoneyStringToCents(
+        _advanceAmountController.text.trim());
     final currentNotes = _notesController.text.trim();
     return _status != _initialStatus ||
         currentAmount != _initialAmount ||
@@ -3040,7 +3207,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
         child: Container(
           constraints: const BoxConstraints(maxWidth: 400),
           decoration: BoxDecoration(
-            color: const Color(0xFFF2F2F7),
+            color: Theme.of(context).colorScheme.surface,
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
@@ -3095,7 +3262,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF34C759),
+                              color: StayoraColors.success,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: const Center(
@@ -3133,7 +3300,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                                 style: TextStyle(
                                   fontSize: 17,
                                   fontWeight: FontWeight.w600,
-                                  color: Color(0xFFFF3B30),
+                                  color: StayoraColors.error,
                                 ),
                               ),
                             ),
@@ -3157,7 +3324,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                                 style: TextStyle(
                                   fontSize: 17,
                                   fontWeight: FontWeight.w600,
-                                  color: Color(0xFF007AFF),
+                                  color: StayoraColors.blue,
                                 ),
                               ),
                             ),
@@ -3177,9 +3344,10 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
     if (!mounted) return;
     switch (result) {
       case 'save':
-        final amount = int.tryParse(_amountController.text.trim()) ?? 0;
-        final advanceAmount =
-            int.tryParse(_advanceAmountController.text.trim()) ?? 0;
+        final amount =
+            CurrencyFormatter.parseMoneyStringToCents(_amountController.text.trim());
+        final advanceAmount = CurrencyFormatter.parseMoneyStringToCents(
+            _advanceAmountController.text.trim());
         final updated = widget.fullBooking.copyWith(
           status: _status,
           amountOfMoneyPaid: amount,
@@ -3190,6 +3358,9 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
           notes: _notesController.text.trim().isEmpty
               ? null
               : _notesController.text.trim(),
+          // preserve check-in/out timestamps set via the quick buttons
+          checkedInAt: widget.fullBooking.checkedInAt,
+          checkedOutAt: widget.fullBooking.checkedOutAt,
         );
         await widget.onSave(updated);
         if (!mounted) return;
@@ -3285,384 +3456,432 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                   '$totalNights ${totalNights == 1 ? 'night' : 'nights'}',
                 ),
                 const SizedBox(height: 16),
-                // Price section (room + services + total)
+                // ── Check-in / Check-out ─────────────────────────────────
                 Text(
-                  'Price',
+                  'Check-in / Check-out',
                   style: TextStyle(
                     fontSize: 12,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: b.checkedInAt == null
+                          ? OutlinedButton.icon(
+                              onPressed: () async {
+                                final updated = b.copyWith(
+                                  checkedInAt: DateTime.now(),
+                                );
+                                await widget.onSave(updated);
+                              },
+                              icon: const Icon(Icons.login_rounded, size: 16),
+                              label: const Text('Check In'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: StayoraColors.teal,
+                                side: const BorderSide(color: StayoraColors.teal),
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                              ),
+                            )
+                          : Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: StayoraColors.teal.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: StayoraColors.teal.withOpacity(0.4),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.check_circle_rounded,
+                                    size: 14,
+                                    color: StayoraColors.teal,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      'In: ${DateFormat('MMM d, HH:mm').format(b.checkedInAt!)}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color: StayoraColors.teal,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: b.checkedOutAt == null
+                          ? OutlinedButton.icon(
+                              onPressed: b.checkedInAt == null
+                                  ? null
+                                  : () async {
+                                      final updated = b.copyWith(
+                                        checkedOutAt: DateTime.now(),
+                                      );
+                                      await widget.onSave(updated);
+                                    },
+                              icon: const Icon(Icons.logout_rounded, size: 16),
+                              label: const Text('Check Out'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: StayoraColors.warning,
+                                side: BorderSide(
+                                  color: b.checkedInAt == null
+                                      ? Theme.of(context).colorScheme.outline.withOpacity(0.4)
+                                      : StayoraColors.warning,
+                                ),
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                              ),
+                            )
+                          : Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: StayoraColors.warning.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: StayoraColors.warning.withOpacity(0.4),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.check_circle_rounded,
+                                    size: 14,
+                                    color: StayoraColors.warning,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      'Out: ${DateFormat('MMM d, HH:mm').format(b.checkedOutAt!)}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color: StayoraColors.warning,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Price card — compact, formatted currency
+                _PriceCard(
+                  booking: b,
+                  currencyFormatter: widget.currencyFormatter,
+                ),
+                const SizedBox(height: 16),
+                // Advance payment section
                 ...() {
-                  final hasRoom = (b.pricePerNight ?? 0) > 0;
-                  final hasServices =
-                      b.selectedServices != null &&
-                      b.selectedServices!.isNotEmpty;
-                  if (!hasRoom && !hasServices) {
+                  final advStatus = b.advancePaymentStatus;
+                  final cf = widget.currencyFormatter;
+                  if (advStatus == 'not_required') {
                     return [
-                      Text(
-                        'No price breakdown',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      _SectionCard(
+                        title: 'Advance payment',
+                        child: Text(
+                          'No advance required',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
                     ];
                   }
                   return [
-                    if (hasRoom) ...[
-                      Text(
-                        '${b.numberOfNights} night${b.numberOfNights == 1 ? '' : 's'} × ${b.numberOfRooms} room${b.numberOfRooms == 1 ? '' : 's'} × ${b.pricePerNight} = ${b.roomSubtotal}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                    ],
-                    if (hasServices) ...[
-                      ...b.selectedServices!.map(
-                        (s) => Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                '${s.name} — ${s.quantity} × ${s.unitPrice}',
+                    _SectionCard(
+                      title: 'Advance payment',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (b.advancePercent != null && b.advancePercent! > 0)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Text(
+                                '${b.advancePercent}% of total — required ${cf.format(b.advanceAmountRequired)}',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
                                 ),
                               ),
-                              Text(
-                                '${s.lineTotal}',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                  color: Theme.of(context).colorScheme.onSurface,
-                                ),
+                            ),
+                          TextFormField(
+                            controller: _advanceAmountController,
+                            inputFormatters: [
+                              MoneyInputFormatter(),
+                            ],
+                            decoration: InputDecoration(
+                              labelText: 'Advance paid',
+                              hintText: '0.00',
+                              filled: true,
+                              fillColor:
+                                  Theme.of(context).colorScheme.surface,
+                              prefixIcon: const Icon(
+                                Icons.payments_rounded,
+                                size: 18,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 12,
+                              ),
+                            ),
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            onChanged: (_) => setState(() {}),
+                          ),
+                          const SizedBox(height: 10),
+                          DropdownButtonFormField<String>(
+                            value: widget.paymentMethods
+                                    .contains(_advancePaymentMethod)
+                                ? _advancePaymentMethod
+                                : widget.paymentMethods.first,
+                            decoration: InputDecoration(
+                              labelText: 'Advance payment method',
+                              filled: true,
+                              fillColor:
+                                  Theme.of(context).colorScheme.surface,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 12,
+                              ),
+                            ),
+                            items: widget.paymentMethods
+                                .map(
+                                  (m) => DropdownMenuItem(
+                                    value: m,
+                                    child: Text(m),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (v) => setState(() {
+                              _advancePaymentMethod =
+                                  v ?? widget.paymentMethods.first;
+                            }),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Advance received?',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 6,
+                            children: [
+                              ChoiceChip(
+                                label: const Text('Pending'),
+                                selected: _advanceStatus == 'pending',
+                                onSelected: (v) =>
+                                    setState(() => _advanceStatus = 'pending'),
+                                selectedColor:
+                                    StayoraColors.warning.withOpacity(0.3),
+                              ),
+                              ChoiceChip(
+                                label: const Text('Received'),
+                                selected: _advanceStatus == 'received',
+                                onSelected: (v) =>
+                                    setState(() => _advanceStatus = 'received'),
+                                selectedColor:
+                                    StayoraColors.success.withOpacity(0.3),
                               ),
                             ],
                           ),
-                        ),
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Services subtotal',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: Theme.of(context).colorScheme.onSurface,
-                            ),
-                          ),
-                          Text(
-                            '${b.servicesSubtotal}',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF007AFF),
-                            ),
+                          const SizedBox(height: 10),
+                          Builder(
+                            builder: (context) {
+                              final advancePaid =
+                                  CurrencyFormatter.parseMoneyStringToCents(
+                                _advanceAmountController.text.trim(),
+                              );
+                              final remaining = (b.calculatedTotal - advancePaid)
+                                  .clamp(0, b.calculatedTotal);
+                              return Row(
+                                children: [
+                                  Icon(
+                                    Icons.account_balance_wallet_rounded,
+                                    size: 16,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Remaining: ${cf.format(remaining)}',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: remaining > 0
+                                            ? StayoraColors.warning
+                                            : Theme.of(context)
+                                                .colorScheme
+                                                .onSurface,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
                           ),
                         ],
                       ),
-                      const SizedBox(height: 6),
-                    ],
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Suggested total (room + services)',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
-                        ),
-                        Text(
-                          '${b.calculatedTotal}',
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF007AFF),
-                          ),
-                        ),
-                      ],
                     ),
                     const SizedBox(height: 12),
                   ];
                 }(),
                 const SizedBox(height: 16),
-                // Advance payment section
-                Text(
-                  'Advance payment',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ...() {
-                  final advStatus = b.advancePaymentStatus;
-                  if (advStatus == 'not_required') {
-                    return [
-                      Text(
-                        'No advance required',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                // Payment, status & notes — one card
+                _SectionCard(
+                  title: 'Payment & notes',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        value: _status,
+                        decoration: InputDecoration(
+                          labelText: 'Status',
+                          filled: true,
+                          fillColor: Theme.of(context).colorScheme.surface,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                        ),
+                        items: widget.statusOptions
+                            .map(
+                              (s) => DropdownMenuItem(
+                                value: s,
+                                child: Text(
+                                  s,
+                                  style: TextStyle(
+                                    color: widget.getStatusColor(s),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => setState(() => _status = v ?? _status),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _amountController,
+                        inputFormatters: [MoneyInputFormatter()],
+                        decoration: InputDecoration(
+                          labelText: 'Amount paid',
+                          hintText: '0.00',
+                          filled: true,
+                          fillColor: Theme.of(context).colorScheme.surface,
+                          prefixIcon: const Icon(
+                            Icons.payments_rounded,
+                            size: 20,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                        ),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: widget.paymentMethods.contains(_paymentMethod)
+                            ? _paymentMethod
+                            : widget.paymentMethods.first,
+                        decoration: InputDecoration(
+                          labelText: 'Payment method',
+                          filled: true,
+                          fillColor: Theme.of(context).colorScheme.surface,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                        ),
+                        items: widget.paymentMethods
+                            .map(
+                              (m) => DropdownMenuItem(
+                                value: m,
+                                child: Text(m),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => setState(
+                          () => _paymentMethod =
+                              v ?? widget.paymentMethods.first,
                         ),
                       ),
                       const SizedBox(height: 12),
-                    ];
-                  }
-                  return [
-                    if (b.advancePercent != null && b.advancePercent! > 0)
-                      Text(
-                        '${b.advancePercent}% of total — required: ${b.advanceAmountRequired}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _advanceAmountController,
-                      decoration: InputDecoration(
-                        labelText: 'Advance paid',
-                        hintText: '0',
-                        filled: true,
-                        fillColor: Theme.of(context).colorScheme.surface,
-                        prefixIcon: const Icon(
-                          Icons.payments_rounded,
-                          size: 18,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 12,
-                        ),
-                      ),
-                      keyboardType: TextInputType.number,
-                      onChanged: (_) => setState(() {}),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue:
-                          widget.paymentMethods.contains(_advancePaymentMethod)
-                          ? _advancePaymentMethod
-                          : widget.paymentMethods.first,
-                      decoration: InputDecoration(
-                        labelText: 'Advance payment method',
-                        filled: true,
-                        fillColor: Theme.of(context).colorScheme.surface,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 12,
-                        ),
-                      ),
-                      items: widget.paymentMethods
-                          .map(
-                            (m) => DropdownMenuItem(value: m, child: Text(m)),
-                          )
-                          .toList(),
-                      onChanged: (v) => setState(() {
-                        _advancePaymentMethod =
-                            v ?? widget.paymentMethods.first;
-                      }),
-                    ),
-                    const SizedBox(height: 8),
-                    // Advance received? (Pending / Received)
-                    Text(
-                      'Advance received?',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        ChoiceChip(
-                          label: const Text('Pending'),
-                          selected: _advanceStatus == 'pending',
-                          onSelected: (v) =>
-                              setState(() => _advanceStatus = 'pending'),
-                          selectedColor: const Color(
-                            0xFFFF9500,
-                          ).withOpacity(0.3),
-                        ),
-                        const SizedBox(width: 8),
-                        ChoiceChip(
-                          label: const Text('Received'),
-                          selected: _advanceStatus == 'received',
-                          onSelected: (v) =>
-                              setState(() => _advanceStatus = 'received'),
-                          selectedColor: const Color(
-                            0xFF34C759,
-                          ).withOpacity(0.3),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    // They owe you: remaining balance (total − advance paid)
-                    Builder(
-                      builder: (context) {
-                        final advancePaid =
-                            int.tryParse(
-                              _advanceAmountController.text.trim(),
-                            ) ??
-                            0;
-                        final remaining = (b.calculatedTotal - advancePaid)
-                            .clamp(0, b.calculatedTotal);
-                        return Row(
-                          children: [
-                            Icon(
-                              Icons.account_balance_wallet_rounded,
-                              size: 16,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'They owe you: $remaining',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: remaining > 0
-                                    ? const Color(0xFFFF9500)
-                                    : Theme.of(context).colorScheme.onSurface,
-                              ),
-                            ),
-                            Text(
-                              ' (total ${b.calculatedTotal} − advance $advancePaid)',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                  ];
-                }(),
-                const SizedBox(height: 12),
-                // Editable: Status
-                Text(
-                  'Status',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                DropdownButtonFormField<String>(
-                  initialValue: _status,
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: Theme.of(context).colorScheme.surface,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                  ),
-                  items: widget.statusOptions
-                      .map(
-                        (s) => DropdownMenuItem(
-                          value: s,
-                          child: Text(
-                            s,
-                            style: TextStyle(
-                              color: widget.getStatusColor(s),
-                              fontWeight: FontWeight.w600,
-                            ),
+                      TextFormField(
+                        controller: _notesController,
+                        decoration: InputDecoration(
+                          labelText: 'Notes',
+                          hintText: 'Optional notes…',
+                          filled: true,
+                          fillColor: Theme.of(context).colorScheme.surface,
+                          alignLabelWithHint: true,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
                           ),
                         ),
-                      )
-                      .toList(),
-                  onChanged: (v) => setState(() => _status = v ?? _status),
-                ),
-                const SizedBox(height: 12),
-                // Editable: Amount paid
-                TextFormField(
-                  controller: _amountController,
-                  decoration: InputDecoration(
-                    labelText: 'Amount paid',
-                    hintText: '0',
-                    filled: true,
-                    fillColor: Theme.of(context).colorScheme.surface,
-                    prefixIcon: const Icon(Icons.payments_rounded),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
+                        maxLines: 2,
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ],
                   ),
-                  keyboardType: TextInputType.number,
-                  onChanged: (_) => setState(() {}),
-                ),
-                const SizedBox(height: 12),
-                // Editable: Payment method
-                DropdownButtonFormField<String>(
-                  initialValue: widget.paymentMethods.contains(_paymentMethod)
-                      ? _paymentMethod
-                      : widget.paymentMethods.first,
-                  decoration: InputDecoration(
-                    labelText: 'Payment method',
-                    filled: true,
-                    fillColor: Theme.of(context).colorScheme.surface,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                  ),
-                  items: widget.paymentMethods
-                      .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-                      .toList(),
-                  onChanged: (v) => setState(
-                    () => _paymentMethod = v ?? widget.paymentMethods.first,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // Editable: Notes
-                TextFormField(
-                  controller: _notesController,
-                  decoration: InputDecoration(
-                    labelText: 'Notes',
-                    hintText: 'Optional notes...',
-                    filled: true,
-                    fillColor: Theme.of(context).colorScheme.surface,
-                    alignLabelWithHint: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                  ),
-                  maxLines: 2,
                 ),
               ],
             ),
@@ -3676,11 +3895,13 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                   width: double.infinity,
                   child: FilledButton.icon(
                     onPressed: () async {
-                      final amount =
-                          int.tryParse(_amountController.text.trim()) ?? 0;
+                      final amount = CurrencyFormatter.parseMoneyStringToCents(
+                        _amountController.text.trim(),
+                      );
                       final advanceAmount =
-                          int.tryParse(_advanceAmountController.text.trim()) ??
-                          0;
+                          CurrencyFormatter.parseMoneyStringToCents(
+                        _advanceAmountController.text.trim(),
+                      );
                       final updated = b.copyWith(
                         status: _status,
                         amountOfMoneyPaid: amount,
@@ -3696,7 +3917,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                     },
                     label: const Text('Save changes'),
                     style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF34C759),
+                      backgroundColor: StayoraColors.success,
                       foregroundColor: Theme.of(context).colorScheme.onPrimary,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
@@ -3712,7 +3933,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                   child: FilledButton(
                     onPressed: widget.onEditFull,
                     style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF007AFF),
+                      backgroundColor: StayoraColors.blue,
                       foregroundColor: Theme.of(context).colorScheme.onPrimary,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
@@ -3758,7 +3979,7 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                   child: TextButton(
                     onPressed: _handleClose,
                     style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF007AFF),
+                      foregroundColor: StayoraColors.blue,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -3797,6 +4018,177 @@ class Booking {
     required this.totalNights,
     this.advancePaymentStatus = 'not_required',
   });
+}
+
+/// Section wrapper for the popup: title + padded content.
+class _SectionCard extends StatelessWidget {
+  final String title;
+  final Widget child;
+
+  const _SectionCard({required this.title, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: theme.colorScheme.outline.withOpacity(0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurfaceVariant,
+              letterSpacing: 0.3,
+            ),
+          ),
+          const SizedBox(height: 10),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+/// Compact price breakdown card with formatted currency (no raw 120000).
+class _PriceCard extends StatelessWidget {
+  final BookingModel booking;
+  final CurrencyFormatter currencyFormatter;
+
+  const _PriceCard({
+    required this.booking,
+    required this.currencyFormatter,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final b = booking;
+    final hasRoom = (b.pricePerNight ?? 0) > 0;
+    final hasServices =
+        b.selectedServices != null && b.selectedServices!.isNotEmpty;
+    final theme = Theme.of(context);
+
+    if (!hasRoom && !hasServices) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: theme.colorScheme.outline.withOpacity(0.2),
+          ),
+        ),
+        child: Text(
+          'No price set',
+          style: TextStyle(
+            fontSize: 13,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: theme.colorScheme.outline.withOpacity(0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (hasRoom)
+            _priceRow(
+              context,
+              '${b.numberOfNights} night${b.numberOfNights == 1 ? '' : 's'} × ${b.numberOfRooms} room${b.numberOfRooms == 1 ? '' : 's'} × ${currencyFormatter.formatCompact(b.pricePerNight!)}',
+              currencyFormatter.formatCompact(b.roomSubtotal),
+              isSub: true,
+            ),
+          if (hasServices) ...[
+            if (hasRoom) const SizedBox(height: 8),
+            ...b.selectedServices!.map(
+              (s) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: _priceRow(
+                  context,
+                  '${s.name} × ${s.quantity}',
+                  currencyFormatter.formatCompact(s.lineTotal),
+                  isSub: true,
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            _priceRow(
+              context,
+              'Services',
+              currencyFormatter.formatCompact(b.servicesSubtotal),
+              isSub: true,
+            ),
+            const SizedBox(height: 8),
+          ],
+          const Divider(height: 1),
+          const SizedBox(height: 8),
+          _priceRow(
+            context,
+            'Total',
+            currencyFormatter.format(b.calculatedTotal),
+            isSub: false,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _priceRow(
+    BuildContext context,
+    String label,
+    String value, {
+    required bool isSub,
+  }) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: isSub ? 13 : 14,
+              fontWeight: isSub ? FontWeight.w500 : FontWeight.w600,
+              color: isSub
+                  ? theme.colorScheme.onSurfaceVariant
+                  : theme.colorScheme.onSurface,
+            ),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: isSub ? 13 : 15,
+            fontWeight: isSub ? FontWeight.w500 : FontWeight.bold,
+            color: isSub
+                ? theme.colorScheme.onSurface
+                : StayoraColors.blue,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _LegendItem extends StatelessWidget {
@@ -3851,17 +4243,17 @@ class _DayViewBookingCard extends StatelessWidget {
   Color _getStatusColor(BuildContext context, String status) {
     switch (status) {
       case 'Confirmed':
-        return const Color(0xFF34C759);
+        return StayoraColors.success;
       case 'Pending':
-        return const Color(0xFFFF9500);
+        return StayoraColors.warning;
       case 'Cancelled':
-        return const Color(0xFFFF3B30);
+        return StayoraColors.error;
       case 'Paid':
-        return const Color(0xFF007AFF);
+        return StayoraColors.blue;
       case 'Unpaid':
-        return const Color(0xFF8E8E93);
+        return StayoraColors.muted;
       case 'Waiting list':
-        return const Color(0xFFAF52DE);
+        return StayoraColors.purple;
       default:
         return Theme.of(context).colorScheme.onSurfaceVariant;
     }

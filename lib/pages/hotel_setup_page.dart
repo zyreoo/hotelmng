@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/hotel_model.dart';
 import '../services/auth_provider.dart';
 import '../services/hotel_provider.dart';
+import '../utils/stayora_colors.dart';
 import '../widgets/stayora_logo.dart';
 
 /// Shown when no hotel is selected. User can create a hotel or select one (by owner).
@@ -147,7 +148,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                     Text(
                       _error!,
                       style: const TextStyle(
-                        color: Color(0xFFFF3B30),
+                        color: StayoraColors.error,
                         fontSize: 13,
                       ),
                     ),

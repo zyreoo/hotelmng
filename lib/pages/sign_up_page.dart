@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_provider.dart';
+import '../utils/stayora_colors.dart';
 import '../widgets/stayora_logo.dart';
 
 /// App brand blue for primary buttons (matches StayoraLogo).
-const Color _stayoraBlue = Color(0xFF007AFF);
+const Color _stayoraBlue = StayoraColors.blue;
 
 /// Create account with email and password.
 class SignUpPage extends StatefulWidget {
@@ -176,7 +177,7 @@ class _SignUpPageState extends State<SignUpPage> {
                     Text(
                       _error!,
                       style: const TextStyle(
-                        color: Color(0xFFFF3B30),
+                        color: StayoraColors.error,
                         fontSize: 13,
                       ),
                     ),

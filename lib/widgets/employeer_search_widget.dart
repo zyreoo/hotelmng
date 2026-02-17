@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/employer_model.dart';
 import '../services/firebase_service.dart';
 import '../services/auth_provider.dart';
+import '../utils/stayora_colors.dart';
 
 class EmployeeSearchWidget extends StatefulWidget {
   final String? hotelId;
@@ -231,7 +232,7 @@ class _EmployeeSearchWidgetState extends State<EmployeeSearchWidget> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Employee created'),
-            backgroundColor: Color(0xFF34C759),
+            backgroundColor: StayoraColors.success,
           ),
         );
       } catch (e) {
