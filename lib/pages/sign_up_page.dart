@@ -3,6 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_provider.dart';
 import '../widgets/stayora_logo.dart';
 
+/// App brand blue for primary buttons (matches StayoraLogo).
+const Color _stayoraBlue = Color(0xFF007AFF);
+
 /// Create account with email and password.
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});
@@ -88,8 +91,8 @@ class _SignUpPageState extends State<SignUpPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  StayoraLogo(
-                    fontSize: 28,
+                  const StayoraLogo(
+                    fontSize: 40,
                     fontWeight: FontWeight.bold,
                     textAlign: TextAlign.center,
                   ),
@@ -181,9 +184,9 @@ class _SignUpPageState extends State<SignUpPage> {
                       const SizedBox(height: 12),
                       TextButton(
                         onPressed: _loading ? null : () => Navigator.of(context).pop(),
-                        child: Text(
+                        child: const Text(
                           'Sign in instead',
-                          style: TextStyle(color: colorScheme.primary),
+                          style: TextStyle(color: _stayoraBlue),
                         ),
                       ),
                     ],
@@ -194,8 +197,8 @@ class _SignUpPageState extends State<SignUpPage> {
                     child: FilledButton(
                       onPressed: _loading ? null : _signUp,
                       style: FilledButton.styleFrom(
-                        backgroundColor: colorScheme.primary,
-                        foregroundColor: colorScheme.onPrimary,
+                        backgroundColor: _stayoraBlue,
+                        foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -205,9 +208,9 @@ class _SignUpPageState extends State<SignUpPage> {
                           ? SizedBox(
                               height: 22,
                               width: 22,
-                              child: CircularProgressIndicator(
+                              child: const CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: colorScheme.onPrimary,
+                                color: Colors.white,
                               ),
                             )
                           : const Text('Create account'),
@@ -216,9 +219,9 @@ class _SignUpPageState extends State<SignUpPage> {
                   const SizedBox(height: 16),
                   TextButton(
                     onPressed: _loading ? null : () => Navigator.of(context).pop(),
-                    child: Text(
+                    child: const Text(
                       'Already have an account? Sign in',
-                      style: TextStyle(color: colorScheme.primary),
+                      style: TextStyle(color: _stayoraBlue),
                     ),
                   ),
                 ],

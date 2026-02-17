@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import '../services/firebase_service.dart';
 import '../services/auth_provider.dart';
+import 'stayora_logo.dart';
 
 class ClientSearchWidget extends StatefulWidget {
   final String? hotelId;
@@ -284,7 +285,7 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
                           width: 40,
                           height: 40,
                           decoration: BoxDecoration(
-                            color: colorScheme.primary.withOpacity(0.1),
+                            color: StayoraLogo.stayoraBlue.withOpacity(0.1),
                             shape: BoxShape.circle,
                           ),
                           child: Center(
@@ -293,7 +294,7 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
                                   ? client.name[0].toUpperCase()
                                   : '?',
                               style: TextStyle(
-                                color: colorScheme.primary,
+                                color: StayoraLogo.stayoraBlue,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -344,14 +345,14 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
             margin: const EdgeInsets.only(top: 12),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: colorScheme.primary.withOpacity(0.1),
+              color: StayoraLogo.stayoraBlue.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               children: [
                 Icon(
                   Icons.check_circle_rounded,
-                  color: colorScheme.primary,
+                  color: StayoraLogo.stayoraBlue,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -359,7 +360,7 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
                   child: Text(
                     'Selected: ${_selectedClient!.name}',
                     style: TextStyle(
-                      color: colorScheme.primary,
+                      color: StayoraLogo.stayoraBlue,
                       fontWeight: FontWeight.w600,
                     ),
                   ),

@@ -6,6 +6,7 @@ import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
 import '../widgets/employeer_search_widget.dart';
+import '../widgets/stayora_logo.dart';
 import 'add_employee_page.dart';
 import 'user_page.dart';
 
@@ -207,10 +208,10 @@ class _EmployeesPageState extends State<EmployeesPage> {
                               });
                             },
                             backgroundColor: Theme.of(context).colorScheme.surface,
-                            selectedColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                            selectedColor: StayoraLogo.stayoraBlue.withOpacity(0.1),
                             labelStyle: TextStyle(
                               color: isSelected
-                                  ? Theme.of(context).colorScheme.primary
+                                  ? StayoraLogo.stayoraBlue
                                   : Theme.of(context).colorScheme.onSurfaceVariant,
                               fontWeight: isSelected
                                   ? FontWeight.w600
@@ -220,7 +221,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
                               borderRadius: BorderRadius.circular(12),
                               side: BorderSide(
                                 color: isSelected
-                                    ? Theme.of(context).colorScheme.primary.withOpacity(0.3)
+                                    ? StayoraLogo.stayoraBlue.withOpacity(0.3)
                                     : Theme.of(context).colorScheme.outline.withOpacity(0.3),
                               ),
                             ),
@@ -269,7 +270,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
             MaterialPageRoute(builder: (context) => const AddEmployeePage()),
           );
         },
-        backgroundColor: Theme.of(context).colorScheme.primary,
+        backgroundColor: StayoraLogo.stayoraBlue,
         child: Icon(Icons.person_add, color: Theme.of(context).colorScheme.onPrimary),
       ),
     );

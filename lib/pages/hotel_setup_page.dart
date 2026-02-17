@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/hotel_model.dart';
 import '../services/auth_provider.dart';
 import '../services/hotel_provider.dart';
+import '../widgets/stayora_logo.dart';
 
 /// Shown when no hotel is selected. User can create a hotel or select one (by owner).
 class HotelSetupPage extends StatefulWidget {
@@ -102,10 +103,10 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Icon(
-                    Icons.hotel_rounded,
-                    size: 64,
-                    color: colorScheme.primary.withOpacity(0.8),
+                  const StayoraLogo(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -160,16 +161,16 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                           ? SizedBox(
                               width: 20,
                               height: 20,
-                              child: CircularProgressIndicator(
+                              child: const CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: colorScheme.onPrimary,
+                                color: Colors.white,
                               ),
                             )
                           : const Icon(Icons.add_rounded),
                       label: Text(_loading ? 'Creating…' : 'Create hotel'),
                       style: FilledButton.styleFrom(
-                        backgroundColor: colorScheme.primary,
-                        foregroundColor: colorScheme.onPrimary,
+                        backgroundColor: StayoraLogo.stayoraBlue,
+                        foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -191,8 +192,8 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                     Padding(
                       padding: const EdgeInsets.all(24),
                       child: Center(
-                        child: CircularProgressIndicator(
-                          color: colorScheme.primary,
+                        child: const CircularProgressIndicator(
+                          color: StayoraLogo.stayoraBlue,
                         ),
                       ),
                     )
@@ -247,16 +248,16 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                                     SizedBox(
                                       width: 20,
                                       height: 20,
-                                      child: CircularProgressIndicator(
+                                      child: const CircularProgressIndicator(
                                         strokeWidth: 2,
-                                        color: colorScheme.primary,
+                                        color: StayoraLogo.stayoraBlue,
                                       ),
                                     )
                                   else
                                     Icon(
                                       Icons.arrow_forward_ios_rounded,
                                       size: 14,
-                                      color: colorScheme.primary,
+                                      color: StayoraLogo.stayoraBlue,
                                     ),
                                 ],
                               ),

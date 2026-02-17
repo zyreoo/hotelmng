@@ -4,6 +4,9 @@ import '../services/auth_provider.dart';
 import '../widgets/stayora_logo.dart';
 import 'sign_up_page.dart';
 
+/// App brand blue for primary buttons (matches StayoraLogo).
+const Color _stayoraBlue = Color(0xFF007AFF);
+
 /// Email/password login. Links to sign-up.
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -106,9 +109,9 @@ class _LoginPageState extends State<LoginPage> {
                 decoration: InputDecoration(
                   labelText: 'Email',
                   hintText: 'Enter your email',
-                  prefixIcon: Icon(
+                  prefixIcon: const Icon(
                     Icons.email_outlined,
-                    color: Theme.of(context).colorScheme.primary,
+                    color: _stayoraBlue,
                   ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -206,8 +209,8 @@ class _LoginPageState extends State<LoginPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  StayoraLogo(
-                    fontSize: 28,
+                  const StayoraLogo(
+                    fontSize: 40,
                     fontWeight: FontWeight.bold,
                     textAlign: TextAlign.center,
                   ),
@@ -277,8 +280,8 @@ class _LoginPageState extends State<LoginPage> {
                     child: FilledButton(
                       onPressed: _loading ? null : _signIn,
                       style: FilledButton.styleFrom(
-                        backgroundColor: colorScheme.primary,
-                        foregroundColor: colorScheme.onPrimary,
+                        backgroundColor: _stayoraBlue,
+                        foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -288,9 +291,9 @@ class _LoginPageState extends State<LoginPage> {
                           ? SizedBox(
                               height: 22,
                               width: 22,
-                              child: CircularProgressIndicator(
+                              child: const CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: colorScheme.onPrimary,
+                                color: Colors.white,
                               ),
                             )
                           : const Text('Sign in'),
@@ -301,8 +304,8 @@ class _LoginPageState extends State<LoginPage> {
                     onPressed: _loading ? null : _showForgotPasswordDialog,
                     child: Text(
                       'Forgot password?',
-                      style: TextStyle(
-                        color: colorScheme.primary,
+                      style: const TextStyle(
+                        color: _stayoraBlue,
                       ),
                     ),
                   ),
@@ -319,7 +322,7 @@ class _LoginPageState extends State<LoginPage> {
                           },
                     child: Text(
                       'Create an account',
-                      style: TextStyle(color: colorScheme.primary),
+                      style: const TextStyle(color: _stayoraBlue),
                     ),
                   ),
                 ],

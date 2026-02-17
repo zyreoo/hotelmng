@@ -7,6 +7,7 @@ import '../models/employer_model.dart';
 import '../models/shift_model.dart';
 import '../services/auth_provider.dart';
 import '../services/hotel_provider.dart';
+import '../widgets/stayora_logo.dart';
 
 class SchedulePage extends StatefulWidget {
   const SchedulePage({super.key});
@@ -882,6 +883,8 @@ class _SchedulePageState extends State<SchedulePage> {
                 Text(
                   label,
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -1089,84 +1092,91 @@ class _SchedulePageState extends State<SchedulePage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 8),
-                      Text(
-                        'Schedule',
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineLarge
-                            ?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 34,
-                              color: colorScheme.onSurface,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.chevron_left_rounded),
-                            onPressed: () {
-                              setState(() {
-                                _weekOffset--;
-                                _subscribeToShifts();
-                              });
-                            },
-                            style: IconButton.styleFrom(
-                              backgroundColor: colorScheme.surfaceContainerHighest,
-                              foregroundColor: colorScheme.primary,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          InkWell(
-                            onTap: _showDateSearchDialog,
-                            borderRadius: BorderRadius.circular(8),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 4,
-                                horizontal: 2,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(height: 8),
+                        Text(
+                          'Schedule',
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineLarge
+                              ?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 34,
+                                color: colorScheme.onSurface,
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.search_rounded,
-                                    size: 18,
-                                    color: colorScheme.onSurfaceVariant,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Week of ${DateFormat('MMM d, yyyy').format(_lastSearchedWeekStart ?? _currentWeekStart)}',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyLarge
-                                        ?.copyWith(color: colorScheme.onSurfaceVariant),
-                                  ),
-                                ],
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.chevron_left_rounded),
+                              onPressed: () {
+                                setState(() {
+                                  _weekOffset--;
+                                  _subscribeToShifts();
+                                });
+                              },
+                              style: IconButton.styleFrom(
+                                backgroundColor: colorScheme.surfaceContainerHighest,
+                                foregroundColor: StayoraLogo.stayoraBlue,
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          IconButton(
-                            icon: const Icon(Icons.chevron_right_rounded),
-                            onPressed: () {
-                              setState(() {
-                                _weekOffset++;
-                                _subscribeToShifts();
-                              });
-                            },
-                            style: IconButton.styleFrom(
-                              backgroundColor: colorScheme.surfaceContainerHighest,
-                              foregroundColor: colorScheme.primary,
+                            Expanded(
+                              child: InkWell(
+                                onTap: _showDateSearchDialog,
+                                borderRadius: BorderRadius.circular(8),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 4,
+                                    horizontal: 2,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.search_rounded,
+                                        size: 18,
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          'Week of ${DateFormat('MMM d, yyyy').format(_lastSearchedWeekStart ?? _currentWeekStart)}',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodyLarge
+                                              ?.copyWith(color: colorScheme.onSurfaceVariant),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
+                            IconButton(
+                              icon: const Icon(Icons.chevron_right_rounded),
+                              onPressed: () {
+                                setState(() {
+                                  _weekOffset++;
+                                  _subscribeToShifts();
+                                });
+                              },
+                              style: IconButton.styleFrom(
+                                backgroundColor: colorScheme.surfaceContainerHighest,
+                                foregroundColor: StayoraLogo.stayoraBlue,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   Container(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(12),
@@ -1341,7 +1351,7 @@ class _SchedulePageState extends State<SchedulePage> {
                                       Icon(
                                         Icons.people_rounded,
                                         size: 14,
-                                        color: colorScheme.primary,
+                                        color: StayoraLogo.stayoraBlue,
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
@@ -1349,7 +1359,7 @@ class _SchedulePageState extends State<SchedulePage> {
                                         style: TextStyle(
                                           fontWeight: FontWeight.w600,
                                           fontSize: 12,
-                                          color: colorScheme.primary,
+                                          color: StayoraLogo.stayoraBlue,
                                           letterSpacing: 0.2,
                                         ),
                                       ),

@@ -5,6 +5,7 @@ import 'package:table_calendar/table_calendar.dart';
 import '../models/employer_model.dart';
 import '../services/auth_provider.dart';
 import '../services/hotel_provider.dart';
+import '../widgets/stayora_logo.dart';
 import 'add_employee_page.dart';
 
 class UserPage extends StatefulWidget {
@@ -197,7 +198,7 @@ class _UserPageState extends State<UserPage> {
                               IconButton(
                                 icon: const Icon(Icons.arrow_back_ios_rounded),
                                 onPressed: () => Navigator.pop(context),
-                                color: colorScheme.primary,
+                                color: StayoraLogo.stayoraBlue,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
                               ),
@@ -207,7 +208,7 @@ class _UserPageState extends State<UserPage> {
                               width: 48,
                               height: 48,
                               decoration: BoxDecoration(
-                                color: colorScheme.primary.withOpacity(0.1),
+                                color: StayoraLogo.stayoraBlue.withOpacity(0.1),
                                 shape: BoxShape.circle,
                               ),
                               child: Center(
@@ -218,7 +219,7 @@ class _UserPageState extends State<UserPage> {
                                   style: TextStyle(
                                     fontSize: 20,
                                     fontWeight: FontWeight.w600,
-                                    color: colorScheme.primary,
+                                    color: StayoraLogo.stayoraBlue,
                                   ),
                                 ),
                               ),
@@ -269,13 +270,13 @@ class _UserPageState extends State<UserPage> {
                               icon: Icon(
                                 Icons.edit_outlined,
                                 size: 18,
-                                color: colorScheme.primary,
+                                color: StayoraLogo.stayoraBlue,
                               ),
                               label: Text(
                                 'Edit',
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
-                                  color: colorScheme.primary,
+                                  color: StayoraLogo.stayoraBlue,
                                 ),
                               ),
                             ),
@@ -448,11 +449,11 @@ class _UserPageState extends State<UserPage> {
                           startingDayOfWeek: StartingDayOfWeek.monday,
                           calendarStyle: CalendarStyle(
                             todayDecoration: BoxDecoration(
-                              color: colorScheme.primary.withOpacity(0.3),
+                              color: StayoraLogo.stayoraBlue.withOpacity(0.3),
                               shape: BoxShape.circle,
                             ),
                             selectedDecoration: BoxDecoration(
-                              color: colorScheme.primary,
+                              color: StayoraLogo.stayoraBlue,
                               shape: BoxShape.circle,
                             ),
                             markerDecoration: const BoxDecoration(
@@ -471,11 +472,11 @@ class _UserPageState extends State<UserPage> {
                             ),
                             leftChevronIcon: Icon(
                               Icons.chevron_left,
-                              color: colorScheme.primary,
+                              color: StayoraLogo.stayoraBlue,
                             ),
                             rightChevronIcon: Icon(
                               Icons.chevron_right,
-                              color: colorScheme.primary,
+                              color: StayoraLogo.stayoraBlue,
                             ),
                           ),
                           eventLoader: (day) {
@@ -605,10 +606,10 @@ class _InfoRow extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: colorScheme.primary.withOpacity(0.1),
+            color: StayoraLogo.stayoraBlue.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(icon, size: 20, color: colorScheme.primary),
+          child: Icon(icon, size: 20, color: StayoraLogo.stayoraBlue),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -706,7 +707,7 @@ class _ShiftCard extends StatelessWidget {
               height: 60,
               decoration: BoxDecoration(
                 color: isToday
-                    ? colorScheme.primary.withOpacity(0.1)
+                    ? StayoraLogo.stayoraBlue.withOpacity(0.1)
                     : colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -719,7 +720,7 @@ class _ShiftCard extends StatelessWidget {
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: isToday
-                          ? colorScheme.primary
+                          ? StayoraLogo.stayoraBlue
                           : colorScheme.onSurfaceVariant,
                     ),
                   ),
@@ -729,7 +730,7 @@ class _ShiftCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: isToday ? colorScheme.primary : colorScheme.onSurface,
+                      color: isToday ? StayoraLogo.stayoraBlue : colorScheme.onSurface,
                     ),
                   ),
                 ],

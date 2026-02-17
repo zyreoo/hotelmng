@@ -1680,13 +1680,19 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                           fontSize: 14,
                                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                                         ),
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
                                       ),
                                     ),
-                                    Text(
-                                      currencyFormatter.formatCompact(_roomSubtotal),
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF007AFF),
+                                    const SizedBox(width: 8),
+                                    Flexible(
+                                      child: Text(
+                                        currencyFormatter.formatCompact(_roomSubtotal),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF007AFF),
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
                                   ],
@@ -1708,24 +1714,29 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         ),
                                   ),
                                   const SizedBox(width: 8),
-                                  TextButton.icon(
-                                    onPressed: () async {
-                                      await Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) =>
-                                              const ServicesPage(),
-                                        ),
-                                      );
-                                      final hid = HotelProvider.of(context).hotelId;
-                                      final uid = AuthScopeData.of(context).uid;
-                                      if (hid != null && uid != null) _loadServices(uid, hid);
-                                    },
-                                    icon: const Icon(Icons.add_circle_outline,
-                                        size: 18),
-                                    label: const Text('Add more services'),
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: const Color(0xFF007AFF),
+                                  Flexible(
+                                    child: TextButton.icon(
+                                      onPressed: () async {
+                                        await Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                const ServicesPage(),
+                                          ),
+                                        );
+                                        final hid = HotelProvider.of(context).hotelId;
+                                        final uid = AuthScopeData.of(context).uid;
+                                        if (hid != null && uid != null) _loadServices(uid, hid);
+                                      },
+                                      icon: const Icon(Icons.add_circle_outline,
+                                          size: 18),
+                                      label: Text(
+                                        'Add more services',
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: const Color(0xFF007AFF),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -1860,13 +1871,17 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceBetween,
                                   children: [
-                                    const Text(
-                                      'Services subtotal',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 15,
+                                    Expanded(
+                                      child: Text(
+                                        'Services subtotal',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 15,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
+                                    const SizedBox(width: 8),
                                     Text(
                                       currencyFormatter.formatCompact(_servicesSubtotal),
                                       style: const TextStyle(
@@ -1886,14 +1901,18 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text(
-                                    'Suggested total (room + services)',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 15,
-                                      color: Theme.of(context).colorScheme.onSurface,
+                                  Expanded(
+                                    child: Text(
+                                      'Suggested total (room + services)',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 15,
+                                        color: Theme.of(context).colorScheme.onSurface,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
+                                  const SizedBox(width: 8),
                                   Text(
                                     currencyFormatter.formatCompact(_suggestedTotal),
                                     style: const TextStyle(
@@ -2072,29 +2091,33 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   ),
                                 ),
                                 const SizedBox(height: 6),
-                                Row(
-                                  children: [
-                                    ChoiceChip(
-                                      label: const Text('Pending'),
-                                      selected: _advanceStatus == 'pending',
-                                      onSelected: (v) => setState(() {
-                                            _advanceStatus = 'pending';
-                                            _amountPaidController.clear();
-                                          }),
-                                      selectedColor: const Color(0xFFFF9500)
-                                          .withOpacity(0.3),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    ChoiceChip(
-                                      label: const Text('Received'),
-                                      selected: _advanceStatus == 'received',
-                                      onSelected: (v) => setState(() {
-                                            _advanceStatus = 'received';
-                                          }),
-                                      selectedColor: const Color(0xFF34C759)
-                                          .withOpacity(0.3),
-                                    ),
-                                  ],
+                                SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      ChoiceChip(
+                                        label: const Text('Pending'),
+                                        selected: _advanceStatus == 'pending',
+                                        onSelected: (v) => setState(() {
+                                              _advanceStatus = 'pending';
+                                              _amountPaidController.clear();
+                                            }),
+                                        selectedColor: const Color(0xFFFF9500)
+                                            .withOpacity(0.3),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      ChoiceChip(
+                                        label: const Text('Received'),
+                                        selected: _advanceStatus == 'received',
+                                        onSelected: (v) => setState(() {
+                                              _advanceStatus = 'received';
+                                            }),
+                                        selectedColor: const Color(0xFF34C759)
+                                            .withOpacity(0.3),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                                 const SizedBox(height: 12),
                               ],
@@ -2102,26 +2125,24 @@ class _AddBookingPageState extends State<AddBookingPage> {
                               if (_advanceStatus == 'received' &&
                                   _suggestedTotal > 0) ...[
                                 Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Icon(Icons.account_balance_wallet_rounded,
                                         size: 18,
                                         color: Theme.of(context).colorScheme.onSurfaceVariant),
                                     const SizedBox(width: 8),
-                                    Text(
-                                      'They owe you: ${currencyFormatter.formatCompact(_remainingBalance)}',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        color: _remainingBalance > 0
-                                            ? const Color(0xFFFF9500)
-                                            : Theme.of(context).colorScheme.onSurface,
-                                      ),
-                                    ),
-                                    Text(
-                                      ' (total ${currencyFormatter.formatCompact(_suggestedTotal)} − advance ${currencyFormatter.formatCompact(_advanceAmountPaid)})',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                    Expanded(
+                                      child: Text(
+                                        'They owe you: ${currencyFormatter.formatCompact(_remainingBalance)} (total ${currencyFormatter.formatCompact(_suggestedTotal)} − advance ${currencyFormatter.formatCompact(_advanceAmountPaid)})',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: _remainingBalance > 0
+                                              ? const Color(0xFFFF9500)
+                                              : Theme.of(context).colorScheme.onSurface,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 2,
                                       ),
                                     ),
                                   ],
@@ -2133,12 +2154,16 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         size: 18,
                                         color: const Color(0xFF34C759)),
                                     const SizedBox(width: 8),
-                                    Text(
-                                      'Advance paid (${currencyFormatter.formatCompact(_advanceAmountPaid)}) — $_advancePaymentMethod',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: Theme.of(context).colorScheme.onSurface,
-                                        fontWeight: FontWeight.w500,
+                                    Expanded(
+                                      child: Text(
+                                        'Advance paid (${currencyFormatter.formatCompact(_advanceAmountPaid)}) — $_advancePaymentMethod',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Theme.of(context).colorScheme.onSurface,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 2,
                                       ),
                                     ),
                                   ],
@@ -2155,11 +2180,14 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                             size: 18,
                                             color: Theme.of(context).colorScheme.onSurfaceVariant),
                                         const SizedBox(width: 8),
-                                        Text(
-                                          'No advance required',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                        Expanded(
+                                          child: Text(
+                                            'No advance required',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
                                       ],

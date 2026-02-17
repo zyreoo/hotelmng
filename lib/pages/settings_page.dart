@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/auth_provider.dart';
 import '../services/hotel_provider.dart';
 import '../services/theme_provider.dart';
+import '../widgets/stayora_logo.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -590,7 +591,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           height: 40,
                           decoration: BoxDecoration(
                             color: isSelected
-                                ? colorScheme.primary.withOpacity(0.1)
+                                ? StayoraLogo.stayoraBlue.withOpacity(0.1)
                                 : colorScheme.surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(10),
                           ),
@@ -601,7 +602,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
                                 color: isSelected
-                                    ? colorScheme.primary
+                                    ? StayoraLogo.stayoraBlue
                                     : colorScheme.onSurfaceVariant,
                               ),
                             ),
@@ -625,7 +626,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         trailing: isSelected
                             ? Icon(
                                 Icons.check_circle_rounded,
-                                color: colorScheme.primary,
+                                color: StayoraLogo.stayoraBlue,
                               )
                             : null,
                         onTap: _updatingCurrency
@@ -945,13 +946,13 @@ class _ThemeOption extends StatelessWidget {
         height: 40,
         decoration: BoxDecoration(
           color: isSelected
-              ? colorScheme.primary.withOpacity(0.1)
+              ? StayoraLogo.stayoraBlue.withOpacity(0.1)
               : colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(10),
         ),
         child: Icon(
           icon,
-          color: isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+          color: isSelected ? StayoraLogo.stayoraBlue : colorScheme.onSurfaceVariant,
           size: 22,
         ),
       ),
@@ -971,7 +972,7 @@ class _ThemeOption extends StatelessWidget {
       trailing: isSelected
           ? Icon(
               Icons.check_circle_rounded,
-              color: colorScheme.primary,
+              color: StayoraLogo.stayoraBlue,
             )
           : null,
       onTap: onTap,

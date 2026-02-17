@@ -6,6 +6,7 @@ import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
 import '../utils/currency_formatter.dart';
 import '../widgets/loading_empty_states.dart';
+import '../widgets/stayora_logo.dart';
 import 'add_booking_page.dart';
 
 class BookingsListPage extends StatefulWidget {
@@ -237,7 +238,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
                   return ListTile(
                     leading: Icon(
                       isSelected ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
-                      color: isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
+                      color: isSelected ? StayoraLogo.stayoraBlue : Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     title: Text(label),
                     onTap: () {

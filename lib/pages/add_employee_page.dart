@@ -4,6 +4,7 @@ import '../models/employer_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
+import '../widgets/stayora_logo.dart';
 
 class AddEmployeePage extends StatefulWidget {
   /// When provided, the form is in edit mode for this employee.
@@ -288,7 +289,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
         : 16.0;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: SafeArea(
         child: Form(
           key: _formKey,
@@ -465,7 +466,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
                         child: ElevatedButton(
                           onPressed: _submitEmployee,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Theme.of(context).colorScheme.primary,
+                            backgroundColor: StayoraLogo.stayoraBlue,
                             foregroundColor: Theme.of(context).colorScheme.onPrimary,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
@@ -519,7 +520,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colorScheme.primary, width: 2),
+          borderSide: BorderSide(color: StayoraLogo.stayoraBlue, width: 2),
         ),
         filled: true,
         fillColor: colorScheme.surfaceContainerHighest,
@@ -557,7 +558,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colorScheme.primary, width: 2),
+          borderSide: BorderSide(color: StayoraLogo.stayoraBlue, width: 2),
         ),
         filled: true,
         fillColor: colorScheme.surfaceContainerHighest,

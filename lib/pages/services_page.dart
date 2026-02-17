@@ -5,6 +5,7 @@ import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
 import '../utils/currency_formatter.dart';
 import '../utils/money_input_formatter.dart';
+import '../widgets/stayora_logo.dart';
 
 class ServicesPage extends StatelessWidget {
   const ServicesPage({super.key});
@@ -180,7 +181,7 @@ class ServicesPage extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showServiceDialog(context, userId, hotelId, firebaseService),
-        backgroundColor: colorScheme.primary,
+        backgroundColor: StayoraLogo.stayoraBlue,
         foregroundColor: colorScheme.onPrimary,
         icon: const Icon(Icons.add),
         label: Text(
@@ -448,7 +449,7 @@ class ServicesPage extends StatelessWidget {
                               }
                             },
                             style: FilledButton.styleFrom(
-                              backgroundColor: colorScheme.primary,
+                              backgroundColor: StayoraLogo.stayoraBlue,
                               foregroundColor: colorScheme.onPrimary,
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(

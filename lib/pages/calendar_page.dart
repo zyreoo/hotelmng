@@ -8,6 +8,7 @@ import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
 import '../widgets/loading_empty_states.dart';
+import '../widgets/stayora_logo.dart';
 import 'add_booking_page.dart';
 import 'room_management_page.dart';
 
@@ -55,6 +56,13 @@ class _CalendarPageState extends State<CalendarPage> {
   List<String> _roomNames = [];
   final FirebaseService _firebaseService = FirebaseService();
   bool _roomNamesLoaded = false;
+
+  /// Room names to show on the calendar grid, capped by Settings > Total Rooms (max).
+  List<String> get _displayedRoomNames {
+    final maxRooms = HotelProvider.of(context).currentHotel?.totalRooms;
+    if (maxRooms == null || maxRooms <= 0) return _roomNames;
+    return _roomNames.take(maxRooms).toList();
+  }
 
   // Sample bookings - each booking represents a night stay
   // Key: DateTime (the night), Value: Map of room -> booking info
@@ -200,6 +208,7 @@ class _CalendarPageState extends State<CalendarPage> {
 
     // Ensure initial synchronization after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       if (_verticalScrollController.hasClients &&
           _stickyDayLabelsScrollController.hasClients) {
         final mainOffset = _verticalScrollController.offset;
@@ -232,7 +241,7 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   void _loadMoreDatesUp() {
-    if (_isLoadingMore) return;
+    if (_isLoadingMore || !mounted) return;
 
     setState(() {
       _isLoadingMore = true;
@@ -244,6 +253,7 @@ class _CalendarPageState extends State<CalendarPage> {
     final oldEarliestDate = _earliestDate;
     final newEarliestDate = _earliestDate.subtract(Duration(days: daysToAdd));
 
+    if (!mounted) return;
     setState(() {
       _earliestDate = newEarliestDate;
       _totalDaysLoaded += daysToAdd;
@@ -255,6 +265,7 @@ class _CalendarPageState extends State<CalendarPage> {
 
     // Adjust scroll position to maintain view after frame is built
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       if (_verticalScrollController.hasClients) {
         // Use dayRowHeight for scroll offset
         final newOffset = currentOffset + (daysToAdd * _dayRowHeight);
@@ -282,6 +293,7 @@ class _CalendarPageState extends State<CalendarPage> {
       _subscribeToBookings();
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         _scrollToDate(targetDate);
       });
       return;
@@ -298,6 +310,7 @@ class _CalendarPageState extends State<CalendarPage> {
         setState(() => _totalDaysLoaded += extra);
         _subscribeToBookings();
         WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
           _scrollToDate(targetDate);
         });
         return;
@@ -521,11 +534,11 @@ class _CalendarPageState extends State<CalendarPage> {
       return false;
     }
 
-    final startRoomIndex = _roomNames.indexOf(_selectionStartRoom!);
+    final startRoomIndex = _displayedRoomNames.indexOf(_selectionStartRoom!);
     final endRoomIndex = _selectionEndRoom != null
-        ? _roomNames.indexOf(_selectionEndRoom!)
+        ? _displayedRoomNames.indexOf(_selectionEndRoom!)
         : startRoomIndex;
-    final currentRoomIndex = _roomNames.indexOf(room);
+    final currentRoomIndex = _displayedRoomNames.indexOf(room);
 
     if (currentRoomIndex == -1 || startRoomIndex == -1) return false;
 
@@ -592,8 +605,8 @@ class _CalendarPageState extends State<CalendarPage> {
 
         // update how many rooms are currently spanned horizontally
         if (_selectionStartRoom != null) {
-          final startIndex = _roomNames.indexOf(_selectionStartRoom!);
-          final endIndex = _roomNames.indexOf(_selectionEndRoom!);
+          final startIndex = _displayedRoomNames.indexOf(_selectionStartRoom!);
+          final endIndex = _displayedRoomNames.indexOf(_selectionEndRoom!);
           if (startIndex != -1 && endIndex != -1) {
             final minIndex = startIndex < endIndex ? startIndex : endIndex;
             final maxIndex = startIndex > endIndex ? startIndex : endIndex;
@@ -720,10 +733,10 @@ class _CalendarPageState extends State<CalendarPage> {
       return;
     }
 
-    final roomIndex = _roomNames.indexOf(room);
+    final roomIndex = _displayedRoomNames.indexOf(room);
     if (roomIndex == -1) return;
     final n = booking.numberOfRooms;
-    if (roomIndex + n > _roomNames.length) {
+    if (roomIndex + n > _displayedRoomNames.length) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -736,7 +749,7 @@ class _CalendarPageState extends State<CalendarPage> {
       }
       return;
     }
-    final targetRooms = _roomNames.sublist(roomIndex, roomIndex + n);
+    final targetRooms = _displayedRoomNames.sublist(roomIndex, roomIndex + n);
     final checkIn = DateTime(date.year, date.month, date.day);
     final checkOut = checkIn.add(Duration(days: booking.numberOfNights));
 
@@ -781,7 +794,7 @@ class _CalendarPageState extends State<CalendarPage> {
       if (selectedRooms.isNotEmpty && selectedDates.isNotEmpty) {
         _roomsNextToEachOther = _areSelectedRoomsNextToEachOther(selectedRooms);
         _preselectedRoomsIndex = selectedRooms
-            .map((room) => _roomNames.indexOf(room))
+            .map((room) => _displayedRoomNames.indexOf(room))
             .where((index) => index != -1)
             .toList();
         // Move any existing bookings in the selected range to waiting list, then open dialog
@@ -812,15 +825,15 @@ class _CalendarPageState extends State<CalendarPage> {
   List<String> _getSelectedRooms() {
     if (_selectionStartRoom == null) return [];
 
-    final startIndex = _roomNames.indexOf(_selectionStartRoom!);
+    final startIndex = _displayedRoomNames.indexOf(_selectionStartRoom!);
     final endIndex = _selectionEndRoom != null
-        ? _roomNames.indexOf(_selectionEndRoom!)
+        ? _displayedRoomNames.indexOf(_selectionEndRoom!)
         : startIndex;
 
     final minIndex = startIndex < endIndex ? startIndex : endIndex;
     final maxIndex = startIndex > endIndex ? startIndex : endIndex;
 
-    return _roomNames.sublist(minIndex, maxIndex + 1);
+    return _displayedRoomNames.sublist(minIndex, maxIndex + 1);
   }
 
   List<DateTime> _getSelectedDates() {
@@ -857,7 +870,7 @@ class _CalendarPageState extends State<CalendarPage> {
   bool _areSelectedRoomsNextToEachOther(List<String> rooms) {
     if (rooms.length < 2) return false;
 
-    final indices = rooms.map((room) => _roomNames.indexOf(room)).toList();
+    final indices = rooms.map((room) => _displayedRoomNames.indexOf(room)).toList();
     if (indices.any((index) => index == -1)) return false;
 
     indices.sort();
@@ -891,7 +904,7 @@ class _CalendarPageState extends State<CalendarPage> {
     if (adjustedX < _dayLabelWidth) return null;
 
     final roomIndex = ((adjustedX - _dayLabelWidth) / _roomColumnWidth).floor();
-    if (roomIndex < 0 || roomIndex >= _roomNames.length) return null;
+    if (roomIndex < 0 || roomIndex >= _displayedRoomNames.length) return null;
 
     // Position is already relative to the gesture detector which is below the header
     final localY = position.dy;
@@ -901,7 +914,7 @@ class _CalendarPageState extends State<CalendarPage> {
     final dayIndex = ((localY + scrollY) / _dayRowHeight).floor();
     if (dayIndex < 0 || dayIndex >= _dates.length) return null;
 
-    return {'room': _roomNames[roomIndex], 'date': _dates[dayIndex]};
+    return {'room': _displayedRoomNames[roomIndex], 'date': _dates[dayIndex]};
   }
 
   void _subscribeToBookings() {
@@ -1124,11 +1137,12 @@ class _CalendarPageState extends State<CalendarPage> {
       firstDate: DateTime(2020),
       lastDate: DateTime(2030),
       builder: (context, child) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF007AFF),
-            ),
+            colorScheme: isDark
+                ? const ColorScheme.dark(primary: Color(0xFF007AFF))
+                : const ColorScheme.light(primary: Color(0xFF007AFF)),
           ),
           child: child!,
         );
@@ -1275,107 +1289,123 @@ class _CalendarPageState extends State<CalendarPage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 8),
-                      Text(
-                        'Calendar',
-                        style: Theme.of(context).textTheme.headlineLarge
-                            ?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 34,
-                              color: Theme.of(context).colorScheme.onSurface,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      InkWell(
-                        onTap: _showDateSearchDialog,
-                        borderRadius: BorderRadius.circular(8),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 4,
-                            horizontal: 2,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.search_rounded,
-                                size: 18,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(height: 8),
+                        Text(
+                          'Calendar',
+                          style: Theme.of(context).textTheme.headlineLarge
+                              ?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 34,
                                 color: Theme.of(context).colorScheme.onSurface,
                               ),
-                              const SizedBox(width: 6),
-                              Text(
-                                DateFormat(
-                                  'MMM d, yyyy',
-                                ).format(_lastSearchedDate ?? _earliestDate),
-                                style: Theme.of(context).textTheme.bodyLarge
-                                    ?.copyWith(color: Theme.of(context).colorScheme.onSurface),
-                              ),
-                            ],
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 8),
+                        InkWell(
+                          onTap: _showDateSearchDialog,
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 4,
+                              horizontal: 2,
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.search_rounded,
+                                  size: 18,
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    DateFormat(
+                                      'MMM d, yyyy',
+                                    ).format(_lastSearchedDate ?? _earliestDate),
+                                    style: Theme.of(context).textTheme.bodyLarge
+                                        ?.copyWith(color: Theme.of(context).colorScheme.onSurface),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                  Row(
-                    children: [
-                      IconButton(
-                        onPressed: _showDayViewDialog,
-                        icon: const Icon(Icons.view_day_rounded, size: 24),
-                        tooltip: 'Day View',
-                        style: IconButton.styleFrom(
-                          foregroundColor: Theme.of(context).colorScheme.primary,
-                          backgroundColor: Colors.transparent,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      TextButton.icon(
-                        onPressed: () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute<void>(
-                              builder: (_) => const RoomManagementPage(),
-                            ),
-                          );
-                          _loadRooms();
-                        },
-                        icon: const Icon(Icons.meeting_room_rounded, size: 20),
-                        label: const Text('Manage rooms'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Theme.of(context).colorScheme.primary,
-                          backgroundColor: Colors.transparent,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF007AFF).withOpacity(0.25),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: IconButton(
-                          icon: const Icon(Icons.today_rounded),
-                          onPressed: () {
-                            _scrollToDate(DateTime.now());
-                          },
-                          style: IconButton.styleFrom(
-                            backgroundColor: const Color(0xFF007AFF),
-                            foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            onPressed: _showDayViewDialog,
+                            icon: const Icon(Icons.view_day_rounded, size: 24),
+                            tooltip: 'Day View',
+                            style: IconButton.styleFrom(
+                              foregroundColor: StayoraLogo.stayoraBlue,
+                              backgroundColor: Colors.transparent,
                             ),
                           ),
-                        ),
+                          const SizedBox(width: 4),
+                          TextButton.icon(
+                            onPressed: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute<void>(
+                                  builder: (_) => const RoomManagementPage(),
+                                ),
+                              );
+                              _loadRooms();
+                            },
+                            icon: const Icon(Icons.meeting_room_rounded, size: 20),
+                            label: Text(
+                              'Manage rooms',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            style: TextButton.styleFrom(
+                              foregroundColor: StayoraLogo.stayoraBlue,
+                              backgroundColor: Colors.transparent,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF007AFF).withOpacity(0.25),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: IconButton(
+                              icon: const Icon(Icons.today_rounded),
+                              onPressed: () {
+                                _scrollToDate(DateTime.now());
+                              },
+                              style: IconButton.styleFrom(
+                                backgroundColor: const Color(0xFF007AFF),
+                                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ],
               ),
@@ -1385,7 +1415,7 @@ class _CalendarPageState extends State<CalendarPage> {
             Expanded(
               child: !_roomNamesLoaded
                   ? const Center(child: CircularProgressIndicator())
-                  : _roomNames.isEmpty
+                  : _displayedRoomNames.isEmpty
                       ? Container(
                           margin: const EdgeInsets.symmetric(horizontal: 24),
                           decoration: BoxDecoration(
@@ -1578,7 +1608,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                       Icon(
                                         Icons.hotel_rounded,
                                         size: 14,
-                                        color: Theme.of(context).colorScheme.primary,
+                                        color: StayoraLogo.stayoraBlue,
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
@@ -1586,7 +1616,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                         style: TextStyle(
                                           fontWeight: FontWeight.w600,
                                           fontSize: 12,
-                                          color: Theme.of(context).colorScheme.primary,
+                                          color: StayoraLogo.stayoraBlue,
                                           letterSpacing: 0.2,
                                         ),
                                       ),
@@ -1601,7 +1631,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                   scrollDirection: Axis.horizontal,
                                   physics: const NeverScrollableScrollPhysics(),
                                   child: Row(
-                                    children: _roomNames.map((room) {
+                                    children: _displayedRoomNames.map((room) {
                                       return Container(
                                         width: _roomColumnWidth,
                                         height: 50,
@@ -2170,7 +2200,7 @@ class _CalendarPageState extends State<CalendarPage> {
           SizedBox(width: _dayLabelWidth),
           // Room cells
           Row(
-            children: _roomNames.map((room) {
+            children: _displayedRoomNames.map((room) {
               final booking = _getBooking(room, date);
               return _buildRoomCell(room, date, booking);
             }).toList(),
@@ -2232,7 +2262,7 @@ class _CalendarPageState extends State<CalendarPage> {
                         height: 1.0,
                         fontWeight: isToday ? FontWeight.bold : FontWeight.w600,
                         color: isToday
-                            ? Theme.of(context).colorScheme.primary
+                            ? StayoraLogo.stayoraBlue
                             : Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
@@ -2626,6 +2656,8 @@ class _CalendarPageState extends State<CalendarPage> {
                 Text(
                   label,
                   style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
                 const SizedBox(height: 2),
                 Text(

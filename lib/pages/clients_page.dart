@@ -27,6 +27,7 @@ class _ClientsPageState extends State<ClientsPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       _loadData();
     });
   }
@@ -50,12 +51,14 @@ class _ClientsPageState extends State<ClientsPage> {
 
     try {
       final bookings = await FirebaseService().getBookings(userId, hotelId);
+      if (!mounted) return;
       _allBookings = bookings;
       _buildClientsList();
       setState(() {
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _loading = false;
         _error = 'Failed to load clients: $e';

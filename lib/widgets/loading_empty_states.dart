@@ -83,40 +83,42 @@ class _SkeletonCard extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: useCompactLayout
-                ? Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _placeholder(innerHeight > 30 ? 14 : 10, 120),
-                      SizedBox(height: innerHeight > 30 ? 8 : 4),
-                      _placeholder(innerHeight > 30 ? 14 : 10, 80),
-                    ],
-                  )
-                : Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _placeholder(18, 160),
-                      const SizedBox(height: 8),
-                      _placeholder(14, 120),
-                      const SizedBox(height: 16),
-                      Container(
-                        height: 1,
-                        color: highlightColor.withOpacity(0.5),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(child: _placeholder(14)),
-                          const SizedBox(width: 16),
-                          Expanded(child: _placeholder(14)),
-                        ],
-                      ),
-                    ],
-                  ),
+            child: ClipRect(
+              child: useCompactLayout
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _placeholder((innerHeight * 0.35).clamp(8.0, 20.0), 120),
+                        SizedBox(height: (innerHeight * 0.2).clamp(4.0, 10.0)),
+                        _placeholder((innerHeight * 0.35).clamp(8.0, 20.0), 80),
+                      ],
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _placeholder(18, 160),
+                        const SizedBox(height: 8),
+                        _placeholder(14, 120),
+                        const SizedBox(height: 16),
+                        Container(
+                          height: 1,
+                          color: highlightColor.withOpacity(0.5),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(child: _placeholder(14)),
+                            const SizedBox(width: 16),
+                            Expanded(child: _placeholder(14)),
+                          ],
+                        ),
+                      ],
+                    ),
+            ),
           ),
         );
       },
