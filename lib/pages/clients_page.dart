@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/booking_model.dart';
+import '../models/user_model.dart';
 import '../services/auth_provider.dart';
 import '../services/hotel_provider.dart';
 import '../services/firebase_service.dart';
@@ -17,12 +18,16 @@ class ClientsPage extends StatefulWidget {
 }
 
 class _ClientsPageState extends State<ClientsPage> {
+  List<UserModel> _allClients = [];
   List<BookingModel> _allBookings = [];
   List<_ClientData> _clients = [];
   List<_ClientData> _filteredClients = [];
   bool _loading = true;
   String? _error;
   String _searchQuery = '';
+  String? _subscribedUserId;
+  String? _subscribedHotelId;
+  dynamic _clientsSubscription;
   dynamic _bookingsSubscription;
 
   @override
@@ -31,21 +36,23 @@ class _ClientsPageState extends State<ClientsPage> {
     final userId = AuthScopeData.of(context).uid;
     final hotelId = HotelProvider.of(context).hotelId;
     if (userId == null || hotelId == null) return;
+    // Re-subscribe only when hotel or user changes.
+    if (userId == _subscribedUserId && hotelId == _subscribedHotelId) return;
+    _subscribedUserId = userId;
+    _subscribedHotelId = hotelId;
+    _clientsSubscription?.cancel();
     _bookingsSubscription?.cancel();
     final checkInAfter = DateTime.now().subtract(const Duration(days: 730));
     setState(() {
       _loading = true;
       _error = null;
     });
-    _bookingsSubscription = FirebaseService()
-        .bookingsStream(userId, hotelId, checkInOnOrAfter: checkInAfter)
-        .listen(
-      (snapshot) {
-        final bookings = snapshot.docs
-            .map((doc) => BookingModel.fromFirestore(doc.data(), doc.id))
-            .toList();
+    final svc = FirebaseService();
+    // Subscribe to clients (source of truth for guest records).
+    _clientsSubscription = svc.clientsStream(userId, hotelId).listen(
+      (clients) {
         if (!mounted) return;
-        _allBookings = bookings;
+        _allClients = clients;
         _buildClientsList();
         setState(() {
           _loading = false;
@@ -60,55 +67,81 @@ class _ClientsPageState extends State<ClientsPage> {
         });
       },
     );
+    // Subscribe to bookings to compute per-client stats.
+    _bookingsSubscription = svc
+        .bookingsStream(userId, hotelId, checkInOnOrAfter: checkInAfter)
+        .listen(
+      (snapshot) {
+        if (!mounted) return;
+        _allBookings = snapshot.docs
+            .map((doc) => BookingModel.fromFirestore(doc.data(), doc.id))
+            .toList();
+        _buildClientsList();
+        setState(() {
+          _loading = false;
+          _error = null;
+        });
+      },
+      onError: (e) {
+        if (!mounted) return;
+        setState(() {
+          _loading = false;
+          _error = 'Failed to load bookings: $e';
+        });
+      },
+    );
   }
 
   @override
   void dispose() {
+    _clientsSubscription?.cancel();
     _bookingsSubscription?.cancel();
     super.dispose();
   }
 
   Future<void> _loadData() async {
-    // Trigger refresh by re-subscribing
+    // Force a re-subscribe by clearing the cache.
+    _subscribedUserId = null;
+    _subscribedHotelId = null;
     didChangeDependencies();
   }
 
   void _buildClientsList() {
-    // Group bookings by client (using phone as unique identifier)
-    final Map<String, List<BookingModel>> clientBookings = {};
-    
+    // Index bookings by client ID (booking.userId = client document ID).
+    final Map<String, List<BookingModel>> bookingsByClientId = {};
     for (final booking in _allBookings) {
-      final key = booking.userPhone;
-      if (!clientBookings.containsKey(key)) {
-        clientBookings[key] = [];
-      }
-      clientBookings[key]!.add(booking);
+      bookingsByClientId.putIfAbsent(booking.userId, () => []).add(booking);
     }
 
-    // Build client data
-    _clients = clientBookings.entries.map((entry) {
-      final bookings = entry.value;
-      bookings.sort((a, b) => b.checkIn.compareTo(a.checkIn)); // Most recent first
-      final totalSpent = bookings.fold<int>(
-        0,
-        (sum, b) => sum + b.amountOfMoneyPaid,
+    // Build client data from the clients collection (source of truth).
+    _clients = _allClients.map((client) {
+      final bookings = List<BookingModel>.from(
+        bookingsByClientId[client.id] ?? [],
       );
-      final totalBookings = bookings.length;
-      final lastBooking = bookings.first;
-
+      bookings.sort((a, b) => b.checkIn.compareTo(a.checkIn));
+      final totalSpent =
+          bookings.fold<int>(0, (sum, b) => sum + b.amountOfMoneyPaid);
       return _ClientData(
-        name: lastBooking.userName,
-        phone: lastBooking.userPhone,
-        email: lastBooking.userEmail ?? '',
-        totalBookings: totalBookings,
+        clientId: client.id,
+        name: client.name,
+        phone: client.phone,
+        email: client.email ?? '',
+        totalBookings: bookings.length,
         totalSpent: totalSpent,
-        lastCheckIn: lastBooking.checkIn,
+        lastCheckIn: bookings.isNotEmpty ? bookings.first.checkIn : null,
         bookings: bookings,
       );
     }).toList();
 
-    // Sort by last check-in (most recent first)
-    _clients.sort((a, b) => b.lastCheckIn.compareTo(a.lastCheckIn));
+    // Sort: clients with bookings first (most recent), then by name.
+    _clients.sort((a, b) {
+      if (a.lastCheckIn != null && b.lastCheckIn != null) {
+        return b.lastCheckIn!.compareTo(a.lastCheckIn!);
+      }
+      if (a.lastCheckIn != null) return -1;
+      if (b.lastCheckIn != null) return 1;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
     _applySearch();
   }
 
@@ -238,7 +271,7 @@ class _ClientsPageState extends State<ClientsPage> {
                                   ? 'No clients yet'
                                   : 'No clients found',
                               subtitle: _searchQuery.isEmpty
-                                  ? 'Add your first booking to see clients here'
+                                  ? 'Clients are created when you add a booking'
                                   : 'Try a different search',
                             )
                           : RefreshIndicator(
@@ -427,15 +460,18 @@ class _ClientsPageState extends State<ClientsPage> {
 }
 
 class _ClientData {
+  final String? clientId;
   final String name;
   final String phone;
   final String email;
   final int totalBookings;
   final int totalSpent;
-  final DateTime lastCheckIn;
+  /// Null when the client has no bookings in the loaded window.
+  final DateTime? lastCheckIn;
   final List<BookingModel> bookings;
 
   _ClientData({
+    this.clientId,
     required this.name,
     required this.phone,
     required this.email,

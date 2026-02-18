@@ -24,6 +24,8 @@ class _DashboardPageState extends State<DashboardPage> {
   bool _loading = true;
   String? _error;
   dynamic _bookingsSubscription;
+  String? _subscribedUserId;
+  String? _subscribedHotelId;
 
   @override
   void didChangeDependencies() {
@@ -31,6 +33,10 @@ class _DashboardPageState extends State<DashboardPage> {
     final hotelId = HotelProvider.of(context).hotelId;
     final userId = AuthScopeData.of(context).uid;
     if (hotelId == null || userId == null) return;
+    // Re-subscribe only when hotel or user changes.
+    if (userId == _subscribedUserId && hotelId == _subscribedHotelId) return;
+    _subscribedUserId = userId;
+    _subscribedHotelId = hotelId;
     _bookingsSubscription?.cancel();
     final checkInAfter = DateTime.now().subtract(const Duration(days: 120));
     setState(() {
@@ -71,7 +77,9 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _loadBookings(String userId, String hotelId) async {
-    // Trigger a refresh by re-subscribing (stream will emit current data)
+    // Force a re-subscribe by clearing the cached IDs.
+    _subscribedUserId = null;
+    _subscribedHotelId = null;
     didChangeDependencies();
   }
 

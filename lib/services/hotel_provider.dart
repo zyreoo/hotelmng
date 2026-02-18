@@ -81,7 +81,8 @@ class _HotelProviderState extends State<HotelProvider> {
     }
   }
 
-  Future<HotelModel> createHotel(String name, {String? ownerId}) async {
+  Future<HotelModel> createHotel(String name,
+      {String? ownerId, bool setAsCurrent = true}) async {
     final uid = ownerId ?? AuthScopeData.of(context).uid ?? defaultOwnerId;
     final ref = await FirebaseFirestore.instance
         .collection('users')
@@ -99,7 +100,7 @@ class _HotelProviderState extends State<HotelProvider> {
       doc.data() as Map<String, dynamic>,
       doc.id,
     );
-    await setCurrentHotel(hotel);
+    if (setAsCurrent) await setCurrentHotel(hotel);
     return hotel;
   }
 
@@ -138,7 +139,8 @@ class _HotelProviderState extends State<HotelProvider> {
 class HotelScopeData extends InheritedWidget {
   final HotelModel? currentHotel;
   final Future<void> Function(HotelModel?) setCurrentHotel;
-  final Future<HotelModel> Function(String name, {String? ownerId}) createHotel;
+  final Future<HotelModel> Function(String name,
+      {String? ownerId, bool setAsCurrent}) createHotel;
   final Future<List<HotelModel>> Function({String? ownerId}) getHotelsForOwner;
 
   const HotelScopeData({

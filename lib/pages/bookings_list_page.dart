@@ -26,6 +26,8 @@ class _BookingsListPageState extends State<BookingsListPage> {
   bool _loading = true;
   String? _error;
   dynamic _bookingsSubscription;
+  String? _subscribedUserId;
+  String? _subscribedHotelId;
   
   String _selectedStatus = 'All';
   DateTime? _filterStartDate;
@@ -50,6 +52,10 @@ class _BookingsListPageState extends State<BookingsListPage> {
     final hotelId = HotelProvider.of(context).hotelId;
     final userId = AuthScopeData.of(context).uid;
     if (hotelId == null || userId == null) return;
+    // Re-subscribe only when hotel or user changes.
+    if (userId == _subscribedUserId && hotelId == _subscribedHotelId) return;
+    _subscribedUserId = userId;
+    _subscribedHotelId = hotelId;
     _bookingsSubscription?.cancel();
     final checkInAfter = DateTime.now().subtract(const Duration(days: 365));
     setState(() {
@@ -94,7 +100,9 @@ class _BookingsListPageState extends State<BookingsListPage> {
   }
 
   Future<void> _loadBookings(String userId, String hotelId) async {
-    // Re-subscribe to get latest data (e.g. pull-to-refresh)
+    // Force a re-subscribe by clearing the cached IDs.
+    _subscribedUserId = null;
+    _subscribedHotelId = null;
     didChangeDependencies();
   }
 

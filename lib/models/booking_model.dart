@@ -10,7 +10,11 @@ class BookingModel {
   final DateTime checkOut;
   final int numberOfRooms;
   final bool nextToEachOther;
-  final List<String>? selectedRooms; // Room numbers if specific rooms selected
+  /// Room names stored at booking time (legacy + backward compat display).
+  final List<String>? selectedRooms;
+  /// Room document IDs — use these to resolve current room names so renaming
+  /// a room is reflected in old bookings too.
+  final List<String>? selectedRoomIds;
   final int numberOfGuests;
   final String status; // Confirmed, Pending, Cancelled, Paid, Unpaid
   final String? notes;
@@ -63,6 +67,7 @@ class BookingModel {
     required this.numberOfRooms,
     this.nextToEachOther = false,
     this.selectedRooms,
+    this.selectedRoomIds,
     required this.numberOfGuests,
     required this.status,
     this.notes,
@@ -122,6 +127,19 @@ class BookingModel {
   int get remainingBalance =>
       (calculatedTotal - advanceAmountPaid).clamp(0, calculatedTotal);
 
+  /// Returns room names resolved via current [roomIdToName] map when IDs are
+  /// stored, falling back to the legacy stored names for older bookings.
+  List<String> resolvedSelectedRooms(Map<String, String> roomIdToName) {
+    if (selectedRoomIds != null && selectedRoomIds!.isNotEmpty) {
+      final resolved = selectedRoomIds!
+          .map((id) => roomIdToName[id] ?? '')
+          .where((name) => name.isNotEmpty)
+          .toList();
+      if (resolved.isNotEmpty) return resolved;
+    }
+    return selectedRooms ?? [];
+  }
+
   // Convert to Firestore document
   Map<String, dynamic> toFirestore() {
     return {
@@ -134,6 +152,7 @@ class BookingModel {
       'numberOfRooms': numberOfRooms,
       'nextToEachOther': nextToEachOther,
       'selectedRooms': selectedRooms,
+      if (selectedRoomIds != null) 'selectedRoomIds': selectedRoomIds,
       'numberOfGuests': numberOfGuests,
       'status': status,
       'notes': notes,
@@ -169,6 +188,9 @@ class BookingModel {
       nextToEachOther: data['nextToEachOther'] ?? false,
       selectedRooms: data['selectedRooms'] != null
           ? List<String>.from(data['selectedRooms'])
+          : null,
+      selectedRoomIds: data['selectedRoomIds'] != null
+          ? List<String>.from(data['selectedRoomIds'])
           : null,
       numberOfGuests: data['numberOfGuests'] ?? 1,
       status: data['status'] ?? 'Confirmed',
@@ -222,6 +244,7 @@ class BookingModel {
     int? numberOfRooms,
     bool? nextToEachOther,
     List<String>? selectedRooms,
+    List<String>? selectedRoomIds,
     int? numberOfGuests,
     String? status,
     String? notes,
@@ -250,6 +273,7 @@ class BookingModel {
       numberOfRooms: numberOfRooms ?? this.numberOfRooms,
       nextToEachOther: nextToEachOther ?? this.nextToEachOther,
       selectedRooms: selectedRooms ?? this.selectedRooms,
+      selectedRoomIds: selectedRoomIds ?? this.selectedRoomIds,
       numberOfGuests: numberOfGuests ?? this.numberOfGuests,
       status: status ?? this.status,
       notes: notes ?? this.notes,

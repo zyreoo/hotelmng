@@ -10,8 +10,16 @@ import '../widgets/stayora_logo.dart';
 class AddEmployeePage extends StatefulWidget {
   /// When provided, the form is in edit mode for this employee.
   final EmployerModel? employee;
+  /// When provided (e.g. during hotel setup wizard), use these instead of HotelProvider/AuthScopeData.
+  final String? overrideHotelId;
+  final String? overrideUserId;
 
-  const AddEmployeePage({super.key, this.employee});
+  const AddEmployeePage({
+    super.key,
+    this.employee,
+    this.overrideHotelId,
+    this.overrideUserId,
+  });
 
   @override
   State<AddEmployeePage> createState() => _AddEmployeePageState();
@@ -67,11 +75,16 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
 
   bool get _isEditMode => widget.employee != null;
 
+  String? get _hotelId =>
+      widget.overrideHotelId ?? HotelProvider.of(context).hotelId;
+  String? get _userId =>
+      widget.overrideUserId ?? AuthScopeData.of(context).uid;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final hotelId = HotelProvider.of(context).hotelId;
-    final userId = AuthScopeData.of(context).uid;
+    final hotelId = _hotelId;
+    final userId = _userId;
     if (hotelId != null && userId != null) {
       _loadRolesAndDepartments(userId, hotelId);
     }
@@ -213,8 +226,8 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
           status: _status,
           updatedAt: DateTime.now(),
         );
-        final hotelId = HotelProvider.of(context).hotelId;
-        final userId = AuthScopeData.of(context).uid;
+        final hotelId = _hotelId;
+        final userId = _userId;
         if (hotelId == null || userId == null) return;
         await _firebaseService.updateEmployer(userId, hotelId, employer);
         if (_role == 'Other' && roleValue.isNotEmpty) {
@@ -242,8 +255,8 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
           department: departmentFinal,
           status: _status,
         );
-        final hotelId = HotelProvider.of(context).hotelId;
-        final userId = AuthScopeData.of(context).uid;
+        final hotelId = _hotelId;
+        final userId = _userId;
         if (hotelId == null || userId == null) return;
         await _firebaseService.createEmployer(userId, hotelId, employer);
         if (_role == 'Other' && roleValue.isNotEmpty) {
@@ -252,7 +265,6 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
         if (_department == 'Other' && departmentValue.isNotEmpty) {
           await _firebaseService.addDepartment(userId, hotelId, departmentValue);
         }
-        if (mounted) Navigator.pop(context);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(

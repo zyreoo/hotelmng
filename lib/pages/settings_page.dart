@@ -588,23 +588,28 @@ class _SettingsPageState extends State<SettingsPage> {
                           currency['code'] == hotel?.currencyCode;
                       return ListTile(
                         leading: Container(
-                          width: 40,
-                          height: 40,
+                          width: 52,
+                          height: 48,
+                          alignment: Alignment.center,
                           decoration: BoxDecoration(
                             color: isSelected
                                 ? StayoraLogo.stayoraBlue.withOpacity(0.1)
                                 : colorScheme.surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Center(
-                            child: Text(
-                              currency['symbol']!,
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: isSelected
-                                    ? StayoraLogo.stayoraBlue
-                                    : colorScheme.onSurfaceVariant,
+                          child: FittedBox(
+                            fit: BoxFit.contain,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                              child: Text(
+                                currency['symbol']!,
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: isSelected
+                                      ? StayoraLogo.stayoraBlue
+                                      : colorScheme.onSurfaceVariant,
+                                ),
                               ),
                             ),
                           ),

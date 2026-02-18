@@ -46,6 +46,7 @@ class _CalendarPageState extends State<CalendarPage> {
   static const int _maxDaysLoaded = 180;
   bool _isLoadingMore = false;
   final List<DateTime> _cachedDates = [];
+  double _lastScrollOffset = 0.0;
 
 
   // Real-time Firestore synchronization
@@ -61,6 +62,8 @@ class _CalendarPageState extends State<CalendarPage> {
   List<String> _roomNames = [];
   /// Full room models keyed by room name — used for housekeeping dots.
   Map<String, RoomModel> _roomModelsMap = {};
+  /// Room ID → current name, used to resolve selectedRoomIds in bookings.
+  Map<String, String> _roomIdToNameMap = {};
   final FirebaseService _firebaseService = FirebaseService();
   bool _roomNamesLoaded = false;
 
@@ -148,6 +151,10 @@ class _CalendarPageState extends State<CalendarPage> {
         setState(() {
           _roomNames = list.map((r) => r.name).toList();
           _roomModelsMap = {for (final r in list) r.name: r};
+          _roomIdToNameMap = {
+            for (final r in list)
+              if (r.id != null) r.id!: r.name,
+          };
           _roomNamesLoaded = true;
         });
         _subscribeToBookings();
@@ -170,6 +177,11 @@ class _CalendarPageState extends State<CalendarPage> {
       _loadRooms();
     }
   }
+
+  /// Returns the current room names for a booking, resolving via document IDs
+  /// when available so renaming a room is reflected in old bookings.
+  List<String> _resolveRooms(BookingModel booking) =>
+      booking.resolvedSelectedRooms(_roomIdToNameMap);
 
   @override
   void initState() {
@@ -230,10 +242,13 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   void _onVerticalScroll() {
-    // If scrolled near the top (within 200px), load more dates
-    if (_verticalScrollController.offset < 200 &&
-        _verticalScrollController.hasClients &&
-        !_isLoadingMore) {
+    if (!_verticalScrollController.hasClients || _isLoadingMore) return;
+    final currentOffset = _verticalScrollController.offset;
+    final isScrollingUp = currentOffset < _lastScrollOffset;
+    _lastScrollOffset = currentOffset;
+    // Only load more past dates when the user is actively scrolling UP
+    // and reaches near the top — not on downward scroll or initial render.
+    if (isScrollingUp && currentOffset < 200) {
       _loadMoreDatesUp();
     }
   }
@@ -327,7 +342,7 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   Future<void> _showDateSearchDialog() async {
-    final initial = _lastSearchedDate ?? _earliestDate;
+    final initial = _lastSearchedDate ?? DateTime.now();
     DateTime date = initial;
 
     if (!mounted) return;
@@ -888,14 +903,28 @@ class _CalendarPageState extends State<CalendarPage> {
     return true;
   }
 
+  DateTime? _cachedEarliestDate;
+  int? _cachedTotalDays;
+
   List<DateTime> get _dates {
-    return List.generate(_totalDaysLoaded, (index) {
-      return DateTime(
+    if (_cachedDates.isEmpty ||
+        _cachedEarliestDate != _earliestDate ||
+        _cachedTotalDays != _totalDaysLoaded) {
+      _cachedEarliestDate = _earliestDate;
+      _cachedTotalDays = _totalDaysLoaded;
+      final base = DateTime(
         _earliestDate.year,
         _earliestDate.month,
         _earliestDate.day,
-      ).add(Duration(days: index));
-    });
+      );
+      _cachedDates
+        ..clear()
+        ..addAll(List.generate(
+          _totalDaysLoaded,
+          (index) => base.add(Duration(days: index)),
+        ));
+    }
+    return _cachedDates;
   }
 
   Map<String, dynamic>? _getCellFromPosition(Offset position) {
@@ -1049,8 +1078,8 @@ class _CalendarPageState extends State<CalendarPage> {
         continue;
       }
 
-      final rooms = bookingModel.selectedRooms;
-      if (rooms == null || rooms.isEmpty) continue;
+      final rooms = _resolveRooms(bookingModel);
+      if (rooms.isEmpty) continue;
 
       final docId = change.doc.id;
 
@@ -1262,6 +1291,7 @@ class _CalendarPageState extends State<CalendarPage> {
                           final booking = bookingsForDay[index];
                           return _DayViewBookingCard(
                             booking: booking,
+                            roomIdToName: _roomIdToNameMap,
                             onTap: () {
                               Navigator.pop(context);
                               Navigator.of(context, rootNavigator: false).push(
@@ -1331,7 +1361,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                   child: Text(
                                     DateFormat(
                                       'MMM d, yyyy',
-                                    ).format(_lastSearchedDate ?? _earliestDate),
+                                    ).format(_lastSearchedDate ?? DateTime.now()),
                                     style: Theme.of(context).textTheme.bodyLarge
                                         ?.copyWith(color: Theme.of(context).colorScheme.onSurface),
                                     overflow: TextOverflow.ellipsis,
@@ -2175,6 +2205,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 currencyFormatter: currencyFormatterById,
                 buildDetailRow: _buildDetailRow,
                 buildStatusRowWithStatus: _buildStatusRowWithStatus,
+                roomIdToName: _roomIdToNameMap,
                 onSave: (updated) async {
                   await _updateBooking(userId, hotelId, updated);
                   if (dialogContext.mounted) {
@@ -2216,15 +2247,16 @@ class _CalendarPageState extends State<CalendarPage> {
                   Navigator.pop(dialogContext);
                   nestedNavigator.push(
                     MaterialPageRoute(
-                      builder: (context) => AddBookingPage(
-                        existingBooking: fullBooking,
-                        preselectedRoom: (fullBooking.selectedRooms?.isNotEmpty == true)
-                          ? fullBooking.selectedRooms!.first
-                          : '—',
-                        preselectedStartDate: fullBooking.checkIn,
-                        preselectedEndDate: fullBooking.checkOut,
-                        preselectedNumberOfRooms: fullBooking.numberOfRooms,
-                      ),
+                        builder: (context) {
+                          final resolved = fullBooking.resolvedSelectedRooms(_roomIdToNameMap);
+                          return AddBookingPage(
+                            existingBooking: fullBooking,
+                            preselectedRoom: resolved.isNotEmpty ? resolved.first : '—',
+                            preselectedStartDate: fullBooking.checkIn,
+                            preselectedEndDate: fullBooking.checkOut,
+                            preselectedNumberOfRooms: fullBooking.numberOfRooms,
+                          );
+                        },
                     ),
                   ).then((bookingCreated) {
                     if (bookingCreated == true) {
@@ -2732,6 +2764,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 currencyFormatter: currencyFormatter,
                 buildDetailRow: _buildDetailRow,
                 buildStatusRowWithStatus: _buildStatusRowWithStatus,
+                roomIdToName: _roomIdToNameMap,
                 onSave: (updated) async {
                   await _updateBooking(userId, hotelId, updated);
                   if (dialogContext.mounted) {
@@ -3091,6 +3124,8 @@ class _BookingDetailsForm extends StatefulWidget {
   final Future<void> Function() onDelete;
   final VoidCallback onEditFull;
   final VoidCallback onClose;
+  /// Passed from the calendar state so room names are always current.
+  final Map<String, String> roomIdToName;
 
   const _BookingDetailsForm({
     super.key,
@@ -3108,6 +3143,7 @@ class _BookingDetailsForm extends StatefulWidget {
     required this.onDelete,
     required this.onEditFull,
     required this.onClose,
+    this.roomIdToName = const {},
   });
 
   @override
@@ -3436,12 +3472,14 @@ class _BookingDetailsFormState extends State<_BookingDetailsForm> {
                 const SizedBox(height: 12),
                 widget.buildDetailRow(
                   Icons.hotel_rounded,
-                  b.selectedRooms != null && b.selectedRooms!.length > 1
-                      ? 'Rooms'
-                      : 'Room',
-                  b.selectedRooms != null && b.selectedRooms!.isNotEmpty
-                      ? b.selectedRooms!.join(', ')
-                      : widget.room,
+                  () {
+                    final resolved = b.resolvedSelectedRooms(widget.roomIdToName);
+                    return resolved.length > 1 ? 'Rooms' : 'Room';
+                  }(),
+                  () {
+                    final resolved = b.resolvedSelectedRooms(widget.roomIdToName);
+                    return resolved.isNotEmpty ? resolved.join(', ') : widget.room;
+                  }(),
                 ),
                 const SizedBox(height: 12),
                 widget.buildDetailRow(
@@ -4234,10 +4272,12 @@ class _LegendItem extends StatelessWidget {
 class _DayViewBookingCard extends StatelessWidget {
   final BookingModel booking;
   final VoidCallback onTap;
+  final Map<String, String> roomIdToName;
 
   const _DayViewBookingCard({
     required this.booking,
     required this.onTap,
+    this.roomIdToName = const {},
   });
 
   Color _getStatusColor(BuildContext context, String status) {
@@ -4351,30 +4391,37 @@ class _DayViewBookingCard extends StatelessWidget {
                   ),
                 ],
               ),
-              if (booking.selectedRooms?.isNotEmpty == true) ...[
-                const SizedBox(height: 8),
-                Row(
+              Builder(builder: (context) {
+                final rooms = booking.resolvedSelectedRooms(roomIdToName);
+                if (rooms.isEmpty) return const SizedBox.shrink();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      Icons.bed_rounded,
-                      size: 16,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        booking.selectedRooms!.join(', '),
-                        style: TextStyle(
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.bed_rounded,
+                          size: 16,
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          fontSize: 14,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            rooms.join(', '),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              fontSize: 14,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
-                ),
-              ],
+                );
+              }),
             ],
           ),
         ),

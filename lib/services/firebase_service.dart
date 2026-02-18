@@ -364,6 +364,26 @@ class FirebaseService {
     return q.orderBy('checkIn').snapshots();
   }
 
+  /// Real-time stream of all clients for a hotel.
+  Stream<List<UserModel>> clientsStream(String userId, String hotelId) {
+    if (!isInitialized) return Stream.value([]);
+    return _usersRef(userId, hotelId).snapshots().map(
+          (snapshot) => snapshot.docs
+              .map((doc) => UserModel.fromFirestore(doc.data(), doc.id))
+              .toList(),
+        );
+  }
+
+  /// Updates an existing client document.
+  Future<void> updateClient(
+    String userId,
+    String hotelId,
+    UserModel client,
+  ) async {
+    if (!isInitialized || client.id == null) return;
+    await _usersRef(userId, hotelId).doc(client.id!).update(client.toFirestore());
+  }
+
   /// Real-time stream of bookings with check-in on or after [checkInOnOrAfter].
   /// Uses a single inequality so no composite index is needed. Keeps the result
   /// set small so add/update/delete stays fast.
@@ -384,6 +404,17 @@ class FirebaseService {
   }
 
   // ─── Employer operations ─────────────────────────────────────────────────
+  Future<List<EmployerModel>> getEmployers(
+    String userId,
+    String hotelId,
+  ) async {
+    if (!isInitialized) return [];
+    final snapshot = await _employersRef(userId, hotelId).limit(500).get();
+    return snapshot.docs
+        .map((d) => EmployerModel.fromFirestore(d.data(), d.id))
+        .toList();
+  }
+
   Future<List<EmployerModel>> searchEmployers(
     String userId,
     String hotelId,

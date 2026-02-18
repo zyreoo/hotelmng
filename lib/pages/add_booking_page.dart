@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/user_model.dart';
 import '../models/booking_model.dart';
+import '../models/room_model.dart';
 import '../models/service_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
@@ -73,6 +74,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
 
   // Rooms loaded from Firestore (hotel-specific)
   List<String> _roomNames = [];
+  List<RoomModel> _roomModels = [];
   List<int>? _pendingPreselectedRoomIndexes;
 
   @override
@@ -201,8 +203,15 @@ class _AddBookingPageState extends State<AddBookingPage> {
         }
       }
     }
-    setState(() => _roomNames = names);
+    setState(() {
+      _roomNames = names;
+      _roomModels = list;
+    });
   }
+
+  /// Build a map from room name to room ID for the current hotel's rooms.
+  Map<String, String> get _roomNameToId =>
+      {for (final r in _roomModels) if (r.id != null) r.name: r.id!};
 
   /// Finds N available rooms for [checkIn, checkOut). Returns room names to assign, or null if not enough space.
   /// When [roomsNextToEachOther] is true, returns the first contiguous block of N rooms in _roomNames order.
@@ -686,6 +695,11 @@ class _AddBookingPageState extends State<AddBookingPage> {
         // Step 3: Build booking with user information (use 'Waiting list' when over capacity)
         final statusToSave = overCapacity ? 'Waiting list' : _bookingStatus;
         final amountPaid = CurrencyFormatter.parseMoneyStringToCents(_amountPaidController.text.trim());
+        final nameToId = _roomNameToId;
+        final selectedRoomIds = selectedRoomNumbers
+            ?.map((name) => nameToId[name])
+            .whereType<String>()
+            .toList();
         final booking = BookingModel(
           id: widget.existingBooking?.id,
           userId: userId,
@@ -697,6 +711,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
           numberOfRooms: _numberOfRooms,
           nextToEachOther: _numberOfRooms >= 2 ? _roomsNextToEachOther : false,
           selectedRooms: selectedRoomNumbers,
+          selectedRoomIds: selectedRoomIds?.isNotEmpty == true ? selectedRoomIds : null,
           numberOfGuests: _numberOfGuests,
           status: statusToSave,
           notes: _notesController.text.isEmpty ? null : _notesController.text,
