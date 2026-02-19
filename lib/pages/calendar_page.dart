@@ -1,16 +1,22 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' show DocumentSnapshot, DocumentChangeType, DocumentChange, QuerySnapshot;
 import '../models/booking_model.dart';
+import '../models/calendar_booking.dart';
 import '../models/room_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
 import '../utils/stayora_colors.dart';
 import '../utils/currency_formatter.dart';
-import '../utils/money_input_formatter.dart';
+import '../utils/gap_detector.dart';
+import '../utils/optimization_suggestions.dart';
+import '../features/calendar/widgets/booking_details_form.dart';
+import '../features/calendar/widgets/calendar_day_view_card.dart';
+import '../widgets/common/legend_item.dart';
 import '../widgets/loading_empty_states.dart';
 import '../widgets/stayora_logo.dart';
 import 'add_booking_page.dart';
@@ -76,7 +82,7 @@ class _CalendarPageState extends State<CalendarPage> {
 
   // Sample bookings - each booking represents a night stay
   // Key: DateTime (the night), Value: Map of room -> booking info
-  final Map<DateTime, Map<String, Booking>> _bookings = {};
+  final Map<DateTime, Map<String, CalendarBooking>> _bookings = {};
 
   /// Full booking models by document ID. One entry per Firestore document.
   /// Used to resolve the full booking when editing any cell of a multi-room stay.
@@ -98,14 +104,7 @@ class _CalendarPageState extends State<CalendarPage> {
   String? _skeletonRoom;
   DateTime? _skeletonDate;
 
-  static const List<String> statusOptions = [
-    'Confirmed',
-    'Pending',
-    'Cancelled',
-    'Paid',
-    'Unpaid',
-    'Waiting list',
-  ];
+  static List<String> get statusOptions => BookingModel.statusOptions;
 
   static Color _statusColor(String status) => StayoraColors.forStatus(status);
 
@@ -121,8 +120,7 @@ class _CalendarPageState extends State<CalendarPage> {
     }
   }
 
-  int amountOfMoneyPaid = 0;
-  List<String> paymentMethods = ['Cash', 'Card', 'Bank Transfer', 'Other'];
+  List<String> get paymentMethods => BookingModel.paymentMethods;
   bool _isSelecting = false;
   List<int> _preselectedRoomsIndex = [];
   final GlobalKey _gridKey = GlobalKey();
@@ -182,6 +180,249 @@ class _CalendarPageState extends State<CalendarPage> {
   /// when available so renaming a room is reflected in old bookings.
   List<String> _resolveRooms(BookingModel booking) =>
       booking.resolvedSelectedRooms(_roomIdToNameMap);
+
+  /// Bookings that occupy a room (excludes Cancelled and Waiting list).
+  List<BookingModel> get _occupancyBookings =>
+      _bookingModelsById.values
+          .where((b) =>
+              b.status != 'Cancelled' && b.status != 'Waiting list')
+          .toList();
+
+  /// Gap inputs for optimization suggestions (one entry per room per booking).
+  List<GapBookingInput> get _gapBookingInputsCalendar {
+    final list = <GapBookingInput>[];
+    for (final b in _occupancyBookings) {
+      final roomIds = b.selectedRoomIds ?? b.selectedRooms ?? [];
+      for (final roomId in roomIds) {
+        if (roomId.isEmpty) continue;
+        list.add(GapBookingInput(
+          bookingId: b.id ?? '',
+          roomId: roomId,
+          checkInUtc: b.checkIn,
+          checkOutUtc: b.checkOut,
+        ));
+      }
+    }
+    return list;
+  }
+
+  List<OptimizationSuggestion> get _calendarOptimizationSuggestions =>
+      generateOptimizationSuggestions(
+        _gapBookingInputsCalendar,
+        windowStart: DateTime.now(),
+        windowDays: 30,
+        nowUtc: () => DateTime.now().toUtc(),
+      );
+
+  static String _suggestionMessageWithRoomName(
+    OptimizationSuggestion s,
+    Map<String, String> map,
+  ) {
+    if (s.roomId == null) return s.message;
+    final name = map[s.roomId!] ?? s.roomId!;
+    return s.message.replaceFirst('Room ${s.roomId}', 'Room $name');
+  }
+
+  void _showSuggestionsBottomSheet() {
+    final suggestions = _calendarOptimizationSuggestions;
+    if (suggestions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No optimization suggestions right now.'),
+        ),
+      );
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.25,
+        maxChildSize: 0.9,
+        builder: (context, scrollController) {
+          return Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 12),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      Icon(Icons.lightbulb_outline_rounded, color: StayoraColors.warning, size: 24),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Suggestions',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Flexible(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                    itemCount: suggestions.length,
+                    itemBuilder: (context, index) {
+                      final s = suggestions[index];
+                      final roomName = s.roomId != null
+                          ? (_roomIdToNameMap[s.roomId!] ?? s.roomId!)
+                          : null;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Card(
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(
+                              color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _suggestionMessageWithRoomName(s, _roomIdToNameMap),
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Theme.of(context).colorScheme.onSurface,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Impact: ${s.impactScore}/10',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                if (s.type == SuggestionType.shortGap &&
+                                    s.roomId != null &&
+                                    roomName != null) ...[
+                                  const SizedBox(height: 10),
+                                  TextButton.icon(
+                                    onPressed: () {
+                                      Navigator.pop(ctx);
+                                      _showFillGapSuggestion(s.roomId!, roomName);
+                                    },
+                                    icon: const Icon(Icons.auto_fix_high_rounded, size: 18),
+                                    label: const Text('Suggest fill'),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: StayoraLogo.stayoraBlue,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _showFillGapSuggestion(String roomId, String roomName) async {
+    final gapInputs = _gapBookingInputsCalendar;
+    final gaps = detectGaps(gapInputs).where((g) => g.roomId == roomId).toList();
+    if (gaps.isEmpty) return;
+    final gap = gaps.first;
+    final nextBooking = _bookingModelsById[gap.nextBookingId];
+    if (nextBooking == null) return;
+    final nights = nextBooking.checkOut.difference(nextBooking.checkIn).inDays;
+    final newCheckIn = gap.gapStart;
+    final newCheckOut = newCheckIn.add(Duration(days: nights));
+    final dateFormat = DateFormat('MMM d, yyyy');
+    final oldRange = '${dateFormat.format(nextBooking.checkIn)} – ${dateFormat.format(nextBooking.checkOut)}';
+    final newRange = '${dateFormat.format(newCheckIn)} – ${dateFormat.format(newCheckOut)}';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm change'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'To fill the gap in $roomName:',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Move ${nextBooking.userName}\'s booking from $oldRange to $newRange.',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Do you want to apply this change?',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm changes'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+    final userId = AuthScopeData.of(context).uid;
+    final hotelId = HotelProvider.of(context).hotelId;
+    if (userId == null || hotelId == null) return;
+    final updated = nextBooking.copyWith(checkIn: newCheckIn, checkOut: newCheckOut);
+    await _updateBooking(userId, hotelId, updated);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Booking for ${nextBooking.userName} updated.'),
+        ),
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -523,7 +764,7 @@ class _CalendarPageState extends State<CalendarPage> {
         startDate.day,
       ).add(Duration(days: i));
       _bookings[nightDate] ??= {};
-      _bookings[nightDate]![room] = Booking(
+      _bookings[nightDate]![room] = CalendarBooking(
         bookingId: '',
         guestName: guestName,
         color: color,
@@ -534,7 +775,7 @@ class _CalendarPageState extends State<CalendarPage> {
     }
   }
 
-  Booking? _getBooking(String room, DateTime date) {
+  CalendarBooking? _getBooking(String room, DateTime date) {
     final nightDate = DateTime(date.year, date.month, date.day);
     return _bookings[nightDate]?[room];
   }
@@ -962,19 +1203,12 @@ class _CalendarPageState extends State<CalendarPage> {
     );
     final rangeEnd = rangeStart.add(Duration(days: _totalDaysLoaded));
 
+    final userId = FirebaseAuth.instance.currentUser?.uid;
     final hotelId = HotelProvider.of(context).hotelId;
-    final userId = AuthScopeData.of(context).uid;
     if (hotelId == null || userId == null) return;
 
-    // Real-time query: users/{userId}/hotels/{hotelId}/bookings
-    _bookingsSubscription = FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .collection('hotels')
-        .doc(hotelId)
-        .collection('bookings')
-        .where('checkOut', isGreaterThan: rangeStart.toIso8601String())
-        .snapshots()
+    _bookingsSubscription = _firebaseService
+        .bookingsStreamForCalendar(userId, hotelId, rangeStart)
         .listen(
           (snapshot) {
             _processBookingChanges(snapshot.docChanges, rangeStart, rangeEnd);
@@ -989,18 +1223,12 @@ class _CalendarPageState extends State<CalendarPage> {
   void _subscribeToWaitingList() {
     _waitingListSubscription?.cancel();
 
+    final userId = FirebaseAuth.instance.currentUser?.uid;
     final hotelId = HotelProvider.of(context).hotelId;
-    final userId = AuthScopeData.of(context).uid;
     if (hotelId == null || userId == null) return;
 
-    _waitingListSubscription = FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .collection('hotels')
-        .doc(hotelId)
-        .collection('bookings')
-        .where('status', isEqualTo: 'Waiting list')
-        .snapshots()
+    _waitingListSubscription = _firebaseService
+        .waitingListBookingsStream(userId, hotelId)
         .listen((snapshot) {
       if (!mounted) return;
       final list = <({String id, BookingModel booking})>[];
@@ -1135,7 +1363,7 @@ class _CalendarPageState extends State<CalendarPage> {
 
           // Add placement
           _bookings[nightDate] ??= {};
-          _bookings[nightDate]![room] = Booking(
+          _bookings[nightDate]![room] = CalendarBooking(
             bookingId: bookingModel.id ?? '',
             guestName: bookingModel.userName,
             color: StayoraColors.calendarColor(bookingModel.status),
@@ -1289,7 +1517,7 @@ class _CalendarPageState extends State<CalendarPage> {
                         itemCount: bookingsForDay.length,
                         itemBuilder: (context, index) {
                           final booking = bookingsForDay[index];
-                          return _DayViewBookingCard(
+                          return CalendarDayViewCard(
                             booking: booking,
                             roomIdToName: _roomIdToNameMap,
                             onTap: () {
@@ -1405,6 +1633,16 @@ class _CalendarPageState extends State<CalendarPage> {
                               'Manage rooms',
                               overflow: TextOverflow.ellipsis,
                             ),
+                            style: TextButton.styleFrom(
+                              foregroundColor: StayoraLogo.stayoraBlue,
+                              backgroundColor: Colors.transparent,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          TextButton.icon(
+                            onPressed: _showSuggestionsBottomSheet,
+                            icon: const Icon(Icons.lightbulb_outline_rounded, size: 20),
+                            label: const Text('Suggestions'),
                             style: TextButton.styleFrom(
                               foregroundColor: StayoraLogo.stayoraBlue,
                               backgroundColor: Colors.transparent,
@@ -1885,27 +2123,27 @@ class _CalendarPageState extends State<CalendarPage> {
                 spacing: 16,
                 runSpacing: 8,
                 children: [
-                  _LegendItem(
+                  LegendItem(
                     color: _statusColor('Confirmed'),
                     label: 'Confirmed',
                   ),
-                  _LegendItem(
+                  LegendItem(
                     color: _statusColor('Pending'),
                     label: 'Pending',
                   ),
-                  _LegendItem(
+                  LegendItem(
                     color: _statusColor('Paid'),
                     label: 'Paid',
                   ),
-                  _LegendItem(
+                  LegendItem(
                     color: _statusColor('Unpaid'),
                     label: 'Unpaid',
                   ),
-                  _LegendItem(
+                  LegendItem(
                     color: _statusColor('Cancelled'),
                     label: 'Cancelled',
                   ),
-                  _LegendItem(
+                  LegendItem(
                     color: _statusColor('Waiting list'),
                     label: 'Waiting list',
                   ),
@@ -2148,14 +2386,7 @@ class _CalendarPageState extends State<CalendarPage> {
             ],
           ),
           child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection('users')
-                .doc(userId)
-                .collection('hotels')
-                .doc(hotelId)
-                .collection('bookings')
-                .doc(bookingId)
-                .snapshots(),
+            stream: _firebaseService.bookingDocStream(userId, hotelId, bookingId),
             builder: (context, snapshot) {
               if (!snapshot.hasData) {
                 return const Padding(
@@ -2193,7 +2424,7 @@ class _CalendarPageState extends State<CalendarPage> {
               final currencyFormatterById = CurrencyFormatter.fromHotel(
                 HotelProvider.of(context).currentHotel,
               );
-              return _BookingDetailsForm(
+              return BookingDetailsForm(
                 key: ValueKey(fullBooking.id),
                 fullBooking: fullBooking,
                 room: '—',
@@ -2434,7 +2665,7 @@ class _CalendarPageState extends State<CalendarPage> {
     );
   }
 
-  Widget _buildRoomCell(String room, DateTime date, Booking? booking) {
+  Widget _buildRoomCell(String room, DateTime date, CalendarBooking? booking) {
     final isSelected = _isCellInSelection(room, date);
 
     return DragTarget<_WaitingListDragPayload>(
@@ -2680,7 +2911,7 @@ class _CalendarPageState extends State<CalendarPage> {
     BuildContext context,
     String room,
     DateTime date,
-    Booking booking,
+    CalendarBooking booking,
   ) {
     final hotelId = HotelProvider.of(context).hotelId;
     final userId = AuthScopeData.of(context).uid;
@@ -2707,14 +2938,7 @@ class _CalendarPageState extends State<CalendarPage> {
             ],
           ),
           child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection('users')
-                .doc(userId)
-                .collection('hotels')
-                .doc(hotelId)
-                .collection('bookings')
-                .doc(bookingId)
-                .snapshots(),
+            stream: _firebaseService.bookingDocStream(userId, hotelId, bookingId),
             builder: (context, snapshot) {
               if (!snapshot.hasData) {
                 return const Padding(
@@ -2752,7 +2976,7 @@ class _CalendarPageState extends State<CalendarPage> {
               final currencyFormatter = CurrencyFormatter.fromHotel(
                 HotelProvider.of(context).currentHotel,
               );
-              return _BookingDetailsForm(
+              return BookingDetailsForm(
                 key: ValueKey(fullBooking.id),
                 fullBooking: fullBooking,
                 room: room,
@@ -3109,1323 +3333,5 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 }
 
-class _BookingDetailsForm extends StatefulWidget {
-  final BookingModel fullBooking;
-  final String room;
-  final DateTime date;
-  final String bookingId;
-  final List<String> statusOptions;
-  final Color Function(String) getStatusColor;
-  final List<String> paymentMethods;
-  final CurrencyFormatter currencyFormatter;
-  final Widget Function(IconData, String, String) buildDetailRow;
-  final Widget Function(String) buildStatusRowWithStatus;
-  final Future<void> Function(BookingModel) onSave;
-  final Future<void> Function() onDelete;
-  final VoidCallback onEditFull;
-  final VoidCallback onClose;
-  /// Passed from the calendar state so room names are always current.
-  final Map<String, String> roomIdToName;
 
-  const _BookingDetailsForm({
-    super.key,
-    required this.fullBooking,
-    required this.room,
-    required this.date,
-    required this.bookingId,
-    required this.statusOptions,
-    required this.getStatusColor,
-    required this.paymentMethods,
-    required this.currencyFormatter,
-    required this.buildDetailRow,
-    required this.buildStatusRowWithStatus,
-    required this.onSave,
-    required this.onDelete,
-    required this.onEditFull,
-    required this.onClose,
-    this.roomIdToName = const {},
-  });
 
-  @override
-  State<_BookingDetailsForm> createState() => _BookingDetailsFormState();
-}
-
-class _BookingDetailsFormState extends State<_BookingDetailsForm> {
-  late String _status;
-  late TextEditingController _amountController;
-  late TextEditingController _advanceAmountController;
-  late String _paymentMethod;
-  late String _advancePaymentMethod;
-  late String _advanceStatus; // not_required, pending, received
-  late TextEditingController _notesController;
-
-  /// Initial values when the dialog opened (or last synced from Firestore).
-  /// Used to detect unsaved changes.
-  late String _initialStatus;
-  late int _initialAmount;
-  late int _initialAdvanceAmount;
-  late String _initialPaymentMethod;
-  late String _initialAdvancePaymentMethod;
-  late String _initialAdvanceStatus;
-  late String _initialNotes;
-
-  @override
-  void initState() {
-    super.initState();
-    _syncFromBooking(widget.fullBooking);
-  }
-
-  void _syncFromBooking(BookingModel b) {
-    _status = widget.statusOptions.contains(b.status)
-        ? b.status
-        : widget.statusOptions.first;
-    _amountController = TextEditingController(
-      text: CurrencyFormatter.formatStoredAmountForInput(b.amountOfMoneyPaid),
-    );
-    _advanceAmountController = TextEditingController(
-      text: CurrencyFormatter.formatStoredAmountForInput(b.advanceAmountPaid),
-    );
-    _paymentMethod = widget.paymentMethods.contains(b.paymentMethod)
-        ? b.paymentMethod
-        : widget.paymentMethods.first;
-    _advancePaymentMethod =
-        (b.advancePaymentMethod != null && b.advancePaymentMethod!.isNotEmpty)
-        ? b.advancePaymentMethod!
-        : widget.paymentMethods.first;
-    _advanceStatus =
-        (b.advanceStatus != null &&
-            BookingModel.advanceStatusOptions.contains(b.advanceStatus))
-        ? b.advanceStatus!
-        : (b.advancePercent != null && b.advancePercent! > 0
-              ? (b.advanceAmountPaid >= b.advanceAmountRequired
-                    ? 'received'
-                    : 'pending')
-              : 'not_required');
-    _notesController = TextEditingController(text: b.notes ?? '');
-
-    _initialStatus = _status;
-    _initialAmount = b.amountOfMoneyPaid;
-    _initialAdvanceAmount = b.advanceAmountPaid;
-    _initialPaymentMethod = _paymentMethod;
-    _initialAdvancePaymentMethod = _advancePaymentMethod;
-    _initialAdvanceStatus = _advanceStatus;
-    _initialNotes = b.notes ?? '';
-  }
-
-  /// True if any editable field differs from the initial/saved state.
-  bool get _hasChanges {
-    final currentAmount =
-        CurrencyFormatter.parseMoneyStringToCents(_amountController.text.trim());
-    final currentAdvance = CurrencyFormatter.parseMoneyStringToCents(
-        _advanceAmountController.text.trim());
-    final currentNotes = _notesController.text.trim();
-    return _status != _initialStatus ||
-        currentAmount != _initialAmount ||
-        currentAdvance != _initialAdvanceAmount ||
-        _paymentMethod != _initialPaymentMethod ||
-        _advancePaymentMethod != _initialAdvancePaymentMethod ||
-        _advanceStatus != _initialAdvanceStatus ||
-        currentNotes != _initialNotes;
-  }
-
-  Future<void> _handleClose() async {
-    if (!_hasChanges) {
-      widget.onClose();
-      return;
-    }
-    final result = await showDialog<String>(
-      context: context,
-      barrierDismissible: true,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 400),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: Theme.of(context).colorScheme.shadow.withOpacity(0.2),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 28),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Text(
-                  'Unsaved Changes',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 20,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Text(
-                  'You have unsaved changes. Do you want to save before closing?',
-                  style: TextStyle(
-                    fontSize: 15,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    height: 1.35,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              const SizedBox(height: 24),
-              // Buttons - Apple style: full width, stacked, rounded
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  children: [
-                    SizedBox(
-                      width: double.infinity,
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () => Navigator.pop(context, 'save'),
-                          borderRadius: BorderRadius.circular(12),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            decoration: BoxDecoration(
-                              color: StayoraColors.success,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Center(
-                              child: Text(
-                                'Save and Close',
-                                style: TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () => Navigator.pop(context, 'discard'),
-                          borderRadius: BorderRadius.circular(12),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.surface,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Theme.of(context).colorScheme.outline.withOpacity(0.5)),
-                            ),
-                            child: const Center(
-                              child: Text(
-                                'Discard Changes',
-                                style: TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w600,
-                                  color: StayoraColors.error,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () => Navigator.pop(context, 'cancel'),
-                          borderRadius: BorderRadius.circular(12),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            child: const Center(
-                              child: Text(
-                                'Cancel',
-                                style: TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w600,
-                                  color: StayoraColors.blue,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (!mounted) return;
-    switch (result) {
-      case 'save':
-        final amount =
-            CurrencyFormatter.parseMoneyStringToCents(_amountController.text.trim());
-        final advanceAmount = CurrencyFormatter.parseMoneyStringToCents(
-            _advanceAmountController.text.trim());
-        final updated = widget.fullBooking.copyWith(
-          status: _status,
-          amountOfMoneyPaid: amount,
-          paymentMethod: _paymentMethod,
-          advanceAmountPaid: advanceAmount,
-          advancePaymentMethod: _advancePaymentMethod,
-          advanceStatus: _advanceStatus,
-          notes: _notesController.text.trim().isEmpty
-              ? null
-              : _notesController.text.trim(),
-          // preserve check-in/out timestamps set via the quick buttons
-          checkedInAt: widget.fullBooking.checkedInAt,
-          checkedOutAt: widget.fullBooking.checkedOutAt,
-        );
-        await widget.onSave(updated);
-        if (!mounted) return;
-        widget.onClose();
-        break;
-      case 'discard':
-        widget.onClose();
-        break;
-      case 'cancel':
-      default:
-        break;
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant _BookingDetailsForm oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.fullBooking.id != widget.fullBooking.id ||
-        oldWidget.fullBooking.status != widget.fullBooking.status ||
-        oldWidget.fullBooking.amountOfMoneyPaid !=
-            widget.fullBooking.amountOfMoneyPaid ||
-        oldWidget.fullBooking.paymentMethod !=
-            widget.fullBooking.paymentMethod ||
-        oldWidget.fullBooking.advanceAmountPaid !=
-            widget.fullBooking.advanceAmountPaid ||
-        oldWidget.fullBooking.advancePaymentMethod !=
-            widget.fullBooking.advancePaymentMethod ||
-        oldWidget.fullBooking.advanceStatus !=
-            widget.fullBooking.advanceStatus ||
-        oldWidget.fullBooking.notes != widget.fullBooking.notes) {
-      _amountController.dispose();
-      _advanceAmountController.dispose();
-      _notesController.dispose();
-      _syncFromBooking(widget.fullBooking);
-    }
-  }
-
-  @override
-  void dispose() {
-    _amountController.dispose();
-    _advanceAmountController.dispose();
-    _notesController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final b = widget.fullBooking;
-    final totalNights = b.numberOfNights;
-    return SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 24),
-          Text(
-            'Booking Details',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w600,
-              fontSize: 17,
-              color: Theme.of(context).colorScheme.onSurface,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              children: [
-                widget.buildDetailRow(
-                  Icons.person_rounded,
-                  'Guest',
-                  b.userName,
-                ),
-                const SizedBox(height: 12),
-                widget.buildDetailRow(
-                  Icons.hotel_rounded,
-                  () {
-                    final resolved = b.resolvedSelectedRooms(widget.roomIdToName);
-                    return resolved.length > 1 ? 'Rooms' : 'Room';
-                  }(),
-                  () {
-                    final resolved = b.resolvedSelectedRooms(widget.roomIdToName);
-                    return resolved.isNotEmpty ? resolved.join(', ') : widget.room;
-                  }(),
-                ),
-                const SizedBox(height: 12),
-                widget.buildDetailRow(
-                  Icons.calendar_today_rounded,
-                  'Date',
-                  DateFormat('MMM d, yyyy').format(widget.date),
-                ),
-                const SizedBox(height: 12),
-                widget.buildDetailRow(
-                  Icons.nightlight_round,
-                  'Duration',
-                  '$totalNights ${totalNights == 1 ? 'night' : 'nights'}',
-                ),
-                const SizedBox(height: 16),
-                // ── Check-in / Check-out ─────────────────────────────────
-                Text(
-                  'Check-in / Check-out',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: b.checkedInAt == null
-                          ? OutlinedButton.icon(
-                              onPressed: () async {
-                                final updated = b.copyWith(
-                                  checkedInAt: DateTime.now(),
-                                );
-                                await widget.onSave(updated);
-                              },
-                              icon: const Icon(Icons.login_rounded, size: 16),
-                              label: const Text('Check In'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: StayoraColors.teal,
-                                side: const BorderSide(color: StayoraColors.teal),
-                                padding: const EdgeInsets.symmetric(vertical: 10),
-                              ),
-                            )
-                          : Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: StayoraColors.teal.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: StayoraColors.teal.withOpacity(0.4),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.check_circle_rounded,
-                                    size: 14,
-                                    color: StayoraColors.teal,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      'In: ${DateFormat('MMM d, HH:mm').format(b.checkedInAt!)}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                        color: StayoraColors.teal,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: b.checkedOutAt == null
-                          ? OutlinedButton.icon(
-                              onPressed: b.checkedInAt == null
-                                  ? null
-                                  : () async {
-                                      final updated = b.copyWith(
-                                        checkedOutAt: DateTime.now(),
-                                      );
-                                      await widget.onSave(updated);
-                                    },
-                              icon: const Icon(Icons.logout_rounded, size: 16),
-                              label: const Text('Check Out'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: StayoraColors.warning,
-                                side: BorderSide(
-                                  color: b.checkedInAt == null
-                                      ? Theme.of(context).colorScheme.outline.withOpacity(0.4)
-                                      : StayoraColors.warning,
-                                ),
-                                padding: const EdgeInsets.symmetric(vertical: 10),
-                              ),
-                            )
-                          : Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: StayoraColors.warning.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: StayoraColors.warning.withOpacity(0.4),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.check_circle_rounded,
-                                    size: 14,
-                                    color: StayoraColors.warning,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      'Out: ${DateFormat('MMM d, HH:mm').format(b.checkedOutAt!)}',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                        color: StayoraColors.warning,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                // Price card — compact, formatted currency
-                _PriceCard(
-                  booking: b,
-                  currencyFormatter: widget.currencyFormatter,
-                ),
-                const SizedBox(height: 16),
-                // Advance payment section
-                ...() {
-                  final advStatus = b.advancePaymentStatus;
-                  final cf = widget.currencyFormatter;
-                  if (advStatus == 'not_required') {
-                    return [
-                      _SectionCard(
-                        title: 'Advance payment',
-                        child: Text(
-                          'No advance required',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                    ];
-                  }
-                  return [
-                    _SectionCard(
-                      title: 'Advance payment',
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (b.advancePercent != null && b.advancePercent! > 0)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: Text(
-                                '${b.advancePercent}% of total — required ${cf.format(b.advanceAmountRequired)}',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                              ),
-                            ),
-                          TextFormField(
-                            controller: _advanceAmountController,
-                            inputFormatters: [
-                              MoneyInputFormatter(),
-                            ],
-                            decoration: InputDecoration(
-                              labelText: 'Advance paid',
-                              hintText: '0.00',
-                              filled: true,
-                              fillColor:
-                                  Theme.of(context).colorScheme.surface,
-                              prefixIcon: const Icon(
-                                Icons.payments_rounded,
-                                size: 18,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 12,
-                              ),
-                            ),
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            onChanged: (_) => setState(() {}),
-                          ),
-                          const SizedBox(height: 10),
-                          DropdownButtonFormField<String>(
-                            value: widget.paymentMethods
-                                    .contains(_advancePaymentMethod)
-                                ? _advancePaymentMethod
-                                : widget.paymentMethods.first,
-                            decoration: InputDecoration(
-                              labelText: 'Advance payment method',
-                              filled: true,
-                              fillColor:
-                                  Theme.of(context).colorScheme.surface,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 12,
-                              ),
-                            ),
-                            items: widget.paymentMethods
-                                .map(
-                                  (m) => DropdownMenuItem(
-                                    value: m,
-                                    child: Text(m),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (v) => setState(() {
-                              _advancePaymentMethod =
-                                  v ?? widget.paymentMethods.first;
-                            }),
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            'Advance received?',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 6,
-                            children: [
-                              ChoiceChip(
-                                label: const Text('Pending'),
-                                selected: _advanceStatus == 'pending',
-                                onSelected: (v) =>
-                                    setState(() => _advanceStatus = 'pending'),
-                                selectedColor:
-                                    StayoraColors.warning.withOpacity(0.3),
-                              ),
-                              ChoiceChip(
-                                label: const Text('Received'),
-                                selected: _advanceStatus == 'received',
-                                onSelected: (v) =>
-                                    setState(() => _advanceStatus = 'received'),
-                                selectedColor:
-                                    StayoraColors.success.withOpacity(0.3),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Builder(
-                            builder: (context) {
-                              final advancePaid =
-                                  CurrencyFormatter.parseMoneyStringToCents(
-                                _advanceAmountController.text.trim(),
-                              );
-                              final remaining = (b.calculatedTotal - advancePaid)
-                                  .clamp(0, b.calculatedTotal);
-                              return Row(
-                                children: [
-                                  Icon(
-                                    Icons.account_balance_wallet_rounded,
-                                    size: 16,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'Remaining: ${cf.format(remaining)}',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: remaining > 0
-                                            ? StayoraColors.warning
-                                            : Theme.of(context)
-                                                .colorScheme
-                                                .onSurface,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                      maxLines: 1,
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ];
-                }(),
-                const SizedBox(height: 16),
-                // Payment, status & notes — one card
-                _SectionCard(
-                  title: 'Payment & notes',
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      DropdownButtonFormField<String>(
-                        value: _status,
-                        decoration: InputDecoration(
-                          labelText: 'Status',
-                          filled: true,
-                          fillColor: Theme.of(context).colorScheme.surface,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 12,
-                          ),
-                        ),
-                        items: widget.statusOptions
-                            .map(
-                              (s) => DropdownMenuItem(
-                                value: s,
-                                child: Text(
-                                  s,
-                                  style: TextStyle(
-                                    color: widget.getStatusColor(s),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) => setState(() => _status = v ?? _status),
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _amountController,
-                        inputFormatters: [MoneyInputFormatter()],
-                        decoration: InputDecoration(
-                          labelText: 'Amount paid',
-                          hintText: '0.00',
-                          filled: true,
-                          fillColor: Theme.of(context).colorScheme.surface,
-                          prefixIcon: const Icon(
-                            Icons.payments_rounded,
-                            size: 20,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 12,
-                          ),
-                        ),
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: widget.paymentMethods.contains(_paymentMethod)
-                            ? _paymentMethod
-                            : widget.paymentMethods.first,
-                        decoration: InputDecoration(
-                          labelText: 'Payment method',
-                          filled: true,
-                          fillColor: Theme.of(context).colorScheme.surface,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 12,
-                          ),
-                        ),
-                        items: widget.paymentMethods
-                            .map(
-                              (m) => DropdownMenuItem(
-                                value: m,
-                                child: Text(m),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) => setState(
-                          () => _paymentMethod =
-                              v ?? widget.paymentMethods.first,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _notesController,
-                        decoration: InputDecoration(
-                          labelText: 'Notes',
-                          hintText: 'Optional notes…',
-                          filled: true,
-                          fillColor: Theme.of(context).colorScheme.surface,
-                          alignLabelWithHint: true,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 12,
-                          ),
-                        ),
-                        maxLines: 2,
-                        onChanged: (_) => setState(() {}),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              children: [
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () async {
-                      final amount = CurrencyFormatter.parseMoneyStringToCents(
-                        _amountController.text.trim(),
-                      );
-                      final advanceAmount =
-                          CurrencyFormatter.parseMoneyStringToCents(
-                        _advanceAmountController.text.trim(),
-                      );
-                      final updated = b.copyWith(
-                        status: _status,
-                        amountOfMoneyPaid: amount,
-                        paymentMethod: _paymentMethod,
-                        advanceAmountPaid: advanceAmount,
-                        advancePaymentMethod: _advancePaymentMethod,
-                        advanceStatus: _advanceStatus,
-                        notes: _notesController.text.trim().isEmpty
-                            ? null
-                            : _notesController.text.trim(),
-                      );
-                      await widget.onSave(updated);
-                    },
-                    label: const Text('Save changes'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: StayoraColors.success,
-                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      elevation: 0,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: widget.onEditFull,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: StayoraColors.blue,
-                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            'Edit full booking (dates, rooms, guest)',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () async => await widget.onDelete(),
-                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                    label: const Text('Delete Booking'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red,
-                      side: const BorderSide(color: Colors.red),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: TextButton(
-                    onPressed: _handleClose,
-                    style: TextButton.styleFrom(
-                      foregroundColor: StayoraColors.blue,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    child: const Text('Close'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-        ],
-      ),
-    );
-  }
-}
-
-class Booking {
-  final String bookingId;
-  final String guestName;
-  final Color color;
-  final bool isFirstNight;
-  final bool isLastNight;
-  final int totalNights;
-
-  /// Advance payment status: not_required, waiting, paid.
-  final String advancePaymentStatus;
-
-  Booking({
-    required this.bookingId,
-    required this.guestName,
-    required this.color,
-    required this.isFirstNight,
-    required this.isLastNight,
-    required this.totalNights,
-    this.advancePaymentStatus = 'not_required',
-  });
-}
-
-/// Section wrapper for the popup: title + padded content.
-class _SectionCard extends StatelessWidget {
-  final String title;
-  final Widget child;
-
-  const _SectionCard({required this.title, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: theme.colorScheme.outline.withOpacity(0.2),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurfaceVariant,
-              letterSpacing: 0.3,
-            ),
-          ),
-          const SizedBox(height: 10),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-/// Compact price breakdown card with formatted currency (no raw 120000).
-class _PriceCard extends StatelessWidget {
-  final BookingModel booking;
-  final CurrencyFormatter currencyFormatter;
-
-  const _PriceCard({
-    required this.booking,
-    required this.currencyFormatter,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final b = booking;
-    final hasRoom = (b.pricePerNight ?? 0) > 0;
-    final hasServices =
-        b.selectedServices != null && b.selectedServices!.isNotEmpty;
-    final theme = Theme.of(context);
-
-    if (!hasRoom && !hasServices) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: theme.colorScheme.outline.withOpacity(0.2),
-          ),
-        ),
-        child: Text(
-          'No price set',
-          style: TextStyle(
-            fontSize: 13,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: theme.colorScheme.outline.withOpacity(0.2),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (hasRoom)
-            _priceRow(
-              context,
-              '${b.numberOfNights} night${b.numberOfNights == 1 ? '' : 's'} × ${b.numberOfRooms} room${b.numberOfRooms == 1 ? '' : 's'} × ${currencyFormatter.formatCompact(b.pricePerNight!)}',
-              currencyFormatter.formatCompact(b.roomSubtotal),
-              isSub: true,
-            ),
-          if (hasServices) ...[
-            if (hasRoom) const SizedBox(height: 8),
-            ...b.selectedServices!.map(
-              (s) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: _priceRow(
-                  context,
-                  '${s.name} × ${s.quantity}',
-                  currencyFormatter.formatCompact(s.lineTotal),
-                  isSub: true,
-                ),
-              ),
-            ),
-            const SizedBox(height: 6),
-            _priceRow(
-              context,
-              'Services',
-              currencyFormatter.formatCompact(b.servicesSubtotal),
-              isSub: true,
-            ),
-            const SizedBox(height: 8),
-          ],
-          const Divider(height: 1),
-          const SizedBox(height: 8),
-          _priceRow(
-            context,
-            'Total',
-            currencyFormatter.format(b.calculatedTotal),
-            isSub: false,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _priceRow(
-    BuildContext context,
-    String label,
-    String value, {
-    required bool isSub,
-  }) {
-    final theme = Theme.of(context);
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: isSub ? 13 : 14,
-              fontWeight: isSub ? FontWeight.w500 : FontWeight.w600,
-              color: isSub
-                  ? theme.colorScheme.onSurfaceVariant
-                  : theme.colorScheme.onSurface,
-            ),
-            overflow: TextOverflow.ellipsis,
-            maxLines: 1,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: isSub ? 13 : 15,
-            fontWeight: isSub ? FontWeight.w500 : FontWeight.bold,
-            color: isSub
-                ? theme.colorScheme.onSurface
-                : StayoraColors.blue,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _LegendItem extends StatelessWidget {
-  final Color color;
-  final String label;
-
-  const _LegendItem({
-    required this.color,
-    required this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 16,
-          height: 16,
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(
-              color: color,
-              width: 2,
-            ),
-          ),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _DayViewBookingCard extends StatelessWidget {
-  final BookingModel booking;
-  final VoidCallback onTap;
-  final Map<String, String> roomIdToName;
-
-  const _DayViewBookingCard({
-    required this.booking,
-    required this.onTap,
-    this.roomIdToName = const {},
-  });
-
-  Color _getStatusColor(BuildContext context, String status) {
-    switch (status) {
-      case 'Confirmed':
-        return StayoraColors.success;
-      case 'Pending':
-        return StayoraColors.warning;
-      case 'Cancelled':
-        return StayoraColors.error;
-      case 'Paid':
-        return StayoraColors.blue;
-      case 'Unpaid':
-        return StayoraColors.muted;
-      case 'Waiting list':
-        return StayoraColors.purple;
-      default:
-        return Theme.of(context).colorScheme.onSurfaceVariant;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final statusColor = _getStatusColor(context, booking.status);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      booking.userName,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      booking.status,
-                      style: TextStyle(
-                        color: statusColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Icon(
-                    Icons.phone_rounded,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    booking.userPhone,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(
-                    Icons.calendar_today_rounded,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${DateFormat('MMM d').format(booking.checkIn)} - ${DateFormat('MMM d, yyyy').format(booking.checkOut)}',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Icon(
-                    Icons.nights_stay_rounded,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${booking.numberOfNights} night${booking.numberOfNights != 1 ? 's' : ''}',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-              Builder(builder: (context) {
-                final rooms = booking.resolvedSelectedRooms(roomIdToName);
-                if (rooms.isEmpty) return const SizedBox.shrink();
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.bed_rounded,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            rooms.join(', '),
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                              fontSize: 14,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                );
-              }),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

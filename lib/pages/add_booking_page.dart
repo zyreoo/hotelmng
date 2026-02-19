@@ -8,10 +8,15 @@ import '../models/service_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
+import '../utils/audit_log_models.dart';
+import '../utils/audit_logger.dart';
+import '../utils/booking_input_validator.dart';
+import '../utils/booking_overlap_validator.dart';
 import '../utils/currency_formatter.dart';
 import '../utils/money_input_formatter.dart';
 import '../utils/stayora_colors.dart';
 import '../widgets/client_search_widget.dart';
+import '../services/firestore_audit_log_writer.dart';
 import 'services_page.dart';
 
 class AddBookingPage extends StatefulWidget {
@@ -212,6 +217,54 @@ class _AddBookingPageState extends State<AddBookingPage> {
   /// Build a map from room name to room ID for the current hotel's rooms.
   Map<String, String> get _roomNameToId =>
       {for (final r in _roomModels) if (r.id != null) r.name: r.id!};
+
+  /// Fetches bookings that overlap [checkIn, checkOut), excluding Cancelled and Waiting list,
+  /// and excluding the current booking when editing. Used for validation.
+  Future<List<BookingModel>> _getOverlappingBookingsForValidation(
+    String userId,
+    String hotelId,
+  ) async {
+    if (_checkInDate == null || _checkOutDate == null) return [];
+    final checkIn = DateTime(_checkInDate!.year, _checkInDate!.month, _checkInDate!.day);
+    final checkOut = DateTime(_checkOutDate!.year, _checkOutDate!.month, _checkOutDate!.day);
+    if (!checkOut.isAfter(checkIn)) return [];
+    final start = checkIn.subtract(const Duration(days: 60));
+    final end = checkOut.add(const Duration(days: 60));
+    final all = await _firebaseService.getBookings(userId, hotelId, startDate: start, endDate: end);
+    return all.where((b) {
+      if (b.status == 'Cancelled' || b.status == 'Waiting list') return false;
+      if (widget.existingBooking != null && b.id == widget.existingBooking!.id) return false;
+      final bStart = DateTime(b.checkIn.year, b.checkIn.month, b.checkIn.day);
+      final bEnd = DateTime(b.checkOut.year, b.checkOut.month, b.checkOut.day);
+      return bStart.isBefore(checkOut) && bEnd.isAfter(checkIn);
+    }).toList();
+  }
+
+  /// Converts booking models to BookingInput list (one per room) for overlap validation.
+  static List<BookingInput> _bookingModelsToBookingInputs(
+    List<BookingModel> bookings,
+    Map<String, String> roomNameToId,
+  ) {
+    final list = <BookingInput>[];
+    for (final b in bookings) {
+      final roomIds = b.selectedRoomIds ??
+          b.selectedRooms
+              ?.map((n) => roomNameToId[n] ?? n)
+              .whereType<String>()
+              .toList() ??
+          [];
+      for (final roomId in roomIds) {
+        if (roomId.isEmpty) continue;
+        list.add(BookingInput(
+          bookingId: b.id ?? '',
+          roomId: roomId,
+          checkInUtc: b.checkIn,
+          checkOutUtc: b.checkOut,
+        ));
+      }
+    }
+    return list;
+  }
 
   /// Finds N available rooms for [checkIn, checkOut). Returns room names to assign, or null if not enough space.
   /// When [roomsNextToEachOther] is true, returns the first contiguous block of N rooms in _roomNames order.
@@ -733,12 +786,88 @@ class _AddBookingPageState extends State<AddBookingPage> {
           advanceStatus: _advanceStatus,
         );
 
+        // Step 3b: Strict validation before save (when rooms are assigned)
+        if (selectedRoomNumbers != null && selectedRoomNumbers.isNotEmpty) {
+          final overlapping = await _getOverlappingBookingsForValidation(authUserId, hotelId);
+          final existingInputs = _bookingModelsToBookingInputs(overlapping, nameToId);
+          for (final roomName in selectedRoomNumbers) {
+            final roomId = nameToId[roomName] ?? roomName;
+            final newInput = BookingInput(
+              bookingId: widget.existingBooking?.id ?? '',
+              roomId: roomId,
+              checkInUtc: _checkInDate!,
+              checkOutUtc: _checkOutDate!,
+            );
+            final validationError = validateBookingInput(
+              booking: newInput,
+              existingBookings: existingInputs,
+            );
+            if (validationError != null) {
+              if (mounted) Navigator.pop(context);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(validationError.message),
+                    behavior: SnackBarBehavior.floating,
+                    backgroundColor: StayoraColors.error,
+                  ),
+                );
+                final writer = FirestoreAuditLogWriter(userId: authUserId, hotelId: hotelId);
+                final action = validationError.code == 'BOOKING_OVERLAP'
+                    ? AuditAction.overlapBlocked
+                    : AuditAction.validationFailed;
+                final metadata = <String, dynamic>{
+                  'errorCode': validationError.code,
+                  'field': validationError.field,
+                };
+                if (validationError.conflictingBookingId != null) {
+                  metadata['conflictingBookingId'] = validationError.conflictingBookingId!;
+                }
+                logBookingAction(
+                  action,
+                  AuditLogData(
+                    action: action,
+                    bookingId: widget.existingBooking?.id ?? '',
+                    roomId: roomId,
+                    userId: authUserId,
+                    metadata: metadata,
+                  ),
+                  writer,
+                );
+              }
+              return;
+            }
+          }
+        }
+
         // Step 4: Update or create in Firebase
+        String? savedBookingId = booking.id;
         if (widget.existingBooking != null) {
           await _firebaseService.updateBooking(authUserId, hotelId, booking);
         } else {
-          await _firebaseService.createBooking(authUserId, hotelId, booking);
+          savedBookingId = await _firebaseService.createBooking(authUserId, hotelId, booking);
         }
+
+        // Audit log after successful save (non-blocking)
+        final auditWriter = FirestoreAuditLogWriter(userId: authUserId, hotelId: hotelId);
+        final auditAction = widget.existingBooking != null
+            ? AuditAction.bookingUpdated
+            : AuditAction.bookingCreated;
+        final firstRoomId = selectedRoomIds?.isNotEmpty == true
+            ? selectedRoomIds!.first
+            : (selectedRoomNumbers != null && selectedRoomNumbers.isNotEmpty
+                ? (nameToId[selectedRoomNumbers.first] ?? selectedRoomNumbers.first)
+                : '');
+        logBookingAction(
+          auditAction,
+          AuditLogData(
+            action: auditAction,
+            bookingId: savedBookingId ?? '',
+            roomId: firstRoomId,
+            userId: authUserId,
+          ),
+          auditWriter,
+        );
 
         // Close loading dialog
         if (mounted) Navigator.pop(context);
@@ -843,6 +972,19 @@ class _AddBookingPageState extends State<AddBookingPage> {
     try {
       await _firebaseService.deleteBooking(userId, hotelId, booking.id!);
       if (!mounted) return;
+      final firstRoomId = booking.selectedRoomIds?.isNotEmpty == true
+          ? booking.selectedRoomIds!.first
+          : (booking.selectedRooms?.isNotEmpty == true ? booking.selectedRooms!.first : '');
+      logBookingAction(
+        AuditAction.bookingDeleted,
+        AuditLogData(
+          action: AuditAction.bookingDeleted,
+          bookingId: booking.id!,
+          roomId: firstRoomId,
+          userId: userId,
+        ),
+        FirestoreAuditLogWriter(userId: userId, hotelId: hotelId),
+      );
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Booking for ${booking.userName} deleted'),

@@ -403,6 +403,41 @@ class FirebaseService {
     return q.orderBy('checkIn').snapshots();
   }
 
+  /// Real-time stream of a single booking document (for the detail panel).
+  Stream<DocumentSnapshot<Map<String, dynamic>>> bookingDocStream(
+    String userId,
+    String hotelId,
+    String bookingId,
+  ) {
+    if (!isInitialized) return const Stream.empty();
+    return _bookingsRef(userId, hotelId).doc(bookingId).snapshots();
+  }
+
+  /// Stream of raw booking document changes for the calendar grid.
+  /// Filters by checkOut > rangeStart so only bookings that overlap the visible
+  /// date window are returned. Additional filtering is done in the calendar state.
+  Stream<QuerySnapshot<Map<String, dynamic>>> bookingsStreamForCalendar(
+    String userId,
+    String hotelId,
+    DateTime rangeStart,
+  ) {
+    if (!isInitialized) return const Stream.empty();
+    return _bookingsRef(userId, hotelId)
+        .where('checkOut', isGreaterThan: rangeStart.toIso8601String())
+        .snapshots();
+  }
+
+  /// Stream of all bookings currently on the waiting list.
+  Stream<QuerySnapshot<Map<String, dynamic>>> waitingListBookingsStream(
+    String userId,
+    String hotelId,
+  ) {
+    if (!isInitialized) return const Stream.empty();
+    return _bookingsRef(userId, hotelId)
+        .where('status', isEqualTo: 'Waiting list')
+        .snapshots();
+  }
+
   // ─── Employer operations ─────────────────────────────────────────────────
   Future<List<EmployerModel>> getEmployers(
     String userId,

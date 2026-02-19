@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import '../models/booking_model.dart';
@@ -6,7 +7,9 @@ import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
 import '../utils/currency_formatter.dart';
+import '../utils/gap_detector.dart';
 import '../utils/money_input_formatter.dart';
+import '../utils/optimization_suggestions.dart';
 import '../utils/stayora_colors.dart';
 import '../widgets/loading_empty_states.dart';
 import 'add_booking_page.dart';
@@ -26,12 +29,32 @@ class _DashboardPageState extends State<DashboardPage> {
   dynamic _bookingsSubscription;
   String? _subscribedUserId;
   String? _subscribedHotelId;
+  Map<String, String> _roomIdToNameMap = {};
+
+  Future<void> _loadRooms() async {
+    final hotelId = HotelProvider.of(context).hotelId;
+    final userId = AuthScopeData.of(context).uid;
+    if (hotelId == null || userId == null) return;
+    try {
+      final list = await _firebaseService.getRooms(userId, hotelId);
+      if (mounted) {
+        setState(() {
+          _roomIdToNameMap = {
+            for (final r in list)
+              if (r.id != null) r.id!: r.name,
+          };
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _roomIdToNameMap = {});
+    }
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final userId = FirebaseAuth.instance.currentUser?.uid;
     final hotelId = HotelProvider.of(context).hotelId;
-    final userId = AuthScopeData.of(context).uid;
     if (hotelId == null || userId == null) return;
     // Re-subscribe only when hotel or user changes.
     if (userId == _subscribedUserId && hotelId == _subscribedHotelId) return;
@@ -43,31 +66,32 @@ class _DashboardPageState extends State<DashboardPage> {
       _loading = true;
       _error = null;
     });
+    _loadRooms();
     _bookingsSubscription = _firebaseService
         .bookingsStream(userId, hotelId, checkInOnOrAfter: checkInAfter)
         .listen(
-      (snapshot) {
-        final list = snapshot.docs
-            .map((doc) => BookingModel.fromFirestore(doc.data(), doc.id))
-            .toList();
-        if (mounted) {
-          setState(() {
-            _bookings = list;
-            _loading = false;
-            _error = null;
-          });
-        }
-      },
-      onError: (e) {
-        if (mounted) {
-          setState(() {
-            _bookings = [];
-            _loading = false;
-            _error = e.toString();
-          });
-        }
-      },
-    );
+          (snapshot) {
+            final list = snapshot.docs
+                .map((doc) => BookingModel.fromFirestore(doc.data(), doc.id))
+                .toList();
+            if (mounted) {
+              setState(() {
+                _bookings = list;
+                _loading = false;
+                _error = null;
+              });
+            }
+          },
+          onError: (e) {
+            if (mounted) {
+              setState(() {
+                _bookings = [];
+                _loading = false;
+                _error = e.toString();
+              });
+            }
+          },
+        );
   }
 
   @override
@@ -88,9 +112,38 @@ class _DashboardPageState extends State<DashboardPage> {
       _bookings.where((b) => b.status != 'Cancelled').toList();
 
   /// Bookings that actually occupy a room (excludes Cancelled and Waiting list).
-  List<BookingModel> get _bookingsForOccupancy =>
-      _bookings.where((b) =>
-          b.status != 'Cancelled' && b.status != 'Waiting list').toList();
+  List<BookingModel> get _bookingsForOccupancy => _bookings
+      .where((b) => b.status != 'Cancelled' && b.status != 'Waiting list')
+      .toList();
+
+  /// Converts occupancy bookings to GapBookingInput (one per room) for suggestions.
+  List<GapBookingInput> get _gapBookingInputs {
+    final list = <GapBookingInput>[];
+    for (final b in _bookingsForOccupancy) {
+      final roomIds = b.selectedRoomIds ?? b.selectedRooms ?? [];
+      for (final roomId in roomIds) {
+        if (roomId.isEmpty) continue;
+        list.add(
+          GapBookingInput(
+            bookingId: b.id ?? '',
+            roomId: roomId,
+            checkInUtc: b.checkIn,
+            checkOutUtc: b.checkOut,
+          ),
+        );
+      }
+    }
+    return list;
+  }
+
+  /// Optimization suggestions (short gaps, fragmentation, low occupancy).
+  List<OptimizationSuggestion> get _optimizationSuggestions =>
+      generateOptimizationSuggestions(
+        _gapBookingInputs,
+        windowStart: DateTime.now(),
+        windowDays: 30,
+        nowUtc: () => DateTime.now().toUtc(),
+      );
 
   /// True if [date] is >= checkIn (start of day) and < checkOut (start of day).
   bool _bookingOverlapsDate(BookingModel b, DateTime date) {
@@ -198,9 +251,11 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   /// First and last day of the weekly range (last 7 days).
-  DateTime get _weeklyStartDate =>
-      DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day)
-          .subtract(const Duration(days: 6));
+  DateTime get _weeklyStartDate => DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+    DateTime.now().day,
+  ).subtract(const Duration(days: 6));
   DateTime get _weeklyEndDate => DateTime.now();
 
   Future<void> _showMarkAdvanceReceivedSheet(BookingModel booking) async {
@@ -209,9 +264,12 @@ class _DashboardPageState extends State<DashboardPage> {
     if (userId == null || hotelId == null || booking.id == null) return;
 
     final amountController = TextEditingController(
-      text: CurrencyFormatter.formatCentsForInput(booking.advanceAmountRequired),
+      text: CurrencyFormatter.formatCentsForInput(
+        booking.advanceAmountRequired,
+      ),
     );
-    String paymentMethod = booking.advancePaymentMethod ?? BookingModel.paymentMethods.first;
+    String paymentMethod =
+        booking.advancePaymentMethod ?? BookingModel.paymentMethods.first;
 
     final result = await showModalBottomSheet<bool>(
       context: context,
@@ -236,7 +294,9 @@ class _DashboardPageState extends State<DashboardPage> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurfaceVariant.withOpacity(0.5),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -244,9 +304,9 @@ class _DashboardPageState extends State<DashboardPage> {
               const SizedBox(height: 20),
               Text(
                 'Mark advance received',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
               Text(
@@ -259,7 +319,9 @@ class _DashboardPageState extends State<DashboardPage> {
               const SizedBox(height: 24),
               TextField(
                 controller: amountController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 inputFormatters: [MoneyInputFormatter()],
                 decoration: InputDecoration(
                   labelText: 'Amount received',
@@ -268,7 +330,9 @@ class _DashboardPageState extends State<DashboardPage> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   filled: true,
-                  fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  fillColor: Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerHighest,
                 ),
               ),
               const SizedBox(height: 16),
@@ -279,7 +343,9 @@ class _DashboardPageState extends State<DashboardPage> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   filled: true,
-                  fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  fillColor: Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerHighest,
                 ),
                 items: BookingModel.paymentMethods
                     .map((m) => DropdownMenuItem(value: m, child: Text(m)))
@@ -326,7 +392,9 @@ class _DashboardPageState extends State<DashboardPage> {
 
     if (result == true) {
       final amountCents = CurrencyFormatter.parseMoneyStringToCents(
-        amountController.text.trim().isEmpty ? '0' : amountController.text.trim(),
+        amountController.text.trim().isEmpty
+            ? '0'
+            : amountController.text.trim(),
       );
       final updated = booking.copyWith(
         advanceStatus: 'received',
@@ -382,9 +450,9 @@ class _DashboardPageState extends State<DashboardPage> {
           children: [
             Text(
               'Weekly occupancy',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 4),
             Text(
@@ -406,7 +474,9 @@ class _DashboardPageState extends State<DashboardPage> {
                     show: true,
                     drawVerticalLine: false,
                     getDrawingHorizontalLine: (value) => FlLine(
-                      color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.outline.withOpacity(0.3),
                       strokeWidth: 1,
                     ),
                   ),
@@ -425,14 +495,17 @@ class _DashboardPageState extends State<DashboardPage> {
                         getTitlesWidget: (value, meta) {
                           final i = value.toInt();
                           if (i >= 0 && i < 7) {
-                            final d = DateTime.now()
-                                .subtract(Duration(days: 6 - i));
+                            final d = DateTime.now().subtract(
+                              Duration(days: 6 - i),
+                            );
                             return Padding(
                               padding: const EdgeInsets.only(top: 8),
                               child: Text(
                                 DateFormat('d/M').format(d),
                                 style: TextStyle(
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                   fontSize: 11,
                                 ),
                               ),
@@ -449,11 +522,14 @@ class _DashboardPageState extends State<DashboardPage> {
                         interval: maxY > 10 ? (maxY / 5).ceilToDouble() : 1,
                         getTitlesWidget: (value, meta) {
                           final v = value.toInt();
-                          if (v != value || v < 0) return const SizedBox.shrink();
+                          if (v != value || v < 0)
+                            return const SizedBox.shrink();
                           return Text(
                             v.toString(),
                             style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
                               fontSize: 11,
                             ),
                           );
@@ -504,7 +580,7 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget build(BuildContext context) {
     final hotelId = HotelProvider.of(context).hotelId;
     final userId = AuthScopeData.of(context).uid;
-    
+
     return Scaffold(
       body: SafeArea(
         child: RefreshIndicator(
@@ -515,245 +591,270 @@ class _DashboardPageState extends State<DashboardPage> {
           },
           child: CustomScrollView(
             slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 8),
-                    Text(
-                      'Dashboard',
-                      style: Theme.of(context).textTheme.headlineLarge
-                          ?.copyWith(fontWeight: FontWeight.bold, fontSize: 34),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Overview of your hotel',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 8),
+                      Text(
+                        'Dashboard',
+                        style: Theme.of(context).textTheme.headlineLarge
+                            ?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 34,
+                            ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            SliverPadding(
-              padding: EdgeInsets.symmetric(
-                horizontal: MediaQuery.of(context).size.width >= 768 ? 24 : 16,
-              ),
-              sliver: _loading
-                  ? SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: SkeletonListLoader(
-                          itemCount: 5,
-                          itemHeight: 140,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Overview of your hotel',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
-                    )
-                  : _error != null
-                  ? SliverFillRemaining(
-                      child: ErrorStateWidget(
-                        message: _error!,
-                        onRetry: () {
-                          if (hotelId != null && userId != null) {
-                            _loadBookings(userId, hotelId);
-                          }
-                        },
-                      ),
-                    )
-                  : _bookings.isEmpty
-                  ? SliverFillRemaining(
-                      child: EmptyStateWidget(
-                        icon: Icons.event_available_rounded,
-                        title: 'No bookings yet',
-                        subtitle: 'Add your first booking to see your dashboard',
-                      ),
-                    )
-                  : SliverToBoxAdapter(
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final isMobile = constraints.maxWidth < 600;
-                          final weekDays = _weeklyOccupancyRoomNights;
-                          final hotel = HotelProvider.of(context).currentHotel;
-                          final currencyFormatter = CurrencyFormatter.fromHotel(
-                            hotel,
-                          );
+                    ],
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: MediaQuery.of(context).size.width >= 768
+                      ? 24
+                      : 16,
+                ),
+                sliver: _loading
+                    ? SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: SkeletonListLoader(
+                            itemCount: 5,
+                            itemHeight: 140,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                        ),
+                      )
+                    : _error != null
+                    ? SliverFillRemaining(
+                        child: ErrorStateWidget(
+                          message: _error!,
+                          onRetry: () {
+                            if (hotelId != null && userId != null) {
+                              _loadBookings(userId, hotelId);
+                            }
+                          },
+                        ),
+                      )
+                    : _bookings.isEmpty
+                    ? SliverFillRemaining(
+                        child: EmptyStateWidget(
+                          icon: Icons.event_available_rounded,
+                          title: 'No bookings yet',
+                          subtitle:
+                              'Add your first booking to see your dashboard',
+                        ),
+                      )
+                    : SliverToBoxAdapter(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final isMobile = constraints.maxWidth < 600;
+                            final weekDays = _weeklyOccupancyRoomNights;
+                            final hotel = HotelProvider.of(
+                              context,
+                            ).currentHotel;
+                            final currencyFormatter =
+                                CurrencyFormatter.fromHotel(hotel);
 
-                          return Column(
-                            children: [
-                              // Reminders Section
-                              if (_checkInsTodayList.isNotEmpty ||
-                                  _checkOutsTodayList.isNotEmpty ||
-                                  _advancesPendingList.isNotEmpty) ...[
-                                _RemindersCard(
-                                  checkInsToday: _checkInsTodayList,
-                                  checkOutsToday: _checkOutsTodayList,
-                                  advancesPending: _advancesPendingList,
-                                  currencyFormatter: currencyFormatter,
-                                  onBookingTap: (booking) {
-                                    Navigator.of(context, rootNavigator: false).push(
-                                      MaterialPageRoute(
-                                        builder: (_) => AddBookingPage(
-                                          existingBooking: booking,
+                            return Column(
+                              children: [
+                                // Reminders Section
+                                if (_checkInsTodayList.isNotEmpty ||
+                                    _checkOutsTodayList.isNotEmpty ||
+                                    _advancesPendingList.isNotEmpty) ...[
+                                  _RemindersCard(
+                                    checkInsToday: _checkInsTodayList,
+                                    checkOutsToday: _checkOutsTodayList,
+                                    advancesPending: _advancesPendingList,
+                                    currencyFormatter: currencyFormatter,
+                                    onBookingTap: (booking) {
+                                      Navigator.of(
+                                            context,
+                                            rootNavigator: false,
+                                          )
+                                          .push(
+                                            MaterialPageRoute(
+                                              builder: (_) => AddBookingPage(
+                                                existingBooking: booking,
+                                              ),
+                                            ),
+                                          )
+                                          .then((_) {
+                                            final hotelId = HotelProvider.of(
+                                              context,
+                                            ).hotelId;
+                                            final userId = AuthScopeData.of(
+                                              context,
+                                            ).uid;
+                                            if (hotelId != null &&
+                                                userId != null) {
+                                              _loadBookings(userId, hotelId);
+                                            }
+                                          });
+                                    },
+                                    onMarkAdvanceReceived:
+                                        _showMarkAdvanceReceivedSheet,
+                                  ),
+                                  const SizedBox(height: 24),
+                                ],
+
+                                // Optimization suggestions
+                                if (_optimizationSuggestions.isNotEmpty) ...[
+                                  _OptimizationSuggestionsCard(
+                                    suggestions: _optimizationSuggestions,
+                                    roomIdToNameMap: _roomIdToNameMap,
+                                  ),
+                                  const SizedBox(height: 24),
+                                ],
+
+                                // Stats Cards Grid
+                                if (isMobile) ...[
+                                  _StatCard(
+                                    title: 'Occupied today',
+                                    value:
+                                        '$_occupiedToday / ${hotel?.totalRooms ?? 0}',
+                                    icon: Icons.bed_rounded,
+                                    color: StayoraColors.success,
+                                    trend: 'rooms',
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _StatCard(
+                                    title: 'Occupancy rate',
+                                    value:
+                                        '${_occupancyPercentage(hotel?.totalRooms ?? 10)}%',
+                                    icon: Icons.pie_chart_rounded,
+                                    color: StayoraColors.blue,
+                                    trend: 'today',
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _StatCard(
+                                    title: 'Check-ins today',
+                                    value: '$_checkInsToday',
+                                    icon: Icons.login_rounded,
+                                    color: StayoraColors.warning,
+                                    trend: 'bookings',
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _StatCard(
+                                    title: 'Revenue this month',
+                                    value: currencyFormatter.formatCompact(
+                                      _revenueThisMonth,
+                                    ),
+                                    icon: Icons.attach_money_rounded,
+                                    color: StayoraColors.purple,
+                                    trend:
+                                        'sum of amount paid (check-in this month)',
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _StatCard(
+                                    title: 'Total revenue',
+                                    value: currencyFormatter.formatCompact(
+                                      _revenueTotal,
+                                    ),
+                                    icon: Icons.account_balance_wallet_rounded,
+                                    color: StayoraColors.blue,
+                                    trend: 'sum of amount paid (all bookings)',
+                                  ),
+                                ] else ...[
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: _StatCard(
+                                          title: 'Occupied today',
+                                          value:
+                                              '$_occupiedToday / ${hotel?.totalRooms ?? 0}',
+                                          icon: Icons.bed_rounded,
+                                          color: StayoraColors.success,
+                                          trend: 'rooms',
                                         ),
                                       ),
-                                    ).then((_) {
-                                      final hotelId = HotelProvider.of(
-                                        context,
-                                      ).hotelId;
-                                      final userId = AuthScopeData.of(
-                                        context,
-                                      ).uid;
-                                      if (hotelId != null && userId != null) {
-                                        _loadBookings(userId, hotelId);
-                                      }
-                                    });
-                                  },
-                                  onMarkAdvanceReceived: _showMarkAdvanceReceivedSheet,
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: _StatCard(
+                                          title: 'Occupancy rate',
+                                          value:
+                                              '${_occupancyPercentage(hotel?.totalRooms ?? 10)}%',
+                                          icon: Icons.pie_chart_rounded,
+                                          color: StayoraColors.blue,
+                                          trend: 'today',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: _StatCard(
+                                          title: 'Check-ins today',
+                                          value: '$_checkInsToday',
+                                          icon: Icons.login_rounded,
+                                          color: StayoraColors.warning,
+                                          trend: 'bookings',
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(child: Container()),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: _StatCard(
+                                          title: 'Revenue this month',
+                                          value: currencyFormatter
+                                              .formatCompact(_revenueThisMonth),
+                                          icon: Icons.attach_money_rounded,
+                                          color: StayoraColors.purple,
+                                          trend:
+                                              'sum of amount paid (check-in this month)',
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: _StatCard(
+                                          title: 'Total revenue',
+                                          value: currencyFormatter
+                                              .formatCompact(_revenueTotal),
+                                          icon: Icons
+                                              .account_balance_wallet_rounded,
+                                          color: StayoraColors.blue,
+                                          trend:
+                                              'sum of amount paid (all bookings)',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                                const SizedBox(height: 24),
+
+                                // Weekly occupancy (room-nights per day)
+                                _buildWeeklyOccupancyCard(
+                                  weekDays: weekDays,
+                                  maxY: _weeklyChartMaxY(
+                                    hotel?.totalRooms ?? 10,
+                                  ),
+                                  totalRooms: hotel?.totalRooms,
                                 ),
                                 const SizedBox(height: 24),
                               ],
-
-                              // Stats Cards Grid
-                              if (isMobile) ...[
-                                _StatCard(
-                                  title: 'Occupied today',
-                                  value: '$_occupiedToday / ${hotel?.totalRooms ?? 0}',
-                                  icon: Icons.bed_rounded,
-                                  color: StayoraColors.success,
-                                  trend: 'rooms',
-                                ),
-                                const SizedBox(height: 12),
-                                _StatCard(
-                                  title: 'Occupancy rate',
-                                  value: '${_occupancyPercentage(hotel?.totalRooms ?? 10)}%',
-                                  icon: Icons.pie_chart_rounded,
-                                  color: StayoraColors.blue,
-                                  trend: 'today',
-                                ),
-                                const SizedBox(height: 12),
-                                _StatCard(
-                                  title: 'Check-ins today',
-                                  value: '$_checkInsToday',
-                                  icon: Icons.login_rounded,
-                                  color: StayoraColors.warning,
-                                  trend: 'bookings',
-                                ),
-                                const SizedBox(height: 12),
-                                _StatCard(
-                                  title: 'Revenue this month',
-                                  value: currencyFormatter.formatCompact(
-                                    _revenueThisMonth,
-                                  ),
-                                  icon: Icons.attach_money_rounded,
-                                  color: StayoraColors.purple,
-                                  trend:
-                                      'sum of amount paid (check-in this month)',
-                                ),
-                                const SizedBox(height: 12),
-                                _StatCard(
-                                  title: 'Total revenue',
-                                  value: currencyFormatter.formatCompact(
-                                    _revenueTotal,
-                                  ),
-                                  icon: Icons.account_balance_wallet_rounded,
-                                  color: StayoraColors.blue,
-                                  trend: 'sum of amount paid (all bookings)',
-                                ),
-                              ] else ...[
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _StatCard(
-                                        title: 'Occupied today',
-                                        value: '$_occupiedToday / ${hotel?.totalRooms ?? 0}',
-                                        icon: Icons.bed_rounded,
-                                        color: StayoraColors.success,
-                                        trend: 'rooms',
-                                      ),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    Expanded(
-                                      child: _StatCard(
-                                        title: 'Occupancy rate',
-                                        value: '${_occupancyPercentage(hotel?.totalRooms ?? 10)}%',
-                                        icon: Icons.pie_chart_rounded,
-                                        color: StayoraColors.blue,
-                                        trend: 'today',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _StatCard(
-                                        title: 'Check-ins today',
-                                        value: '$_checkInsToday',
-                                        icon: Icons.login_rounded,
-                                        color: StayoraColors.warning,
-                                        trend: 'bookings',
-                                      ),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    Expanded(
-                                      child: Container(),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _StatCard(
-                                        title: 'Revenue this month',
-                                        value: currencyFormatter.formatCompact(
-                                          _revenueThisMonth,
-                                        ),
-                                        icon: Icons.attach_money_rounded,
-                                        color: StayoraColors.purple,
-                                        trend:
-                                            'sum of amount paid (check-in this month)',
-                                      ),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    Expanded(
-                                      child: _StatCard(
-                                        title: 'Total revenue',
-                                        value: currencyFormatter.formatCompact(
-                                          _revenueTotal,
-                                        ),
-                                        icon: Icons
-                                            .account_balance_wallet_rounded,
-                                        color: StayoraColors.blue,
-                                        trend:
-                                            'sum of amount paid (all bookings)',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                              const SizedBox(height: 24),
-
-                              // Weekly occupancy (room-nights per day)
-                              _buildWeeklyOccupancyCard(
-                                weekDays: weekDays,
-                                maxY: _weeklyChartMaxY(hotel?.totalRooms ?? 10),
-                                totalRooms: hotel?.totalRooms,
-                              ),
-                              const SizedBox(height: 24),
-                            ],
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
-                    ),
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -824,9 +925,9 @@ class _StatCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               title,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),
@@ -878,9 +979,9 @@ class _RemindersCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     'Today\'s Reminders',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -940,7 +1041,8 @@ class _RemindersCard extends StatelessWidget {
             ],
 
             // Divider between sections
-            if (checkInsToday.isNotEmpty && (checkOutsToday.isNotEmpty || advancesPending.isNotEmpty)) ...[
+            if (checkInsToday.isNotEmpty &&
+                (checkOutsToday.isNotEmpty || advancesPending.isNotEmpty)) ...[
               const SizedBox(height: 20),
               Divider(height: 1, color: Theme.of(context).dividerColor),
               const SizedBox(height: 20),
@@ -1205,7 +1307,10 @@ class _ReminderItem extends StatelessWidget {
                     onPressed: onMarkAdvanceReceived,
                     style: TextButton.styleFrom(
                       foregroundColor: StayoraColors.success,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       shape: RoundedRectangleBorder(
@@ -1223,6 +1328,106 @@ class _ReminderItem extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OptimizationSuggestionsCard extends StatelessWidget {
+  final List<OptimizationSuggestion> suggestions;
+  final Map<String, String> roomIdToNameMap;
+
+  const _OptimizationSuggestionsCard({
+    required this.suggestions,
+    this.roomIdToNameMap = const {},
+  });
+
+  static String _messageWithRoomName(
+    OptimizationSuggestion s,
+    Map<String, String> map,
+  ) {
+    if (s.roomId == null) return s.message;
+    final name = map[s.roomId!] ?? s.roomId!;
+    return s.message.replaceFirst('Room ${s.roomId}', 'Room $name');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: colorScheme.outline.withOpacity(0.2)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.lightbulb_outline_rounded,
+                  size: 22,
+                  color: StayoraColors.warning,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Optimization suggestions',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...suggestions.map(
+              (s) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 4,
+                      height: 40,
+                      margin: const EdgeInsets.only(top: 4),
+                      decoration: BoxDecoration(
+                        color: s.impactScore >= 7
+                            ? StayoraColors.error
+                            : StayoraColors.warning,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _messageWithRoomName(s, roomIdToNameMap),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: colorScheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Impact: ${s.impactScore}/10',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
