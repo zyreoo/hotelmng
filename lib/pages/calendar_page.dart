@@ -189,17 +189,20 @@ class _CalendarPageState extends State<CalendarPage> {
           .toList();
 
   /// Gap inputs for optimization suggestions (one entry per room per booking).
+  /// Uses UTC midnight for check-in/check-out so gap detection and candidate matching align.
   List<GapBookingInput> get _gapBookingInputsCalendar {
     final list = <GapBookingInput>[];
     for (final b in _occupancyBookings) {
       final roomIds = b.selectedRoomIds ?? b.selectedRooms ?? [];
+      final checkInUtc = DateTime.utc(b.checkIn.year, b.checkIn.month, b.checkIn.day);
+      final checkOutUtc = DateTime.utc(b.checkOut.year, b.checkOut.month, b.checkOut.day);
       for (final roomId in roomIds) {
         if (roomId.isEmpty) continue;
         list.add(GapBookingInput(
           bookingId: b.id ?? '',
           roomId: roomId,
-          checkInUtc: b.checkIn,
-          checkOutUtc: b.checkOut,
+          checkInUtc: checkInUtc,
+          checkOutUtc: checkOutUtc,
         ));
       }
     }
@@ -316,7 +319,45 @@ class _CalendarPageState extends State<CalendarPage> {
                                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                                   ),
                                 ),
-                                if (s.type == SuggestionType.shortGap &&
+                                if (s.reason != null && s.reason!.isNotEmpty) ...[
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    s.reason!,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontStyle: FontStyle.italic,
+                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                                if (s.effects.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  ...s.effects.map((e) => Padding(
+                                        padding: const EdgeInsets.only(bottom: 2),
+                                        child: Text(
+                                          e,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.9),
+                                          ),
+                                        ),
+                                      )),
+                                ],
+                                if (s.isActionable && s.action != null) ...[
+                                  const SizedBox(height: 10),
+                                  TextButton.icon(
+                                    onPressed: () {
+                                      Navigator.pop(ctx);
+                                      _applyMoveSuggestion(s.action!);
+                                    },
+                                    icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
+                                    label: const Text('Apply'),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: StayoraLogo.stayoraBlue,
+                                    ),
+                                  ),
+                                ] else if ((s.type == SuggestionType.shortGap ||
+                                        s.type == SuggestionType.continuity) &&
                                     s.roomId != null &&
                                     roomName != null) ...[
                                   const SizedBox(height: 10),
@@ -348,25 +389,54 @@ class _CalendarPageState extends State<CalendarPage> {
     );
   }
 
+  /// True if [a] and [b] represent the same calendar day (UTC).
+  static bool _sameDayUtc(DateTime a, DateTime b) {
+    final ua = a.toUtc();
+    final ub = b.toUtc();
+    return ua.year == ub.year && ua.month == ub.month && ua.day == ub.day;
+  }
+
+  /// Finds a booking that has the same dates as [gap] but is in another room (not [gapRoomId]).
+  /// Returns null if none found — we only suggest moving rooms, not changing nights.
+  BookingModel? _findBookingMatchingGapDates(BookingGap gap, String gapRoomId) {
+    for (final b in _occupancyBookings) {
+      if (!_sameDayUtc(b.checkIn, gap.gapStart) || !_sameDayUtc(b.checkOut, gap.gapEnd)) {
+        continue;
+      }
+      final roomIds = b.selectedRoomIds ?? b.selectedRooms ?? [];
+      if (roomIds.contains(gapRoomId)) continue;
+      return b;
+    }
+    return null;
+  }
+
   Future<void> _showFillGapSuggestion(String roomId, String roomName) async {
     final gapInputs = _gapBookingInputsCalendar;
     final gaps = detectGaps(gapInputs).where((g) => g.roomId == roomId).toList();
     if (gaps.isEmpty) return;
     final gap = gaps.first;
-    final nextBooking = _bookingModelsById[gap.nextBookingId];
-    if (nextBooking == null) return;
-    final nights = nextBooking.checkOut.difference(nextBooking.checkIn).inDays;
-    final newCheckIn = gap.gapStart;
-    final newCheckOut = newCheckIn.add(Duration(days: nights));
+    final candidate = _findBookingMatchingGapDates(gap, roomId);
+    if (candidate == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No booking with the same dates (${DateFormat('MMM d').format(gap.gapStart)}–${DateFormat('MMM d').format(gap.gapEnd)}) in another room to move into $roomName.',
+          ),
+        ),
+      );
+      return;
+    }
     final dateFormat = DateFormat('MMM d, yyyy');
-    final oldRange = '${dateFormat.format(nextBooking.checkIn)} – ${dateFormat.format(nextBooking.checkOut)}';
-    final newRange = '${dateFormat.format(newCheckIn)} – ${dateFormat.format(newCheckOut)}';
+    final dateRange = '${dateFormat.format(candidate.checkIn)} – ${dateFormat.format(candidate.checkOut)}';
+    final currentRoomNames = _resolveRooms(candidate);
+    final currentRoomLabel = currentRoomNames.isEmpty ? 'another room' : currentRoomNames.join(', ');
 
     final confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text('Confirm change'),
+        title: const Text('Confirm room change'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -380,7 +450,7 @@ class _CalendarPageState extends State<CalendarPage> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Move ${nextBooking.userName}\'s booking from $oldRange to $newRange.',
+                'Move ${candidate.userName}\'s booking from $currentRoomLabel to $roomName. Dates stay the same: $dateRange.',
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -403,7 +473,7 @@ class _CalendarPageState extends State<CalendarPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Confirm changes'),
+            child: const Text('Confirm'),
           ),
         ],
       ),
@@ -413,13 +483,68 @@ class _CalendarPageState extends State<CalendarPage> {
     final userId = AuthScopeData.of(context).uid;
     final hotelId = HotelProvider.of(context).hotelId;
     if (userId == null || hotelId == null) return;
-    final updated = nextBooking.copyWith(checkIn: newCheckIn, checkOut: newCheckOut);
+    // Change only the room: same check-in/check-out, assign this booking to the gap room.
+    final updated = candidate.copyWith(
+      numberOfRooms: 1,
+      selectedRooms: [roomName],
+      selectedRoomIds: [roomId],
+    );
     await _updateBooking(userId, hotelId, updated);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Booking for ${nextBooking.userName} updated.'),
+          content: Text('${candidate.userName}\'s booking moved to $roomName.'),
         ),
+      );
+    }
+  }
+
+  /// One-click apply for an actionable suggestion (engine provides concrete move).
+  Future<void> _applyMoveSuggestion(MoveBookingAction action) async {
+    final booking = _bookingModelsById[action.bookingId];
+    if (booking == null) return;
+    final toRoomName = _roomIdToNameMap[action.toRoomId] ?? action.toRoomId;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm room change'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Move ${booking.userName}\'s booking to $toRoomName. Dates unchanged.',
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Apply this change?',
+                style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Apply')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final userId = AuthScopeData.of(context).uid;
+    final hotelId = HotelProvider.of(context).hotelId;
+    if (userId == null || hotelId == null) return;
+    final updated = booking.copyWith(
+      numberOfRooms: 1,
+      selectedRooms: [toRoomName],
+      selectedRoomIds: [action.toRoomId],
+    );
+    await _updateBooking(userId, hotelId, updated);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${booking.userName}\'s booking moved to $toRoomName.')),
       );
     }
   }

@@ -49,10 +49,20 @@ class GapBookingInput {
   bool get _isValid => checkInUtc.isBefore(checkOutUtc);
 }
 
-/// Detect gaps of 1–2 nights between consecutive bookings.
+/// Maximum gap size (nights) considered for fill/continuity suggestions.
+const int maxFillableGapNights = 3;
+
+/// Detect gaps of 1–3 nights between consecutive bookings (fillable range).
 /// [bookings] need not be sorted; groups by roomId, sorts each group.
-/// Returns only gaps where gapNights is in [1, 2]. Does NOT mutate [bookings].
+/// Does NOT mutate [bookings].
 List<BookingGap> detectGaps(List<GapBookingInput> bookings) {
+  final all = detectAllGaps(bookings);
+  return all.where((g) => g.gapNights >= 1 && g.gapNights <= maxFillableGapNights).toList();
+}
+
+/// Detect all gaps (any length) between consecutive bookings per room.
+/// Used for before/after metrics (gap count, fragmentation). Does NOT mutate [bookings].
+List<BookingGap> detectAllGaps(List<GapBookingInput> bookings) {
   if (bookings.isEmpty) return [];
   final Map<String, List<GapBookingInput>> byRoom = {};
   for (final b in bookings) {
@@ -72,7 +82,7 @@ List<BookingGap> detectGaps(List<GapBookingInput> bookings) {
       final gapEnd = next.checkInUtc;
       if (!gapEnd.isAfter(gapStart)) continue;
       final gapNights = _daysBetween(gapStart, gapEnd);
-      if (gapNights < 1 || gapNights > 2) continue;
+      if (gapNights < 1) continue;
       gaps.add(BookingGap(
         roomId: roomId,
         gapStart: gapStart,
