@@ -998,20 +998,10 @@ class _CalendarPageState extends State<CalendarPage> {
     final roomIndex = _displayedRoomNames.indexOf(room);
     if (roomIndex == -1) return;
     final n = booking.numberOfRooms;
-    if (roomIndex + n > _displayedRoomNames.length) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Not enough contiguous rooms: need $n from "$room"',
-            ),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-      return;
-    }
-    final targetRooms = _displayedRoomNames.sublist(roomIndex, roomIndex + n);
+    // Use as many contiguous rooms as fit from the drop cell (1 to n) so the user can place the booking anywhere.
+    final roomCount = n.clamp(1, _displayedRoomNames.length - roomIndex);
+    if (roomCount < 1) return;
+    final targetRooms = _displayedRoomNames.sublist(roomIndex, roomIndex + roomCount);
     final checkIn = DateTime(date.year, date.month, date.day);
     final checkOut = checkIn.add(Duration(days: booking.numberOfNights));
 
@@ -1026,11 +1016,20 @@ class _CalendarPageState extends State<CalendarPage> {
       excludeBookingId: bookingId,
     );
 
+    // Resolve room names to IDs so the grid uses the new room(s). resolvedSelectedRooms() prefers
+    // selectedRoomIds; if we only set selectedRooms, the old IDs would keep the booking in the previous room.
+    final targetRoomIds = <String>[];
+    for (final name in targetRooms) {
+      final id = _roomModelsMap[name]?.id;
+      if (id != null && id.isNotEmpty) targetRoomIds.add(id);
+    }
     final newStatus = fromWaitingList ? 'Confirmed' : booking.status;
     final updated = booking.copyWith(
       checkIn: checkIn,
       checkOut: checkOut,
+      numberOfRooms: targetRooms.length,
       selectedRooms: targetRooms,
+      selectedRoomIds: targetRoomIds.length == targetRooms.length ? targetRoomIds : [],
       status: newStatus,
     );
     await _updateBooking(userId, hotelId, updated);
@@ -2505,7 +2504,7 @@ class _CalendarPageState extends State<CalendarPage> {
     );
   }
 
-  /// Skeleton overlay showing the size of the booking being dragged (rooms × nights).
+  /// Skeleton overlay showing where the booking will be placed (preferred room + as many rooms × nights as fit).
   Widget _buildDragSkeletonOverlay() {
     final booking = _getWaitingListBookingById(_skeletonWaitingListBookingId!) ??
         _bookingModelsById[_skeletonWaitingListBookingId!];
@@ -2522,16 +2521,15 @@ class _CalendarPageState extends State<CalendarPage> {
 
     final nRooms = booking.numberOfRooms;
     final nNights = booking.numberOfNights;
-    final roomEnd = roomIndex + nRooms;
-    final dateEnd = dateIndex + nNights;
-    final fitsRooms = roomEnd <= _displayedRoomNames.length;
-    final fitsDates = dateEnd <= _dates.length;
-    final isValid = fitsRooms && fitsDates;
+    // Preview uses the same logic as drop: as many rooms/nights as fit from this cell (so user sees exactly where it will go).
+    final nRoomsEffective = nRooms.clamp(1, _displayedRoomNames.length - roomIndex);
+    final nNightsEffective = nNights.clamp(1, _dates.length - dateIndex);
+    final isValid = nRoomsEffective >= 1 && nNightsEffective >= 1;
 
     final left = _dayLabelWidth + roomIndex * _roomColumnWidth;
     final top = dateIndex * _dayRowHeight;
-    final width = nRooms * _roomColumnWidth;
-    final height = nNights * _dayRowHeight;
+    final width = nRoomsEffective * _roomColumnWidth;
+    final height = nNightsEffective * _dayRowHeight;
 
     return Positioned(
       left: left,
@@ -2555,7 +2553,7 @@ class _CalendarPageState extends State<CalendarPage> {
           ),
           child: Center(
             child: Text(
-              '${booking.userName}\n$nRooms room(s) · $nNights night(s)',
+              '${booking.userName}\n$nRoomsEffective room(s) · $nNightsEffective night(s)',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 11,
