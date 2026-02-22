@@ -740,7 +740,7 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
         label: const Text('Save changes'),
         style: FilledButton.styleFrom(
           backgroundColor: StayoraColors.success,
-          foregroundColor: Theme.of(context).colorScheme.onPrimary,
+          foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 14),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -757,7 +757,7 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
         onPressed: widget.onEditFull,
         style: FilledButton.styleFrom(
           backgroundColor: StayoraColors.blue,
-          foregroundColor: Theme.of(context).colorScheme.onPrimary,
+          foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 14),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -774,13 +774,13 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
   Widget _deleteButton(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      child: OutlinedButton.icon(
+      child: FilledButton.icon(
         onPressed: () async => widget.onDelete(),
         icon: const Icon(Icons.delete_outline_rounded, size: 18),
         label: const Text('Delete Booking'),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: Colors.red,
-          side: const BorderSide(color: Colors.red),
+        style: FilledButton.styleFrom(
+          backgroundColor: Colors.red,
+          foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 14),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -790,15 +790,18 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
   }
 
   Widget _closeButton(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return SizedBox(
       width: double.infinity,
-      child: TextButton(
+      child: FilledButton(
         onPressed: _handleClose,
-        style: TextButton.styleFrom(
-          foregroundColor: StayoraColors.blue,
+        style: FilledButton.styleFrom(
+          backgroundColor: scheme.inverseSurface,
+          foregroundColor: scheme.onInverseSurface,
           padding: const EdgeInsets.symmetric(vertical: 14),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          elevation: 0,
         ),
         child: const Text('Close'),
       ),

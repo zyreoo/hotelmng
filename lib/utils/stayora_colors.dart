@@ -45,6 +45,37 @@ abstract class StayoraColors {
     }
   }
 
+  // ── Distinct booking colors (PMS-style: same booking → same color) ─
+  /// Muted palette for dark theme: left stripe and accents.
+  static const List<Color> bookingPaletteDark = [
+    Color(0xFF5B8DEE), // blue
+    Color(0xFF4DBDB6), // teal
+    Color(0xFF9B7DD9), // purple
+    Color(0xFFE5A84A), // amber
+    Color(0xFFE07A9E), // pink
+    Color(0xFF7B7FDC), // indigo
+    Color(0xFF8BC34A), // lime
+  ];
+
+  /// Muted palette for light theme.
+  static const List<Color> bookingPaletteLight = [
+    Color(0xFF3D75D4),
+    Color(0xFF2DA89F),
+    Color(0xFF7B5FC4),
+    Color(0xFFC98E2E),
+    Color(0xFFC45A7D),
+    Color(0xFF5C5FBF),
+    Color(0xFF6B9E2E),
+  ];
+
+  /// Returns a distinct color for a booking. Same [bookingId] → same color across rooms/nights.
+  static Color bookingColorById(String bookingId, {required bool isDark}) {
+    if (bookingId.isEmpty) return muted;
+    final palette = isDark ? bookingPaletteDark : bookingPaletteLight;
+    final index = bookingId.hashCode.abs() % palette.length;
+    return palette[index];
+  }
+
   // ── Housekeeping status → colour ─────────────────────────────────
   static Color housekeepingColor(String status) {
     switch (status) {

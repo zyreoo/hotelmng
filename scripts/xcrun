@@ -1,0 +1,10 @@
+#!/bin/sh
+# Wrapper that adds -allowProvisioningUpdates to xcodebuild so macOS builds can
+# create/update provisioning profiles when needed. Use:
+#   PATH="$(pwd)/scripts:$PATH" flutter run -d macos
+if [ "$1" = "xcodebuild" ]; then
+  shift
+  exec /usr/bin/xcrun xcodebuild -allowProvisioningUpdates "$@"
+else
+  exec /usr/bin/xcrun "$@"
+fi

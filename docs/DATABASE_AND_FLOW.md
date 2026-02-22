@@ -7,7 +7,7 @@ All data is **scoped by logged-in user and current hotel**. Path pattern:
 ```
 users / {userId} / hotels / {hotelId} / <subcollections>
 ```
-
+ 
 - **`userId`** = Firebase Auth UID (the person using the app).
 - **`hotelId`** = ID of the currently selected hotel (one hotel per “property”).
 - Every read/write uses this pair so data is isolated per user and per hotel.

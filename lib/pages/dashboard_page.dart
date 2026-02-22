@@ -137,13 +137,24 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   /// Optimization suggestions (short gaps, fragmentation, low occupancy).
-  List<OptimizationSuggestion> get _optimizationSuggestions =>
-      generateOptimizationSuggestions(
-        _gapBookingInputs,
-        windowStart: DateTime.now(),
-        windowDays: 30,
-        nowUtc: () => DateTime.now().toUtc(),
-      );
+  /// Only suggests moves for gaps and bookings on or after today (redline); excludes checked-in bookings.
+  List<OptimizationSuggestion> get _optimizationSuggestions {
+    final now = DateTime.now();
+    final redlineUtc = DateTime.utc(now.year, now.month, now.day);
+    final checkedInIds = _bookingsForOccupancy
+        .where((b) => b.checkedInAt != null)
+        .map((b) => b.id)
+        .whereType<String>()
+        .toSet();
+    return generateOptimizationSuggestions(
+      _gapBookingInputs,
+      windowStart: now,
+      windowDays: 30,
+      nowUtc: () => DateTime.now().toUtc(),
+      redlineUtc: redlineUtc,
+      checkedInBookingIds: checkedInIds,
+    );
+  }
 
   /// True if [date] is >= checkIn (start of day) and < checkOut (start of day).
   bool _bookingOverlapsDate(BookingModel b, DateTime date) {
@@ -1343,13 +1354,19 @@ class _OptimizationSuggestionsCard extends StatelessWidget {
     this.roomIdToNameMap = const {},
   });
 
-  static String _messageWithRoomName(
+  /// User-friendly message: room IDs and booking ID replaced by names (no raw IDs).
+  static String _messageWithRoomNames(
     OptimizationSuggestion s,
-    Map<String, String> map,
+    Map<String, String> roomIdToNameMap,
   ) {
-    if (s.roomId == null) return s.message;
-    final name = map[s.roomId!] ?? s.roomId!;
-    return s.message.replaceFirst('Room ${s.roomId}', 'Room $name');
+    String text = s.message;
+    for (final e in roomIdToNameMap.entries) {
+      text = text.replaceAll('Room ${e.key}', 'Room ${e.value}');
+    }
+    if (s.bookingId != null) {
+      text = text.replaceFirst('booking ${s.bookingId!}', 'this booking');
+    }
+    return text;
   }
 
   @override
@@ -1406,7 +1423,7 @@ class _OptimizationSuggestionsCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _messageWithRoomName(s, roomIdToNameMap),
+                            _messageWithRoomNames(s, roomIdToNameMap),
                             style: TextStyle(
                               fontSize: 14,
                               color: colorScheme.onSurface,

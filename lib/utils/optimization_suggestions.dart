@@ -119,7 +119,12 @@ class OptimizationSuggestion {
 
   /// Measurable before→after effects (e.g. "Room 101 gap count: 3 → 2").
   final List<String> effects;
+
+  /// Single move (backward compat). Use [actionChain] when multiple moves.
   final MoveBookingAction? action;
+
+  /// Chain of moves to apply in order (e.g. move A to gap, then B to freed slot).
+  final List<MoveBookingAction>? actionChain;
 
   const OptimizationSuggestion({
     required this.type,
@@ -136,10 +141,19 @@ class OptimizationSuggestion {
     this.reason,
     this.effects = const [],
     this.action,
+    this.actionChain,
   });
 
-  /// True if this suggestion has a one-click action (move booking).
-  bool get isActionable => action != null;
+  /// True if this suggestion has one or more moves to apply.
+  bool get isActionable =>
+      action != null || (actionChain != null && actionChain!.isNotEmpty);
+
+  /// All actions to apply (chain if present, else single action).
+  List<MoveBookingAction> get actions {
+    if (actionChain != null && actionChain!.isNotEmpty) return actionChain!;
+    if (action != null) return [action!];
+    return [];
+  }
 
   Map<String, dynamic> toJson() {
     final map = <String, dynamic>{
@@ -158,6 +172,8 @@ class OptimizationSuggestion {
     if (score != null) map['score'] = score!;
     if (reason != null) map['reason'] = reason!;
     if (action != null) map['action'] = action!.toJson();
+    if (actionChain != null)
+      map['actionChain'] = actionChain!.map((a) => a.toJson()).toList();
     return map;
   }
 }
@@ -168,6 +184,10 @@ class OptimizationSuggestion {
 ///
 /// [windowStart] is the inclusive start of the analysis window (UTC midnight).
 /// [roomMetadata] optional; when provided, compatibility (type, floor, etc.) is used to prefer moves.
+/// [redlineUtc] if set, only gaps on or after this date (UTC midnight) are considered for moves,
+///   and only bookings with check-in strictly after the redline can be moved (so if the redline
+///   is on the first or any night of the stay, that booking is not movable).
+/// [checkedInBookingIds] booking IDs that are already checked in; these cannot be moved.
 ///
 /// Returns suggestions sorted by score descending (actionable first), then impactScore. Deterministic.
 List<OptimizationSuggestion> generateOptimizationSuggestions(
@@ -176,10 +196,13 @@ List<OptimizationSuggestion> generateOptimizationSuggestions(
   int windowDays = occupancyWindowDays,
   DateTime Function()? nowUtc,
   Map<String, RoomMeta>? roomMetadata,
+  DateTime? redlineUtc,
+  Set<String>? checkedInBookingIds,
 }) {
   final now = (nowUtc ?? () => DateTime.now().toUtc())();
   final winStart = _midnightUtc(windowStart ?? now);
   final winEnd = winStart.add(Duration(days: windowDays));
+  final redlineMidnight = redlineUtc != null ? _midnightUtc(redlineUtc) : null;
 
   final windowBookings = bookings
       .where(
@@ -205,7 +228,15 @@ List<OptimizationSuggestion> generateOptimizationSuggestions(
 
   final allGaps = detectGaps(windowBookings);
   final allGapsUnfiltered = detectAllGaps(windowBookings);
-  final shortGaps = allGaps;
+  List<BookingGap> shortGaps = allGaps;
+  if (redlineMidnight != null) {
+    shortGaps = shortGaps
+        .where(
+          (g) => !_midnightUtc(g.gapStart).isBefore(redlineMidnight),
+        )
+        .toList();
+    _debugLog('Short gaps after redline ${_debugDate(redlineMidnight)}: ${shortGaps.length}');
+  }
 
   _debugLog('Detected gaps (1–3 nights): ${shortGaps.length}');
   for (var i = 0; i < shortGaps.length; i++) {
@@ -225,11 +256,16 @@ List<OptimizationSuggestion> generateOptimizationSuggestions(
   for (final gap in shortGaps) {
     // Eligible candidates: bookings in other rooms that either are fully
     // contained in the gap or overlap the gap (longer booking covering the gap).
-    // _fitsInTargetWithoutOverlap still ensures we don't conflict with target room.
+    // Only consider bookings whose check-in is strictly after the redline (stay not started yet);
+    // exclude checked-in bookings. _fitsInTargetWithoutOverlap ensures no conflict in target room.
     final candidates = windowBookings
         .where(
           (b) =>
               b.roomId != gap.roomId &&
+              (redlineMidnight == null ||
+                  _midnightUtc(b.checkInUtc).isAfter(redlineMidnight)) &&
+              (checkedInBookingIds == null ||
+                  !checkedInBookingIds.contains(b.bookingId)) &&
               (_isContainedInGap(b, gap) || _overlapsGap(b, gap)),
         )
         .toList();
@@ -272,69 +308,47 @@ List<OptimizationSuggestion> generateOptimizationSuggestions(
         );
         continue;
       }
-      // Try full-date move first (booking keeps same dates).
-      final fitsFull = _fitsInTargetWithoutOverlap(windowBookings, c, gap);
-      if (fitsFull) {
-        final score = _scoreMove(windowBookings, c, gap, roomMetadata);
-        if (best == null || score > best.score) {
-          best = _ScoredMove(booking: c, gap: gap, score: score);
-          _debugLog(
-            '  candidate ${c.bookingId} (room ${c.roomId}): score=$score (new best, full-date)',
-          );
-        }
-        continue;
-      }
-      // Try trimmed-date move: place booking in gap only (reschedule to fit gap).
-      final trimmed = _trimmedPlacement(c, gap);
-      if (trimmed != null) {
-        final (placeStart, placeEnd) = trimmed;
-        if (_fitsInTargetWithDates(
-          windowBookings,
-          gap.roomId,
-          placeStart,
-          placeEnd,
-        )) {
-          final score = _scoreMove(
-            windowBookings,
-            c,
-            gap,
-            roomMetadata,
-            placedCheckIn: placeStart,
-            placedCheckOut: placeEnd,
-          );
-          if (best == null || score > best.score) {
-            best = _ScoredMove(
-              booking: c,
-              gap: gap,
-              score: score,
-              placedCheckIn: placeStart,
-              placedCheckOut: placeEnd,
-            );
-            _debugLog(
-              '  candidate ${c.bookingId} (room ${c.roomId}): score=$score (new best, trimmed to gap)',
-            );
-          }
-        }
-      } else {
+      // Only suggest moves when the booking's full dates fit in the target (same nights, no reschedule).
+      final fits = _fitsInTargetWithoutOverlap(windowBookings, c, gap);
+      if (!fits) {
         _debugLog(
           '  candidate ${c.bookingId} (room ${c.roomId}): skipped — would overlap existing booking in target room',
+        );
+        continue;
+      }
+      final score = _scoreMove(windowBookings, c, gap, roomMetadata);
+      if (best == null || score > best.score) {
+        best = _ScoredMove(booking: c, gap: gap, score: score);
+        _debugLog(
+          '  candidate ${c.bookingId} (room ${c.roomId}): score=$score (new best)',
         );
       }
     }
     if (best == null) {
-      _debugLog('  → All candidates rejected by safety or overlap.');
+      // Try two-step chain: move B1 from R1 to gap (frees R1), then B2 from R2 to R1.
+      final chain = _findTwoStepChain(
+        windowBookings,
+        gap,
+        roomMetadata,
+        redlineMidnight: redlineMidnight,
+        checkedInBookingIds: checkedInBookingIds,
+      );
+      if (chain != null) {
+        continuityCandidates.add(chain);
+        _debugLog('  → Selected 2-step chain: ${chain.actions.length} moves');
+      } else {
+        _debugLog('  → All candidates rejected by safety or overlap.');
+      }
       continue;
     }
 
-    final placeCheckIn = best.placedCheckIn ?? best.booking.checkInUtc;
-    final placeCheckOut = best.placedCheckOut ?? best.booking.checkOutUtc;
     final beforeTarget = _roomMetrics(windowBookings, gap.roomId);
     final afterTarget = _roomMetricsAfterMove(
       windowBookings,
       best.booking,
       gap.roomId,
-      placeCheckIn,
-      placeCheckOut,
+      best.booking.checkInUtc,
+      best.booking.checkOutUtc,
     );
     final beforeSource = _roomMetrics(windowBookings, best.booking.roomId);
     final afterSource = _roomMetricsAfterMove(
@@ -351,26 +365,19 @@ List<OptimizationSuggestion> generateOptimizationSuggestions(
     ];
     final createsNewGapInSource =
         afterSource.shortGapCount > beforeSource.shortGapCount;
-    String reason;
-    if (best.isTrimmed) {
-      reason =
-          'Fills a ${gap.gapNights}-night gap in Room ${gap.roomId} by rescheduling this booking to the gap dates (stay length may change).';
-    } else {
-      reason = createsNewGapInSource
-          ? 'Fills a ${gap.gapNights}-night gap in Room ${gap.roomId}. Note: this creates additional short gaps in Room ${best.booking.roomId}.'
-          : 'Fills a ${gap.gapNights}-night gap in Room ${gap.roomId} without creating new gaps in Room ${best.booking.roomId}.';
-    }
+    final reason = createsNewGapInSource
+        ? 'Fills a ${gap.gapNights}-night gap in Room ${gap.roomId}. Note: this creates additional short gaps in Room ${best.booking.roomId}.'
+        : 'Fills a ${gap.gapNights}-night gap in Room ${gap.roomId} without creating new gaps in Room ${best.booking.roomId}.';
 
     _debugLog(
-      '  → Selected: move ${best.booking.bookingId} from room ${best.booking.roomId} to ${gap.roomId} (score=${best.score}, trimmed=${best.isTrimmed})',
+      '  → Selected: move ${best.booking.bookingId} from room ${best.booking.roomId} to ${gap.roomId} (score=${best.score})',
     );
     continuityCandidates.add(
       OptimizationSuggestion(
         type: SuggestionType.continuity,
         roomId: gap.roomId,
-        message: best.isTrimmed
-            ? 'Move booking ${best.booking.bookingId} from Room ${best.booking.roomId} to Room ${gap.roomId} to fill the gap (dates will be adjusted to the gap).'
-            : 'Move booking ${best.booking.bookingId} from Room ${best.booking.roomId} to Room ${gap.roomId} to create continuity.',
+        message:
+            'Move booking ${best.booking.bookingId} from Room ${best.booking.roomId} to Room ${gap.roomId} to create continuity (same dates, same number of nights).',
         impactScore: _clamp(6 + gap.gapNights, 7, 10),
         relatedGapCount: 1,
         bookingId: best.booking.bookingId,
@@ -385,9 +392,9 @@ List<OptimizationSuggestion> generateOptimizationSuggestions(
           bookingId: best.booking.bookingId,
           fromRoomId: best.booking.roomId,
           toRoomId: gap.roomId,
-          newCheckIn: placeCheckIn,
-          newCheckOut: placeCheckOut,
-          requiresUserConfirm: best.isTrimmed,
+          newCheckIn: best.booking.checkInUtc,
+          newCheckOut: best.booking.checkOutUtc,
+          requiresUserConfirm: false,
         ),
       ),
     );
@@ -409,13 +416,15 @@ List<OptimizationSuggestion> generateOptimizationSuggestions(
     'Continuity candidates before dedup: ${continuityCandidates.length}',
   );
   for (final c in continuityCandidates) {
-    final id = c.bookingId;
-    if (id == null) continue;
-    if (_usedBookingIds.contains(id)) {
-      _debugLog('  Skip duplicate bookingId=$id');
+    final ids = c.actions.map((a) => a.bookingId).toSet().toList();
+    final overlap = ids.any((id) => _usedBookingIds.contains(id));
+    if (overlap) {
+      _debugLog('  Skip duplicate bookingId in: $ids');
       continue;
     }
-    _usedBookingIds.add(id);
+    for (final id in ids) {
+      _usedBookingIds.add(id);
+    }
     if (c.roomId != null) _roomsWithActionableGap.add(c.roomId!);
     suggestions.add(c);
   }
@@ -531,18 +540,7 @@ class _ScoredMove {
   final GapBookingInput booking;
   final BookingGap gap;
   final double score;
-
-  /// When set, move uses these dates (trimmed to gap) and requires user confirm.
-  final DateTime? placedCheckIn;
-  final DateTime? placedCheckOut;
-  _ScoredMove({
-    required this.booking,
-    required this.gap,
-    required this.score,
-    this.placedCheckIn,
-    this.placedCheckOut,
-  });
-  bool get isTrimmed => placedCheckIn != null && placedCheckOut != null;
+  _ScoredMove({required this.booking, required this.gap, required this.score});
 }
 
 _RoomMetrics _roomMetrics(List<GapBookingInput> bookings, String roomId) {
@@ -697,24 +695,6 @@ bool _fitsInTargetWithDates(
   return true;
 }
 
-/// Trim [candidate] to the gap interval (date-only). Returns (start, end) if
-/// overlap is at least 1 night, else null.
-(DateTime, DateTime)? _trimmedPlacement(
-  GapBookingInput candidate,
-  BookingGap gap,
-) {
-  final gStart = _midnightUtc(gap.gapStart);
-  final gEnd = _midnightUtc(gap.gapEnd);
-  final bStart = _midnightUtc(candidate.checkInUtc);
-  final bEnd = _midnightUtc(candidate.checkOutUtc);
-  if (!bEnd.isAfter(bStart) || !gEnd.isAfter(gStart)) return null;
-  final placeStart = _maxDate(gStart, bStart);
-  final placeEnd = _minDate(gEnd, bEnd);
-  if (!placeEnd.isAfter(placeStart)) return null;
-  if (placeEnd.difference(placeStart).inDays < 1) return null;
-  return (placeStart, placeEnd);
-}
-
 /// Reject moves that would increase the number of short gaps (1–2 nights)
 /// in the source room after removing the booking.
 bool _isMoveSafe(List<GapBookingInput> bookings, GapBookingInput candidate) {
@@ -740,19 +720,15 @@ double _scoreMove(
   List<GapBookingInput> bookings,
   GapBookingInput candidate,
   BookingGap gap,
-  Map<String, RoomMeta>? roomMetadata, {
-  DateTime? placedCheckIn,
-  DateTime? placedCheckOut,
-}) {
-  final targetCheckIn = placedCheckIn ?? candidate.checkInUtc;
-  final targetCheckOut = placedCheckOut ?? candidate.checkOutUtc;
+  Map<String, RoomMeta>? roomMetadata,
+) {
   final beforeTarget = _roomMetrics(bookings, gap.roomId);
   final afterTarget = _roomMetricsAfterMove(
     bookings,
     candidate,
     gap.roomId,
-    targetCheckIn,
-    targetCheckOut,
+    candidate.checkInUtc,
+    candidate.checkOutUtc,
   );
   final beforeSource = _roomMetrics(bookings, candidate.roomId);
   final afterSource = _roomMetricsAfterMove(
@@ -812,6 +788,103 @@ double _scoreMove(
   }
 
   return targetImprovement - sourceDamage + compatibility;
+}
+
+bool _sameDates(GapBookingInput a, GapBookingInput b) {
+  final au = _midnightUtc(a.checkInUtc);
+  final bu = _midnightUtc(b.checkInUtc);
+  if (!au.isAtSameMomentAs(bu)) return false;
+  final ae = _midnightUtc(a.checkOutUtc);
+  final be = _midnightUtc(b.checkOutUtc);
+  return ae.isAtSameMomentAs(be);
+}
+
+/// Find a two-step chain: B1 (in R1) → gap, B2 (in R2) → R1. Same dates for B1 and B2.
+/// Returns a suggestion with actionChain, or null if none found.
+OptimizationSuggestion? _findTwoStepChain(
+  List<GapBookingInput> windowBookings,
+  BookingGap gap,
+  Map<String, RoomMeta>? roomMetadata, {
+  DateTime? redlineMidnight,
+  Set<String>? checkedInBookingIds,
+}) {
+  final gapRoomId = gap.roomId;
+  for (final b1 in windowBookings) {
+    if (b1.roomId == gapRoomId) continue;
+    if (redlineMidnight != null &&
+        !_midnightUtc(b1.checkInUtc).isAfter(redlineMidnight)) continue;
+    if (checkedInBookingIds != null &&
+        checkedInBookingIds.contains(b1.bookingId)) continue;
+    if (!_isContainedInGap(b1, gap)) continue;
+    if (!_isMoveSafe(windowBookings, b1)) continue;
+    if (!_fitsInTargetWithoutOverlap(windowBookings, b1, gap)) continue;
+
+    final r1 = b1.roomId;
+    final withoutB1 = windowBookings
+        .where((b) => !(b.bookingId == b1.bookingId && b.roomId == b1.roomId))
+        .toList();
+    for (final b2 in windowBookings) {
+      if (b2.roomId == r1 || b2.roomId == gapRoomId) continue;
+      if (b2.bookingId == b1.bookingId) continue;
+      if (redlineMidnight != null &&
+          !_midnightUtc(b2.checkInUtc).isAfter(redlineMidnight)) continue;
+      if (checkedInBookingIds != null &&
+          checkedInBookingIds.contains(b2.bookingId)) continue;
+      if (!_sameDates(b1, b2)) continue;
+      if (!_isMoveSafe(windowBookings, b2)) continue;
+      if (!_fitsInTargetWithDates(withoutB1, r1, b2.checkInUtc, b2.checkOutUtc))
+        continue;
+
+      final action1 = MoveBookingAction(
+        bookingId: b1.bookingId,
+        fromRoomId: b1.roomId,
+        toRoomId: gapRoomId,
+        newCheckIn: b1.checkInUtc,
+        newCheckOut: b1.checkOutUtc,
+        requiresUserConfirm: false,
+      );
+      final action2 = MoveBookingAction(
+        bookingId: b2.bookingId,
+        fromRoomId: b2.roomId,
+        toRoomId: r1,
+        newCheckIn: b2.checkInUtc,
+        newCheckOut: b2.checkOutUtc,
+        requiresUserConfirm: false,
+      );
+      final beforeTarget = _roomMetrics(windowBookings, gapRoomId);
+      final afterTarget = _roomMetricsAfterMove(
+        windowBookings,
+        b1,
+        gapRoomId,
+        b1.checkInUtc,
+        b1.checkOutUtc,
+      );
+      final effects = <String>[
+        'Room $gapRoomId gap count: ${beforeTarget.shortGapCount} → ${afterTarget.shortGapCount}',
+        'Two moves: booking ${b1.bookingId} to Room $gapRoomId, then booking ${b2.bookingId} to Room $r1.',
+      ];
+      return OptimizationSuggestion(
+        type: SuggestionType.continuity,
+        roomId: gapRoomId,
+        message:
+            'Chain move to fill gap: (1) Move booking ${b1.bookingId} from Room $r1 to Room $gapRoomId, (2) Move booking ${b2.bookingId} from Room ${b2.roomId} to Room $r1. Same dates, same number of nights.',
+        impactScore: _clamp(6 + gap.gapNights, 7, 10),
+        relatedGapCount: 1,
+        bookingId: b1.bookingId,
+        fromRoomId: b1.roomId,
+        toRoomId: gapRoomId,
+        gapStart: gap.gapStart,
+        gapEnd: gap.gapEnd,
+        score: 10.0,
+        reason:
+            'Fills the ${gap.gapNights}-night gap in Room $gapRoomId by shifting two bookings (chess move).',
+        effects: effects,
+        action: null,
+        actionChain: [action1, action2],
+      );
+    }
+  }
+  return null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

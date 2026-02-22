@@ -4,6 +4,7 @@ import '../../../models/booking_model.dart';
 import '../../../utils/stayora_colors.dart';
 
 /// A booking summary card used in the calendar day-view dialog.
+/// PMS-style: left accent stripe, clear typography hierarchy, status indicator.
 class CalendarDayViewCard extends StatelessWidget {
   final BookingModel booking;
   final VoidCallback onTap;
@@ -37,121 +38,166 @@ class CalendarDayViewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scheme = Theme.of(context).colorScheme;
     final statusColor = _statusColor(context, booking.status);
-    return Card(
+    final stripeColor = statusColor;
+    final cardBg = isDark
+        ? scheme.surfaceContainerHighest
+        : scheme.surfaceContainerLowest;
+    final borderColor = scheme.outline.withOpacity(0.25);
+
+    return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
-        onTap: onTap,
+      decoration: BoxDecoration(
+        color: cardBg,
         borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      booking.userName,
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      booking.status,
-                      style: TextStyle(
-                        color: statusColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              _infoRow(context, Icons.phone_rounded, booking.userPhone),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(Icons.calendar_today_rounded,
-                      size: 16,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${DateFormat('MMM d').format(booking.checkIn)} - '
-                    '${DateFormat('MMM d, yyyy').format(booking.checkOut)}',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Icon(Icons.nights_stay_rounded,
-                      size: 16,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${booking.numberOfNights} '
-                    'night${booking.numberOfNights != 1 ? 's' : ''}',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-              Builder(builder: (context) {
-                final rooms = booking.resolvedSelectedRooms(roomIdToName);
-                if (rooms.isEmpty) return const SizedBox.shrink();
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 8),
-                    Row(
+        border: Border.all(color: borderColor, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.shadow.withOpacity(isDark ? 0.15 : 0.06),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: IntrinsicHeight(
+              child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Left accent stripe (PMS standard)
+                Container(
+                  width: 5,
+                  color: stripeColor,
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.bed_rounded,
-                            size: 16,
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            rooms.join(', '),
-                            style: TextStyle(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                              fontSize: 14,
+                        // Line 1 — Primary: guest name + status dot
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                booking.userName,
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                  color: scheme.onSurface,
+                                ),
+                              ),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            // Status dot (subdued)
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: statusColor,
+                                border: Border.all(
+                                  color: cardBg,
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            // Status chip (subdued)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: statusColor.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                booking.status.toUpperCase(),
+                                style: TextStyle(
+                                  color: statusColor,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        // Line 2 — Secondary: nights • dates
+                        const SizedBox(height: 6),
+                        Text(
+                          '${booking.numberOfNights} night${booking.numberOfNights != 1 ? 's' : ''} • '
+                          '${DateFormat('MMM d').format(booking.checkIn)} – ${DateFormat('MMM d').format(booking.checkOut)}',
+                          style: TextStyle(
+                            color: scheme.onSurfaceVariant,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
                           ),
+                        ),
+                        // Optional line 3: phone + rooms
+                        const SizedBox(height: 8),
+                        _infoRow(context, Icons.phone_rounded, booking.userPhone),
+                        Builder(
+                          builder: (context) {
+                            final rooms =
+                                booking.resolvedSelectedRooms(roomIdToName);
+                            if (rooms.isEmpty) return const SizedBox.shrink();
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.bed_rounded,
+                                    size: 14,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      rooms.join(', '),
+                                      style: TextStyle(
+                                        color: scheme.onSurfaceVariant,
+                                        fontSize: 13,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
                         ),
                       ],
                     ),
-                  ],
-                );
-              }),
-            ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
+    ),
     );
   }
 
   Widget _infoRow(BuildContext context, IconData icon, String text) {
     return Row(
       children: [
-        Icon(icon,
-            size: 16,
-            color: Theme.of(context).colorScheme.onSurfaceVariant),
+        Icon(
+          icon,
+          size: 16,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
         const SizedBox(width: 8),
         Text(
           text,

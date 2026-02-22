@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'package:cloud_firestore/cloud_firestore.dart' show DocumentSnapshot, DocumentChangeType, DocumentChange, QuerySnapshot;
+import 'package:cloud_firestore/cloud_firestore.dart'
+    show DocumentSnapshot, DocumentChangeType, DocumentChange, QuerySnapshot;
 import '../models/booking_model.dart';
 import '../models/calendar_booking.dart';
 import '../models/room_model.dart';
@@ -54,7 +55,6 @@ class _CalendarPageState extends State<CalendarPage> {
   final List<DateTime> _cachedDates = [];
   double _lastScrollOffset = 0.0;
 
-
   // Real-time Firestore synchronization
   StreamSubscription<QuerySnapshot>? _bookingsSubscription;
   StreamSubscription<QuerySnapshot>? _waitingListSubscription;
@@ -66,8 +66,10 @@ class _CalendarPageState extends State<CalendarPage> {
 
   // Rooms loaded from Firestore (hotel-specific)
   List<String> _roomNames = [];
+
   /// Full room models keyed by room name — used for housekeeping dots.
   Map<String, RoomModel> _roomModelsMap = {};
+
   /// Room ID → current name, used to resolve selectedRoomIds in bookings.
   Map<String, String> _roomIdToNameMap = {};
   final FirebaseService _firebaseService = FirebaseService();
@@ -104,6 +106,10 @@ class _CalendarPageState extends State<CalendarPage> {
   String? _skeletonRoom;
   DateTime? _skeletonDate;
 
+  /// Hover state for booking cards (desktop/tablet).
+  String? _hoveredRoom;
+  DateTime? _hoveredDate;
+
   static List<String> get statusOptions => BookingModel.statusOptions;
 
   static Color _statusColor(String status) => StayoraColors.forStatus(status);
@@ -130,12 +136,18 @@ class _CalendarPageState extends State<CalendarPage> {
   final ScrollController _stickyDayLabelsScrollController = ScrollController();
 
   Future<void> _deleteBooking(
-      String userId, String hotelId, String bookingId) async {
+    String userId,
+    String hotelId,
+    String bookingId,
+  ) async {
     await _firebaseService.deleteBooking(userId, hotelId, bookingId);
   }
 
   Future<void> _updateBooking(
-      String userId, String hotelId, BookingModel booking) async {
+    String userId,
+    String hotelId,
+    BookingModel booking,
+  ) async {
     await _firebaseService.updateBooking(userId, hotelId, booking);
   }
 
@@ -182,11 +194,9 @@ class _CalendarPageState extends State<CalendarPage> {
       booking.resolvedSelectedRooms(_roomIdToNameMap);
 
   /// Bookings that occupy a room (excludes Cancelled and Waiting list).
-  List<BookingModel> get _occupancyBookings =>
-      _bookingModelsById.values
-          .where((b) =>
-              b.status != 'Cancelled' && b.status != 'Waiting list')
-          .toList();
+  List<BookingModel> get _occupancyBookings => _bookingModelsById.values
+      .where((b) => b.status != 'Cancelled' && b.status != 'Waiting list')
+      .toList();
 
   /// Gap inputs for optimization suggestions (one entry per room per booking).
   /// Uses UTC midnight for check-in/check-out so gap detection and candidate matching align.
@@ -194,45 +204,85 @@ class _CalendarPageState extends State<CalendarPage> {
     final list = <GapBookingInput>[];
     for (final b in _occupancyBookings) {
       final roomIds = b.selectedRoomIds ?? b.selectedRooms ?? [];
-      final checkInUtc = DateTime.utc(b.checkIn.year, b.checkIn.month, b.checkIn.day);
-      final checkOutUtc = DateTime.utc(b.checkOut.year, b.checkOut.month, b.checkOut.day);
+      final checkInUtc = DateTime.utc(
+        b.checkIn.year,
+        b.checkIn.month,
+        b.checkIn.day,
+      );
+      final checkOutUtc = DateTime.utc(
+        b.checkOut.year,
+        b.checkOut.month,
+        b.checkOut.day,
+      );
       for (final roomId in roomIds) {
         if (roomId.isEmpty) continue;
-        list.add(GapBookingInput(
-          bookingId: b.id ?? '',
-          roomId: roomId,
-          checkInUtc: checkInUtc,
-          checkOutUtc: checkOutUtc,
-        ));
+        list.add(
+          GapBookingInput(
+            bookingId: b.id ?? '',
+            roomId: roomId,
+            checkInUtc: checkInUtc,
+            checkOutUtc: checkOutUtc,
+          ),
+        );
       }
     }
     return list;
   }
 
-  List<OptimizationSuggestion> get _calendarOptimizationSuggestions =>
-      generateOptimizationSuggestions(
-        _gapBookingInputsCalendar,
-        windowStart: DateTime.now(),
-        windowDays: 30,
-        nowUtc: () => DateTime.now().toUtc(),
-      );
+  /// Only suggests moves for gaps and bookings on or after today (redline); excludes checked-in bookings.
+  List<OptimizationSuggestion> get _calendarOptimizationSuggestions {
+    final now = DateTime.now();
+    final redlineUtc = DateTime.utc(now.year, now.month, now.day);
+    final checkedInIds = _occupancyBookings
+        .where((b) => b.checkedInAt != null)
+        .map((b) => b.id)
+        .whereType<String>()
+        .toSet();
+    return generateOptimizationSuggestions(
+      _gapBookingInputsCalendar,
+      windowStart: now,
+      windowDays: 30,
+      nowUtc: () => DateTime.now().toUtc(),
+      redlineUtc: redlineUtc,
+      checkedInBookingIds: checkedInIds,
+    );
+  }
 
-  static String _suggestionMessageWithRoomName(
-    OptimizationSuggestion s,
-    Map<String, String> map,
-  ) {
-    if (s.roomId == null) return s.message;
-    final name = map[s.roomId!] ?? s.roomId!;
-    return s.message.replaceFirst('Room ${s.roomId}', 'Room $name');
+  /// User-friendly suggestion text: guest name and room names only (no raw IDs).
+  String _suggestionDisplayMessage(OptimizationSuggestion s) {
+    String text = s.message;
+    for (final e in _roomIdToNameMap.entries) {
+      text = text.replaceAll('Room ${e.key}', 'Room ${e.value}');
+    }
+    if (s.bookingId != null) {
+      final booking = _bookingModelsById[s.bookingId!];
+      if (booking != null && booking.userName.isNotEmpty) {
+        text = text.replaceFirst(
+          'booking ${s.bookingId!}',
+          "${booking.userName}'s booking",
+        );
+      }
+    }
+    return text;
+  }
+
+  /// Effects lines with room IDs replaced by room names.
+  List<String> _suggestionEffectsWithRoomNames(OptimizationSuggestion s) {
+    return s.effects.map((e) => _textWithRoomNames(e)).toList();
+  }
+
+  String _textWithRoomNames(String text) {
+    for (final entry in _roomIdToNameMap.entries) {
+      text = text.replaceAll('Room ${entry.key}', 'Room ${entry.value}');
+    }
+    return text;
   }
 
   void _showSuggestionsBottomSheet() {
     final suggestions = _calendarOptimizationSuggestions;
     if (suggestions.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No optimization suggestions right now.'),
-        ),
+        const SnackBar(content: Text('No optimization suggestions right now.')),
       );
       return;
     }
@@ -248,7 +298,9 @@ class _CalendarPageState extends State<CalendarPage> {
           return Container(
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surface,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -258,7 +310,9 @@ class _CalendarPageState extends State<CalendarPage> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurfaceVariant.withOpacity(0.4),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -267,7 +321,11 @@ class _CalendarPageState extends State<CalendarPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Row(
                     children: [
-                      Icon(Icons.lightbulb_outline_rounded, color: StayoraColors.warning, size: 24),
+                      Icon(
+                        Icons.lightbulb_outline_rounded,
+                        color: StayoraColors.warning,
+                        size: 24,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         'Suggestions',
@@ -296,7 +354,9 @@ class _CalendarPageState extends State<CalendarPage> {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                             side: BorderSide(
-                              color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outline.withOpacity(0.2),
                             ),
                           ),
                           child: Padding(
@@ -305,10 +365,12 @@ class _CalendarPageState extends State<CalendarPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  _suggestionMessageWithRoomName(s, _roomIdToNameMap),
+                                  _suggestionDisplayMessage(s),
                                   style: TextStyle(
                                     fontSize: 14,
-                                    color: Theme.of(context).colorScheme.onSurface,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface,
                                   ),
                                 ),
                                 const SizedBox(height: 6),
@@ -316,42 +378,70 @@ class _CalendarPageState extends State<CalendarPage> {
                                   'Impact: ${s.impactScore}/10',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
                                   ),
                                 ),
-                                if (s.reason != null && s.reason!.isNotEmpty) ...[
+                                if (s.reason != null &&
+                                    s.reason!.isNotEmpty) ...[
                                   const SizedBox(height: 6),
                                   Text(
-                                    s.reason!,
+                                    _textWithRoomNames(s.reason!),
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontStyle: FontStyle.italic,
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
                                     ),
                                   ),
                                 ],
                                 if (s.effects.isNotEmpty) ...[
                                   const SizedBox(height: 4),
-                                  ...s.effects.map((e) => Padding(
-                                        padding: const EdgeInsets.only(bottom: 2),
-                                        child: Text(
-                                          e,
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.9),
-                                          ),
+                                  ..._suggestionEffectsWithRoomNames(s).map(
+                                    (e) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 2),
+                                      child: Text(
+                                        e,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant
+                                              .withOpacity(0.9),
                                         ),
-                                      )),
+                                      ),
+                                    ),
+                                  ),
                                 ],
-                                if (s.isActionable && s.action != null) ...[
+                                if (s.isActionable && s.actions.isNotEmpty) ...[
                                   const SizedBox(height: 10),
                                   TextButton.icon(
-                                    onPressed: () {
+                                    onPressed: () async {
                                       Navigator.pop(ctx);
-                                      _applyMoveSuggestion(s.action!);
+                                      final accepted = s.actions.length == 1
+                                          ? await _showMovePreviewDialog(
+                                              s.actions.first,
+                                            )
+                                          : await _showChainPreviewDialog(
+                                              s.actions,
+                                            );
+                                      if (accepted == true && mounted) {
+                                        await _applyMoveSuggestionChain(
+                                          s.actions,
+                                        );
+                                      }
                                     },
-                                    icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
-                                    label: const Text('Apply'),
+                                    icon: const Icon(
+                                      Icons.check_circle_outline_rounded,
+                                      size: 18,
+                                    ),
+                                    label: Text(
+                                      s.actions.length > 1
+                                          ? 'Apply ${s.actions.length} moves'
+                                          : 'Apply',
+                                    ),
                                     style: TextButton.styleFrom(
                                       foregroundColor: StayoraLogo.stayoraBlue,
                                     ),
@@ -364,9 +454,15 @@ class _CalendarPageState extends State<CalendarPage> {
                                   TextButton.icon(
                                     onPressed: () {
                                       Navigator.pop(ctx);
-                                      _showFillGapSuggestion(s.roomId!, roomName);
+                                      _showFillGapSuggestion(
+                                        s.roomId!,
+                                        roomName,
+                                      );
                                     },
-                                    icon: const Icon(Icons.auto_fix_high_rounded, size: 18),
+                                    icon: const Icon(
+                                      Icons.auto_fix_high_rounded,
+                                      size: 18,
+                                    ),
                                     label: const Text('Suggest fill'),
                                     style: TextButton.styleFrom(
                                       foregroundColor: StayoraLogo.stayoraBlue,
@@ -400,7 +496,8 @@ class _CalendarPageState extends State<CalendarPage> {
   /// Returns null if none found — we only suggest moving rooms, not changing nights.
   BookingModel? _findBookingMatchingGapDates(BookingGap gap, String gapRoomId) {
     for (final b in _occupancyBookings) {
-      if (!_sameDayUtc(b.checkIn, gap.gapStart) || !_sameDayUtc(b.checkOut, gap.gapEnd)) {
+      if (!_sameDayUtc(b.checkIn, gap.gapStart) ||
+          !_sameDayUtc(b.checkOut, gap.gapEnd)) {
         continue;
       }
       final roomIds = b.selectedRoomIds ?? b.selectedRooms ?? [];
@@ -412,7 +509,9 @@ class _CalendarPageState extends State<CalendarPage> {
 
   Future<void> _showFillGapSuggestion(String roomId, String roomName) async {
     final gapInputs = _gapBookingInputsCalendar;
-    final gaps = detectGaps(gapInputs).where((g) => g.roomId == roomId).toList();
+    final gaps = detectGaps(
+      gapInputs,
+    ).where((g) => g.roomId == roomId).toList();
     if (gaps.isEmpty) return;
     final gap = gaps.first;
     final candidate = _findBookingMatchingGapDates(gap, roomId);
@@ -428,9 +527,12 @@ class _CalendarPageState extends State<CalendarPage> {
       return;
     }
     final dateFormat = DateFormat('MMM d, yyyy');
-    final dateRange = '${dateFormat.format(candidate.checkIn)} – ${dateFormat.format(candidate.checkOut)}';
+    final dateRange =
+        '${dateFormat.format(candidate.checkIn)} – ${dateFormat.format(candidate.checkOut)}';
     final currentRoomNames = _resolveRooms(candidate);
-    final currentRoomLabel = currentRoomNames.isEmpty ? 'another room' : currentRoomNames.join(', ');
+    final currentRoomLabel = currentRoomNames.isEmpty
+        ? 'another room'
+        : currentRoomNames.join(', ');
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -499,43 +601,183 @@ class _CalendarPageState extends State<CalendarPage> {
     }
   }
 
-  /// One-click apply for an actionable suggestion (engine provides concrete move).
-  Future<void> _applyMoveSuggestion(MoveBookingAction action) async {
+  /// Shows a preview of the move (before → after). Returns true if user accepts.
+  Future<bool?> _showMovePreviewDialog(MoveBookingAction action) async {
     final booking = _bookingModelsById[action.bookingId];
-    if (booking == null) return;
+    if (booking == null) return false;
+    final fromRoomName =
+        _roomIdToNameMap[action.fromRoomId] ?? action.fromRoomId;
     final toRoomName = _roomIdToNameMap[action.toRoomId] ?? action.toRoomId;
-    final confirmed = await showDialog<bool>(
+    final dateFormat = DateFormat('MMM d, yyyy');
+    final beforeRange =
+        '${dateFormat.format(booking.checkIn)} – ${dateFormat.format(booking.checkOut)}';
+    final datesChange = action.requiresUserConfirm;
+    final afterRange = datesChange
+        ? '${dateFormat.format(action.newCheckIn)} – ${dateFormat.format(action.newCheckOut)}'
+        : beforeRange;
+
+    return showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text('Confirm room change'),
+        title: const Text('Preview change'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Move ${booking.userName}\'s booking to $toRoomName. Dates unchanged.',
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                '${booking.userName}\'s booking will move as shown below. Accept to apply.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
+              _MovePreviewTimeline(
+                fromRoomName: fromRoomName,
+                toRoomName: toRoomName,
+                beforeCheckIn: booking.checkIn,
+                beforeCheckOut: booking.checkOut,
+                afterCheckIn: action.newCheckIn,
+                afterCheckOut: action.newCheckOut,
+              ),
+              const SizedBox(height: 12),
+              _previewRow(
+                ctx,
+                label: 'Before',
+                guest: booking.userName,
+                room: fromRoomName,
+                dates: beforeRange,
+                isBefore: true,
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.arrow_downward_rounded,
+                      size: 20,
+                      color: Theme.of(ctx).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'will become',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(ctx).colorScheme.primary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _previewRow(
+                ctx,
+                label: 'After',
+                guest: booking.userName,
+                room: toRoomName,
+                dates: afterRange,
+                isBefore: false,
+              ),
+              if (datesChange) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Stay length will change to match the gap.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
               Text(
-                'Apply this change?',
-                style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                'Accept to apply this change, or cancel.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Apply')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Don\'t accept'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Accept'),
+          ),
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+  }
+
+  Widget _previewRow(
+    BuildContext ctx, {
+    required String label,
+    required String guest,
+    required String room,
+    required String dates,
+    required bool isBefore,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(
+          ctx,
+        ).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Theme.of(ctx).colorScheme.outline.withOpacity(0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '$guest\'s booking',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Theme.of(ctx).colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Room $room • $dates',
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Applies the move (room only; dates and number of nights stay the same).
+  Future<void> _applyMoveSuggestion(MoveBookingAction action) async {
+    final booking = _bookingModelsById[action.bookingId];
+    if (booking == null) return;
+    final toRoomName = _roomIdToNameMap[action.toRoomId] ?? action.toRoomId;
     final userId = AuthScopeData.of(context).uid;
     final hotelId = HotelProvider.of(context).hotelId;
     if (userId == null || hotelId == null) return;
+
     final updated = booking.copyWith(
       numberOfRooms: 1,
       selectedRooms: [toRoomName],
@@ -544,9 +786,74 @@ class _CalendarPageState extends State<CalendarPage> {
     await _updateBooking(userId, hotelId, updated);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${booking.userName}\'s booking moved to $toRoomName.')),
+        SnackBar(
+          content: Text('${booking.userName}\'s booking moved to $toRoomName.'),
+        ),
       );
     }
+  }
+
+  /// Applies a chain of moves in order (e.g. B1→gap, then B2→freed slot).
+  Future<void> _applyMoveSuggestionChain(
+    List<MoveBookingAction> actions,
+  ) async {
+    for (final action in actions) {
+      await _applyMoveSuggestion(action);
+      if (!mounted) return;
+    }
+  }
+
+  /// Preview for a chain of moves (Cursor-style: before | after calendar view). Returns true if user accepts.
+  Future<bool?> _showChainPreviewDialog(List<MoveBookingAction> actions) async {
+    for (final a in actions) {
+      if (_bookingModelsById[a.bookingId] == null) return false;
+    }
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Preview chain move'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'How the calendar will look before and after applying ${actions.length} moves.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _ChainPreviewCalendar(
+                actions: actions,
+                bookingModelsById: _bookingModelsById,
+                roomIdToNameMap: _roomIdToNameMap,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Accept to apply all moves, or cancel.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Don\'t accept'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Accept'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -728,7 +1035,9 @@ class _CalendarPageState extends State<CalendarPage> {
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                      color: Theme.of(context).colorScheme.shadow.withOpacity(0.15),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.shadow.withOpacity(0.15),
                       blurRadius: 20,
                       offset: const Offset(0, 10),
                     ),
@@ -783,7 +1092,9 @@ class _CalendarPageState extends State<CalendarPage> {
                                 Icon(
                                   Icons.calendar_today_rounded,
                                   size: 20,
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                 ),
                                 const SizedBox(width: 12),
                                 Text(
@@ -791,14 +1102,18 @@ class _CalendarPageState extends State<CalendarPage> {
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w500,
-                                    color: Theme.of(context).colorScheme.onSurface,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface,
                                   ),
                                 ),
                                 const Spacer(),
                                 Icon(
                                   Icons.chevron_right_rounded,
                                   size: 22,
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                 ),
                               ],
                             ),
@@ -837,7 +1152,9 @@ class _CalendarPageState extends State<CalendarPage> {
                               },
                               style: FilledButton.styleFrom(
                                 backgroundColor: StayoraColors.blue,
-                                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                                foregroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.onPrimary,
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 12,
                                 ),
@@ -896,6 +1213,8 @@ class _CalendarPageState extends State<CalendarPage> {
         isFirstNight: i == 0,
         isLastNight: i == nights - 1,
         totalNights: nights,
+        status: 'Pending',
+        phone: '',
       );
     }
   }
@@ -1013,7 +1332,8 @@ class _CalendarPageState extends State<CalendarPage> {
         final night = DateTime(date.year, date.month, date.day);
         final booking = _getBooking(room, night);
         if (booking != null && booking.bookingId.isNotEmpty) {
-          if (excludeBookingId == null || booking.bookingId != excludeBookingId) {
+          if (excludeBookingId == null ||
+              booking.bookingId != excludeBookingId) {
             bookingIds.add(booking.bookingId);
           }
         }
@@ -1126,23 +1446,14 @@ class _CalendarPageState extends State<CalendarPage> {
     // Use as many contiguous rooms as fit from the drop cell (1 to n) so the user can place the booking anywhere.
     final roomCount = n.clamp(1, _displayedRoomNames.length - roomIndex);
     if (roomCount < 1) return;
-    final targetRooms = _displayedRoomNames.sublist(roomIndex, roomIndex + roomCount);
+    final targetRooms = _displayedRoomNames.sublist(
+      roomIndex,
+      roomIndex + roomCount,
+    );
     final checkIn = DateTime(date.year, date.month, date.day);
     final checkOut = checkIn.add(Duration(days: booking.numberOfNights));
 
-    // Move any existing bookings in target range to waiting list (exclude the one we're placing)
-    final selectedDates = <DateTime>[];
-    for (var d = checkIn; d.isBefore(checkOut); d = d.add(const Duration(days: 1))) {
-      selectedDates.add(d);
-    }
-    await _moveBookingsInSelectionToWaitingList(
-      targetRooms,
-      selectedDates,
-      excludeBookingId: bookingId,
-    );
-
-    // Resolve room names to IDs so the grid uses the new room(s). resolvedSelectedRooms() prefers
-    // selectedRoomIds; if we only set selectedRooms, the old IDs would keep the booking in the previous room.
+    // Build the placement update first.
     final targetRoomIds = <String>[];
     for (final name in targetRooms) {
       final id = _roomModelsMap[name]?.id;
@@ -1154,15 +1465,49 @@ class _CalendarPageState extends State<CalendarPage> {
       checkOut: checkOut,
       numberOfRooms: targetRooms.length,
       selectedRooms: targetRooms,
-      selectedRoomIds: targetRoomIds.length == targetRooms.length ? targetRoomIds : [],
+      selectedRoomIds: targetRoomIds.length == targetRooms.length
+          ? targetRoomIds
+          : [],
       status: newStatus,
     );
-    await _updateBooking(userId, hotelId, updated);
+
+    // Save the dropped booking first. Only if that succeeds, move displaced bookings to waiting list.
+    try {
+      await _updateBooking(userId, hotelId, updated);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not place booking: $e'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: StayoraColors.error,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Placement saved: now move any existing bookings in that range to waiting list (exclude the one we placed).
+    final selectedDates = <DateTime>[];
+    for (
+      var d = checkIn;
+      d.isBefore(checkOut);
+      d = d.add(const Duration(days: 1))
+    ) {
+      selectedDates.add(d);
+    }
+    await _moveBookingsInSelectionToWaitingList(
+      targetRooms,
+      selectedDates,
+      excludeBookingId: bookingId,
+    );
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${booking.userName} moved to ${targetRooms.join(", ")}'),
+          content: Text(
+            '${booking.userName} moved to ${targetRooms.join(", ")}',
+          ),
           behavior: SnackBarBehavior.floating,
           backgroundColor: StayoraColors.success,
         ),
@@ -1184,8 +1529,10 @@ class _CalendarPageState extends State<CalendarPage> {
             .where((index) => index != -1)
             .toList();
         // Move any existing bookings in the selected range to waiting list, then open dialog
-        _moveBookingsInSelectionToWaitingList(selectedRooms, selectedDates)
-            .then((_) {
+        _moveBookingsInSelectionToWaitingList(
+          selectedRooms,
+          selectedDates,
+        ).then((_) {
           if (!mounted) return;
           _showBookingDialog(
             selectedRooms,
@@ -1256,7 +1603,9 @@ class _CalendarPageState extends State<CalendarPage> {
   bool _areSelectedRoomsNextToEachOther(List<String> rooms) {
     if (rooms.length < 2) return false;
 
-    final indices = rooms.map((room) => _displayedRoomNames.indexOf(room)).toList();
+    final indices = rooms
+        .map((room) => _displayedRoomNames.indexOf(room))
+        .toList();
     if (indices.any((index) => index == -1)) return false;
 
     indices.sort();
@@ -1284,10 +1633,12 @@ class _CalendarPageState extends State<CalendarPage> {
       );
       _cachedDates
         ..clear()
-        ..addAll(List.generate(
-          _totalDaysLoaded,
-          (index) => base.add(Duration(days: index)),
-        ));
+        ..addAll(
+          List.generate(
+            _totalDaysLoaded,
+            (index) => base.add(Duration(days: index)),
+          ),
+        );
     }
     return _cachedDates;
   }
@@ -1353,21 +1704,27 @@ class _CalendarPageState extends State<CalendarPage> {
 
     _waitingListSubscription = _firebaseService
         .waitingListBookingsStream(userId, hotelId)
-        .listen((snapshot) {
-      if (!mounted) return;
-      final list = <({String id, BookingModel booking})>[];
-      for (final doc in snapshot.docs) {
-        final data = doc.data();
-        list.add((id: doc.id, booking: BookingModel.fromFirestore(data, doc.id)));
-      }
-      setState(() {
-        _waitingListBookings
-          ..clear()
-          ..addAll(list);
-      });
-    }, onError: (error) {
-      debugPrint('Firestore waiting list subscription error: $error');
-    });
+        .listen(
+          (snapshot) {
+            if (!mounted) return;
+            final list = <({String id, BookingModel booking})>[];
+            for (final doc in snapshot.docs) {
+              final data = doc.data();
+              list.add((
+                id: doc.id,
+                booking: BookingModel.fromFirestore(data, doc.id),
+              ));
+            }
+            setState(() {
+              _waitingListBookings
+                ..clear()
+                ..addAll(list);
+            });
+          },
+          onError: (error) {
+            debugPrint('Firestore waiting list subscription error: $error');
+          },
+        );
   }
 
   void _processBookingChanges(
@@ -1495,6 +1852,8 @@ class _CalendarPageState extends State<CalendarPage> {
             isLastNight: i == totalNights - 1,
             totalNights: totalNights,
             advancePaymentStatus: bookingModel.advancePaymentStatus,
+            status: bookingModel.status,
+            phone: bookingModel.userPhone ?? '',
           );
           needsUpdate = true;
         }
@@ -1559,7 +1918,8 @@ class _CalendarPageState extends State<CalendarPage> {
       );
 
       // Check if booking overlaps the selected date
-      if (!targetDate.isBefore(checkInDate) && targetDate.isBefore(checkOutDate)) {
+      if (!targetDate.isBefore(checkInDate) &&
+          targetDate.isBefore(checkOutDate)) {
         bookingsForDay.add(booking);
       }
     }
@@ -1591,7 +1951,9 @@ class _CalendarPageState extends State<CalendarPage> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurfaceVariant.withOpacity(0.5),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -1606,7 +1968,9 @@ class _CalendarPageState extends State<CalendarPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            DateFormat('EEEE, MMM d, yyyy').format(selectedDate),
+                            DateFormat(
+                              'EEEE, MMM d, yyyy',
+                            ).format(selectedDate),
                             style: const TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
@@ -1616,7 +1980,9 @@ class _CalendarPageState extends State<CalendarPage> {
                           Text(
                             '${bookingsForDay.length} booking${bookingsForDay.length != 1 ? 's' : ''}',
                             style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
                               fontSize: 15,
                             ),
                           ),
@@ -1629,7 +1995,7 @@ class _CalendarPageState extends State<CalendarPage> {
               const Divider(height: 1),
               // Bookings list
               Expanded(
-                child                    : bookingsForDay.isEmpty
+                child: bookingsForDay.isEmpty
                     ? const EmptyStateWidget(
                         icon: Icons.event_busy_rounded,
                         title: 'No bookings for this date',
@@ -1648,7 +2014,8 @@ class _CalendarPageState extends State<CalendarPage> {
                               Navigator.pop(context);
                               Navigator.of(context, rootNavigator: false).push(
                                 MaterialPageRoute(
-                                  builder: (_) => AddBookingPage(existingBooking: booking),
+                                  builder: (_) =>
+                                      AddBookingPage(existingBooking: booking),
                                 ),
                               );
                             },
@@ -1706,16 +2073,22 @@ class _CalendarPageState extends State<CalendarPage> {
                                 Icon(
                                   Icons.search_rounded,
                                   size: 18,
-                                  color: Theme.of(context).colorScheme.onSurface,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
                                 ),
                                 const SizedBox(width: 6),
                                 Expanded(
                                   child: Text(
-                                    DateFormat(
-                                      'MMM d, yyyy',
-                                    ).format(_lastSearchedDate ?? DateTime.now()),
+                                    DateFormat('MMM d, yyyy').format(
+                                      _lastSearchedDate ?? DateTime.now(),
+                                    ),
                                     style: Theme.of(context).textTheme.bodyLarge
-                                        ?.copyWith(color: Theme.of(context).colorScheme.onSurface),
+                                        ?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurface,
+                                        ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
@@ -1745,14 +2118,20 @@ class _CalendarPageState extends State<CalendarPage> {
                           const SizedBox(width: 4),
                           TextButton.icon(
                             onPressed: () async {
-                              await Navigator.of(context, rootNavigator: false).push(
+                              await Navigator.of(
+                                context,
+                                rootNavigator: false,
+                              ).push(
                                 MaterialPageRoute<void>(
                                   builder: (_) => const RoomManagementPage(),
                                 ),
                               );
                               _loadRooms();
                             },
-                            icon: const Icon(Icons.meeting_room_rounded, size: 20),
+                            icon: const Icon(
+                              Icons.meeting_room_rounded,
+                              size: 20,
+                            ),
                             label: Text(
                               'Manage rooms',
                               overflow: TextOverflow.ellipsis,
@@ -1765,7 +2144,10 @@ class _CalendarPageState extends State<CalendarPage> {
                           const SizedBox(width: 4),
                           TextButton.icon(
                             onPressed: _showSuggestionsBottomSheet,
-                            icon: const Icon(Icons.lightbulb_outline_rounded, size: 20),
+                            icon: const Icon(
+                              Icons.lightbulb_outline_rounded,
+                              size: 20,
+                            ),
                             label: const Text('Suggestions'),
                             style: TextButton.styleFrom(
                               foregroundColor: StayoraLogo.stayoraBlue,
@@ -1791,7 +2173,9 @@ class _CalendarPageState extends State<CalendarPage> {
                               },
                               style: IconButton.styleFrom(
                                 backgroundColor: StayoraColors.blue,
-                                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                                foregroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.onPrimary,
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
@@ -1812,373 +2196,476 @@ class _CalendarPageState extends State<CalendarPage> {
               child: !_roomNamesLoaded
                   ? const Center(child: CircularProgressIndicator())
                   : _displayedRoomNames.isEmpty
-                      ? Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 24),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surface,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Theme.of(context).colorScheme.shadow.withOpacity(0.08),
-                                blurRadius: 16,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
+                  ? Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 24),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.shadow.withOpacity(0.08),
+                            blurRadius: 16,
+                            offset: const Offset(0, 4),
                           ),
-                          child: Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.meeting_room_rounded,
-                                  size: 64,
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ],
+                      ),
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.meeting_room_rounded,
+                              size: 64,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No rooms yet',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                            const SizedBox(height: 8),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 48,
+                              ),
+                              child: Text(
+                                'Add rooms to see the calendar and assign bookings to rooms.',
+                                style: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                 ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'No rooms yet',
-                                  style: Theme.of(context).textTheme.titleLarge,
-                                ),
-                                const SizedBox(height: 8),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 48),
-                                  child: Text(
-                                    'Add rooms to see the calendar and assign bookings to rooms.',
-                                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                                    textAlign: TextAlign.center,
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            FilledButton.icon(
+                              onPressed: () async {
+                                await Navigator.of(
+                                  context,
+                                  rootNavigator: false,
+                                ).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => const RoomManagementPage(),
                                   ),
-                                ),
-                                const SizedBox(height: 24),
-                                FilledButton.icon(
-                                  onPressed: () async {
-                                    await Navigator.of(context, rootNavigator: false).push(
-                                      MaterialPageRoute<void>(
-                                        builder: (_) => const RoomManagementPage(),
-                                      ),
-                                    );
-                                    _loadRooms();
-                                  },
-                                  icon: const Icon(Icons.add),
-                                  label: const Text('Manage rooms'),
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: StayoraColors.blue,
-                                  ),
+                                );
+                                _loadRooms();
+                              },
+                              icon: const Icon(Icons.add),
+                              label: const Text('Manage rooms'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: StayoraColors.blue,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : Column(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 24),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.surface,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.shadow.withOpacity(0.08),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 4),
                                 ),
                               ],
                             ),
-                          ),
-                        )
-                      : Column(
-                          children: [
-                            Expanded(
-                              child: Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 24),
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.surface,
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Theme.of(context).colorScheme.shadow.withOpacity(0.08),
-                                      blurRadius: 16,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(16),
-                                  child: Stack(
-                    children: [
-                      // Main scrollable grid
-                      Positioned.fill(
-                        child: Padding(
-                          padding: EdgeInsets.only(top: _headerHeight),
-                          child: GestureDetector(
-                            key: _gridKey,
-                            onPanStart: (details) {
-                              final cell = _getCellFromPosition(
-                                details.localPosition,
-                              );
-                              if (cell != null) {
-                                // Only start selection on empty cells
-                                if (_getBooking(cell['room']!, cell['date']!) ==
-                                    null) {
-                                  _startSelection(cell['room']!, cell['date']!);
-                                }
-                              }
-                            },
-                            onPanUpdate: (details) {
-                              if (_isSelecting) {
-                                final cell = _getCellFromPosition(
-                                  details.localPosition,
-                                );
-                                if (cell != null) {
-                                  // Allow selection to continue even over booked cells
-                                  _updateSelection(
-                                    cell['room']!,
-                                    cell['date']!,
-                                  );
-                                }
-                              }
-                            },
-                            onPanEnd: (details) {
-                              if (_isSelecting) {
-                                _endSelection();
-                              }
-                            },
-                            onPanCancel: () {
-                              if (_isSelecting) {
-                                setState(() {
-                                  _isSelecting = false;
-                                  _selectionStartRoom = null;
-                                  _selectionStartDate = null;
-                                  _selectionEndRoom = null;
-                                  _selectionEndDate = null;
-                                });
-                              }
-                            },
-                            child: SingleChildScrollView(
-                              controller: _verticalScrollController,
-                              scrollDirection: Axis.vertical,
-                              padding: EdgeInsets.zero,
-                              child: SingleChildScrollView(
-                                controller: _horizontalScrollController,
-                                scrollDirection: Axis.horizontal,
-                                padding: EdgeInsets.zero,
-                                child: Stack(
-                                  clipBehavior: Clip.none,
-                                  children: [
-                                    Column(
-                                      children: _dates.map((date) {
-                                        final isToday = isSameDay(
-                                          date,
-                                          DateTime.now(),
-                                        );
-                                        return _buildDayRow(date, isToday);
-                                      }).toList(),
-                                    ),
-                                    // Skeleton overlay when dragging a waiting-list (or grid) booking over the calendar
-                                    if (_skeletonWaitingListBookingId != null &&
-                                        _skeletonRoom != null &&
-                                        _skeletonDate != null)
-                                      _buildDragSkeletonOverlay(),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      // Sticky room headers at the top
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        height: _headerHeight,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surface,
-                            border: Border(
-                              bottom: BorderSide(
-                                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
-                                width: 1,
-                              ),
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Theme.of(context).colorScheme.shadow.withOpacity(0.05),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              // Empty corner cell (fixed)
-                              Container(
-                                width: _dayLabelWidth,
-                                height: _headerHeight,
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                  border: Border(
-                                    right: BorderSide(
-                                      color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
-                                    ),
-                                  ),
-                                ),
-                                child: Center(
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.hotel_rounded,
-                                        size: 14,
-                                        color: StayoraLogo.stayoraBlue,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Stack(
+                                children: [
+                                  // Main scrollable grid
+                                  Positioned.fill(
+                                    child: Padding(
+                                      padding: EdgeInsets.only(
+                                        top: _headerHeight,
                                       ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Rooms',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 12,
-                                          color: StayoraLogo.stayoraBlue,
-                                          letterSpacing: 0.2,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              // Room headers (scrollable horizontally)
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  controller: _roomHeadersScrollController,
-                                  scrollDirection: Axis.horizontal,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  child: Row(
-                                    children: _displayedRoomNames.map((room) {
-                                      final roomModel = _roomModelsMap[room];
-                                      final hkStatus = roomModel?.housekeepingStatus ?? 'clean';
-                                      final hkColor = StayoraColors.housekeepingColor(hkStatus);
-                                      final firstTag = roomModel != null && roomModel.tags.isNotEmpty
-                                          ? roomModel.tags.first
-                                          : null;
-                                      return Container(
-                                        width: _roomColumnWidth,
-                                        height: 50,
-                                        decoration: BoxDecoration(
-                                          border: Border(
-                                            right: BorderSide(
-                                              color: Theme.of(context).colorScheme.surface,
-                                              width: 1,
+                                      child: GestureDetector(
+                                        key: _gridKey,
+                                        onPanStart: (details) {
+                                          final cell = _getCellFromPosition(
+                                            details.localPosition,
+                                          );
+                                          if (cell != null) {
+                                            // Only start selection on empty cells
+                                            if (_getBooking(
+                                                  cell['room']!,
+                                                  cell['date']!,
+                                                ) ==
+                                                null) {
+                                              _startSelection(
+                                                cell['room']!,
+                                                cell['date']!,
+                                              );
+                                            }
+                                          }
+                                        },
+                                        onPanUpdate: (details) {
+                                          if (_isSelecting) {
+                                            final cell = _getCellFromPosition(
+                                              details.localPosition,
+                                            );
+                                            if (cell != null) {
+                                              // Allow selection to continue even over booked cells
+                                              _updateSelection(
+                                                cell['room']!,
+                                                cell['date']!,
+                                              );
+                                            }
+                                          }
+                                        },
+                                        onPanEnd: (details) {
+                                          if (_isSelecting) {
+                                            _endSelection();
+                                          }
+                                        },
+                                        onPanCancel: () {
+                                          if (_isSelecting) {
+                                            setState(() {
+                                              _isSelecting = false;
+                                              _selectionStartRoom = null;
+                                              _selectionStartDate = null;
+                                              _selectionEndRoom = null;
+                                              _selectionEndDate = null;
+                                            });
+                                          }
+                                        },
+                                        child: SingleChildScrollView(
+                                          controller: _verticalScrollController,
+                                          scrollDirection: Axis.vertical,
+                                          padding: EdgeInsets.zero,
+                                          child: SingleChildScrollView(
+                                            controller:
+                                                _horizontalScrollController,
+                                            scrollDirection: Axis.horizontal,
+                                            padding: EdgeInsets.zero,
+                                            child: Stack(
+                                              clipBehavior: Clip.none,
+                                              children: [
+                                                Column(
+                                                  children: _dates.map((date) {
+                                                    final isToday = isSameDay(
+                                                      date,
+                                                      DateTime.now(),
+                                                    );
+                                                    return _buildDayRow(
+                                                      date,
+                                                      isToday,
+                                                    );
+                                                  }).toList(),
+                                                ),
+                                                // Skeleton overlay when dragging a waiting-list (or grid) booking over the calendar
+                                                if (_skeletonWaitingListBookingId !=
+                                                        null &&
+                                                    _skeletonRoom != null &&
+                                                    _skeletonDate != null)
+                                                  _buildDragSkeletonOverlay(),
+                                              ],
                                             ),
                                           ),
                                         ),
-                                        child: Center(
-                                          child: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Text(
-                                                'Room $room',
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 13,
-                                                  color: Theme.of(context).colorScheme.onSurface,
-                                                  letterSpacing: 0.3,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 3),
-                                              Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Container(
-                                                    width: 7,
-                                                    height: 7,
-                                                    decoration: BoxDecoration(
-                                                      shape: BoxShape.circle,
-                                                      color: hkColor,
-                                                    ),
-                                                  ),
-                                                  if (firstTag != null) ...[
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      firstTag,
-                                                      style: TextStyle(
-                                                        fontSize: 9,
-                                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                                        fontWeight: FontWeight.w500,
-                                                      ),
-                                                      overflow: TextOverflow.ellipsis,
-                                                      maxLines: 1,
-                                                    ),
-                                                  ],
-                                                ],
-                                              ),
-                                            ],
+                                      ),
+                                    ),
+                                  ),
+
+                                  // Sticky room headers at the top
+                                  Positioned(
+                                    top: 0,
+                                    left: 0,
+                                    right: 0,
+                                    height: _headerHeight,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.surface,
+                                        border: Border(
+                                          bottom: BorderSide(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .outline
+                                                .withOpacity(0.3),
+                                            width: 1,
                                           ),
                                         ),
-                                      );
-                                    }).toList(),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .shadow
+                                                .withOpacity(0.05),
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          // Empty corner cell (fixed)
+                                          Container(
+                                            width: _dayLabelWidth,
+                                            height: _headerHeight,
+                                            decoration: BoxDecoration(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .surfaceContainerHighest,
+                                              border: Border(
+                                                right: BorderSide(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .outline
+                                                      .withOpacity(0.3),
+                                                ),
+                                              ),
+                                            ),
+                                            child: Center(
+                                              child: Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  Icon(
+                                                    Icons.hotel_rounded,
+                                                    size: 14,
+                                                    color:
+                                                        StayoraLogo.stayoraBlue,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    'Rooms',
+                                                    style: TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      fontSize: 12,
+                                                      color: StayoraLogo
+                                                          .stayoraBlue,
+                                                      letterSpacing: 0.2,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                          // Room headers (scrollable horizontally)
+                                          Expanded(
+                                            child: SingleChildScrollView(
+                                              controller:
+                                                  _roomHeadersScrollController,
+                                              scrollDirection: Axis.horizontal,
+                                              physics:
+                                                  const NeverScrollableScrollPhysics(),
+                                              child: Row(
+                                                children: _displayedRoomNames.map((
+                                                  room,
+                                                ) {
+                                                  final roomModel =
+                                                      _roomModelsMap[room];
+                                                  final hkStatus =
+                                                      roomModel
+                                                          ?.housekeepingStatus ??
+                                                      'clean';
+                                                  final hkColor =
+                                                      StayoraColors.housekeepingColor(
+                                                        hkStatus,
+                                                      );
+                                                  final firstTag =
+                                                      roomModel != null &&
+                                                          roomModel
+                                                              .tags
+                                                              .isNotEmpty
+                                                      ? roomModel.tags.first
+                                                      : null;
+                                                  final headerBg = Theme.of(
+                                                    context,
+                                                  ).colorScheme.surfaceContainerLowest;
+                                                  return Container(
+                                                    width: _roomColumnWidth,
+                                                    height: 50,
+                                                    decoration: BoxDecoration(
+                                                      color: headerBg,
+                                                      border: Border(
+                                                        right: BorderSide(
+                                                          color: Theme.of(
+                                                            context,
+                                                          ).colorScheme.outline.withOpacity(0.2),
+                                                          width: 1,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    child: Center(
+                                                      child: Column(
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          Text(
+                                                            'Room $room',
+                                                            style: TextStyle(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
+                                                              fontSize: 12,
+                                                              color:
+                                                                  Theme.of(
+                                                                        context,
+                                                                      )
+                                                                      .colorScheme
+                                                                      .onSurface,
+                                                              letterSpacing:
+                                                                  0.2,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(
+                                                            height: 2,
+                                                          ),
+                                                          Row(
+                                                            mainAxisSize:
+                                                                MainAxisSize
+                                                                    .min,
+                                                            children: [
+                                                              Container(
+                                                                width: 6,
+                                                                height: 6,
+                                                                decoration: BoxDecoration(
+                                                                  shape: BoxShape
+                                                                      .circle,
+                                                                  color:
+                                                                      hkColor,
+                                                                ),
+                                                              ),
+                                                              if (firstTag !=
+                                                                  null) ...[
+                                                                const SizedBox(
+                                                                  width: 3,
+                                                                ),
+                                                                Text(
+                                                                  '• $firstTag',
+                                                                  style: TextStyle(
+                                                                    fontSize: 9,
+                                                                    color: Theme.of(
+                                                                      context,
+                                                                    ).colorScheme.onSurfaceVariant,
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .w500,
+                                                                  ),
+                                                                  overflow:
+                                                                      TextOverflow
+                                                                          .ellipsis,
+                                                                  maxLines: 1,
+                                                                ),
+                                                              ],
+                                                            ],
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  );
+                                                }).toList(),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
 
-                      // Sticky day labels on the left
-                      Positioned(
-                        top: _headerHeight,
-                        left: 0,
-                        bottom: 0,
-                        width: _dayLabelWidth,
-                        child: Container(
-                          color: Theme.of(context).colorScheme.surface,
-                          child: ScrollConfiguration(
-                            behavior: ScrollConfiguration.of(
-                              context,
-                            ).copyWith(scrollbars: false),
-                            child: SingleChildScrollView(
-                              controller: _stickyDayLabelsScrollController,
-                              scrollDirection: Axis.vertical,
-                              physics: const NeverScrollableScrollPhysics(),
-                              child: Column(
-                                children: _dates.map((date) {
-                                  final isToday = isSameDay(
-                                    date,
-                                    DateTime.now(),
-                                  );
-                                  return _buildStickyDayLabel(date, isToday);
-                                }).toList(),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+                                  // Sticky day labels on the left
+                                  Positioned(
+                                    top: _headerHeight,
+                                    left: 0,
+                                    bottom: 0,
+                                    width: _dayLabelWidth,
+                                    child: Container(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.surface,
+                                      child: ScrollConfiguration(
+                                        behavior: ScrollConfiguration.of(
+                                          context,
+                                        ).copyWith(scrollbars: false),
+                                        child: SingleChildScrollView(
+                                          controller:
+                                              _stickyDayLabelsScrollController,
+                                          scrollDirection: Axis.vertical,
+                                          physics:
+                                              const NeverScrollableScrollPhysics(),
+                                          child: Column(
+                                            children: _dates.map((date) {
+                                              final isToday = isSameDay(
+                                                date,
+                                                DateTime.now(),
+                                              );
+                                              return _buildStickyDayLabel(
+                                                date,
+                                                isToday,
+                                              );
+                                            }).toList(),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
 
-                      // Red line overlay for today's date
-                      if (_dates.any((date) => isSameDay(date, DateTime.now())))
-                        AnimatedBuilder(
-                          animation: _verticalScrollController,
-                          builder: (context, _) {
-                            final todayIndex = _dates.indexWhere(
-                              (date) => isSameDay(date, DateTime.now()),
-                            );
-                            if (todayIndex == -1) {
-                              return const SizedBox.shrink();
-                            }
+                                  // Red line overlay for today's date
+                                  if (_dates.any(
+                                    (date) => isSameDay(date, DateTime.now()),
+                                  ))
+                                    AnimatedBuilder(
+                                      animation: _verticalScrollController,
+                                      builder: (context, _) {
+                                        final todayIndex = _dates.indexWhere(
+                                          (date) =>
+                                              isSameDay(date, DateTime.now()),
+                                        );
+                                        if (todayIndex == -1) {
+                                          return const SizedBox.shrink();
+                                        }
 
-                            final scrollOffset =
-                                _verticalScrollController.hasClients
-                                ? _verticalScrollController.offset
-                                : 0.0;
-                            // Position line on the top border of today's row (above the row, not inside)
-                            final lineY =
-                                _headerHeight +
-                                (todayIndex * _dayRowHeight) -
-                                scrollOffset;
+                                        final scrollOffset =
+                                            _verticalScrollController.hasClients
+                                            ? _verticalScrollController.offset
+                                            : 0.0;
+                                        // Position line on the top border of today's row (above the row, not inside)
+                                        final lineY =
+                                            _headerHeight +
+                                            (todayIndex * _dayRowHeight) -
+                                            scrollOffset;
 
-                            return Positioned(
-                              top: lineY,
-                              left: _dayLabelWidth, // Start after date column
-                              right: 0,
-                              height: 2,
-                              child: const ColoredBox(color: Colors.red),
-                            );
-                          },
+                                        return Positioned(
+                                          top: lineY,
+                                          left:
+                                              _dayLabelWidth, // Start after date column
+                                          right: 0,
+                                          height: 2,
+                                          child: const ColoredBox(
+                                            color: Colors.red,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                ],
                         ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-                            // Waiting list then legend
-                            _buildWaitingListSection(),
-                            const SizedBox(height: 16),
-                            _buildLegendSection(),
-                          ],
                         ),
+                        ),
+                        ),
+                        // Waiting list then legend (below calendar)
+                        _buildWaitingListSection(),
+                        const SizedBox(height: 16),
+                        _buildLegendSection(),
+                      ],
+                    ),
             ),
             const SizedBox(height: 24),
           ],
@@ -2198,20 +2685,28 @@ class _CalendarPageState extends State<CalendarPage> {
         child: FloatingActionButton(
           heroTag: 'calendar_fab',
           onPressed: () {
-            Navigator.of(context, rootNavigator: false).push(
-              MaterialPageRoute(builder: (context) => const AddBookingPage()),
-            ).then((bookingCreated) {
-              if (bookingCreated == true) {
-                _subscribeToBookings();
-              }
-            });
+            Navigator.of(context, rootNavigator: false)
+                .push(
+                  MaterialPageRoute(
+                    builder: (context) => const AddBookingPage(),
+                  ),
+                )
+                .then((bookingCreated) {
+                  if (bookingCreated == true) {
+                    _subscribeToBookings();
+                  }
+                });
           },
           backgroundColor: StayoraColors.blue,
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          child: Icon(Icons.add_rounded, color: Theme.of(context).colorScheme.onPrimary, size: 28),
+          child: Icon(
+            Icons.add_rounded,
+            color: Theme.of(context).colorScheme.onPrimary,
+            size: 28,
+          ),
         ),
       ),
     );
@@ -2251,18 +2746,9 @@ class _CalendarPageState extends State<CalendarPage> {
                     color: _statusColor('Confirmed'),
                     label: 'Confirmed',
                   ),
-                  LegendItem(
-                    color: _statusColor('Pending'),
-                    label: 'Pending',
-                  ),
-                  LegendItem(
-                    color: _statusColor('Paid'),
-                    label: 'Paid',
-                  ),
-                  LegendItem(
-                    color: _statusColor('Unpaid'),
-                    label: 'Unpaid',
-                  ),
+                  LegendItem(color: _statusColor('Pending'), label: 'Pending'),
+                  LegendItem(color: _statusColor('Paid'), label: 'Paid'),
+                  LegendItem(color: _statusColor('Unpaid'), label: 'Unpaid'),
                   LegendItem(
                     color: _statusColor('Cancelled'),
                     label: 'Cancelled',
@@ -2270,6 +2756,15 @@ class _CalendarPageState extends State<CalendarPage> {
                   LegendItem(
                     color: _statusColor('Waiting list'),
                     label: 'Waiting list',
+                  ),
+                  // Advance payment (dot on booking)
+                  LegendItem(
+                    color: _advanceIndicatorColor('paid'),
+                    label: 'Advance paid',
+                  ),
+                  LegendItem(
+                    color: _advanceIndicatorColor('waiting'),
+                    label: 'Advance pending',
                   ),
                 ],
               ),
@@ -2302,185 +2797,211 @@ class _CalendarPageState extends State<CalendarPage> {
                 ? StayoraColors.purple.withOpacity(0.08)
                 : null,
             child: Theme(
-              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
-            tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            leading: Icon(
-              Icons.list_alt_rounded,
-              color: _waitingListBookings.isEmpty
-                  ? Theme.of(context).colorScheme.onSurfaceVariant
-                  : StayoraColors.purple,
-              size: 24,
-            ),
-            title: Text(
-              'Waiting list',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            trailing: Text(
-              '${_waitingListBookings.length}',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: _waitingListBookings.isEmpty
-                    ? Theme.of(context).colorScheme.onSurfaceVariant
-                    : StayoraColors.purple,
-              ),
-            ),
-            children: [
-              if (_waitingListBookings.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-                  child: Text(
-                    'No reservations on the waiting list. Bookings saved as "Waiting list" (e.g. over capacity) appear here.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      height: 1.4,
-                    ),
+                tilePadding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                leading: Icon(
+                  Icons.list_alt_rounded,
+                  color: _waitingListBookings.isEmpty
+                      ? Theme.of(context).colorScheme.onSurfaceVariant
+                      : StayoraColors.purple,
+                  size: 24,
+                ),
+                title: Text(
+                  'Waiting list',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                   ),
-                )
-              else
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
+                ),
+                trailing: Text(
+                  '${_waitingListBookings.length}',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: _waitingListBookings.isEmpty
+                        ? Theme.of(context).colorScheme.onSurfaceVariant
+                        : StayoraColors.purple,
+                  ),
+                ),
+                children: [
+                  if (_waitingListBookings.isEmpty)
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
                       child: Text(
-                        'Long-press an item and drag it to a calendar cell to place it. Any booking there will move to the waiting list.',
+                        'No reservations on the waiting list. Bookings saved as "Waiting list" (e.g. over capacity) appear here.',
                         style: TextStyle(
-                          fontSize: 11,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          height: 1.3,
+                          fontSize: 13,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant,
+                          height: 1.4,
                         ),
                       ),
-                    ),
-                    ..._waitingListBookings.map((e) {
-                  final b = e.booking;
-                  final payload = _WaitingListDragPayload(bookingId: e.id);
-                  return LongPressDraggable<_WaitingListDragPayload>(
-                    data: payload,
-                    onDragEnd: (_) {
-                      setState(() {
-                        _skeletonWaitingListBookingId = null;
-                        _skeletonRoom = null;
-                        _skeletonDate = null;
-                      });
-                    },
-                    feedback: Material(
-                      elevation: 4,
-                      borderRadius: BorderRadius.circular(12),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 220),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
+                    )
+                  else
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+                          child: Text(
+                            'Long-press an item and drag it to a calendar cell to place it. Any booking there will move to the waiting list.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                              height: 1.3,
+                            ),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.person_rounded,
-                                color: _statusColor('Waiting list'),
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: Text(
-                                  b.userName,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 14,
+                        ),
+                        ..._waitingListBookings.map((e) {
+                          final b = e.booking;
+                          final payload = _WaitingListDragPayload(
+                            bookingId: e.id,
+                          );
+                          return LongPressDraggable<_WaitingListDragPayload>(
+                            data: payload,
+                            onDragEnd: (_) {
+                              setState(() {
+                                _skeletonWaitingListBookingId = null;
+                                _skeletonRoom = null;
+                                _skeletonDate = null;
+                              });
+                            },
+                            feedback: Material(
+                              elevation: 4,
+                              borderRadius: BorderRadius.circular(12),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 220,
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.person_rounded,
+                                        color: _statusColor('Waiting list'),
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Flexible(
+                                        child: Text(
+                                          b.userName,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w500,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '${b.numberOfRooms} room(s)',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${b.numberOfRooms} room(s)',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                            childWhenDragging: Opacity(
+                              opacity: 0.5,
+                              child: ListTile(
+                                dense: true,
+                                leading: CircleAvatar(
+                                  backgroundColor: _statusColor(
+                                    'Waiting list',
+                                  ).withOpacity(0.2),
+                                  child: Icon(
+                                    Icons.person_rounded,
+                                    size: 20,
+                                    color: _statusColor('Waiting list'),
+                                  ),
+                                ),
+                                title: Text(
+                                  b.userName,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  '${DateFormat('MMM d', 'en').format(b.checkIn)} – ${DateFormat('MMM d', 'en').format(b.checkOut)} · ${b.numberOfRooms} room(s)',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                trailing: const Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: StayoraColors.blue,
+                                  size: 20,
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                      ),
+                            ),
+                            child: ListTile(
+                              dense: true,
+                              leading: CircleAvatar(
+                                backgroundColor: _statusColor(
+                                  'Waiting list',
+                                ).withOpacity(0.2),
+                                child: Icon(
+                                  Icons.person_rounded,
+                                  size: 20,
+                                  color: _statusColor('Waiting list'),
+                                ),
+                              ),
+                              title: Text(
+                                b.userName,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              subtitle: Text(
+                                '${DateFormat('MMM d', 'en').format(b.checkIn)} – ${DateFormat('MMM d', 'en').format(b.checkOut)} · ${b.numberOfRooms} room(s)',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              trailing: const Icon(
+                                Icons.chevron_right_rounded,
+                                color: StayoraColors.blue,
+                                size: 20,
+                              ),
+                              onTap: () =>
+                                  _showBookingDetailsById(context, e.id),
+                            ),
+                          );
+                        }),
+                      ],
                     ),
-                    childWhenDragging: Opacity(
-                      opacity: 0.5,
-                      child: ListTile(
-                        dense: true,
-                        leading: CircleAvatar(
-                          backgroundColor:
-                              _statusColor('Waiting list').withOpacity(0.2),
-                          child: Icon(
-                            Icons.person_rounded,
-                            size: 20,
-                            color: _statusColor('Waiting list'),
-                          ),
-                        ),
-                        title: Text(
-                          b.userName,
-                          style: const TextStyle(fontWeight: FontWeight.w500),
-                        ),
-                        subtitle: Text(
-                          '${DateFormat('MMM d', 'en').format(b.checkIn)} – ${DateFormat('MMM d', 'en').format(b.checkOut)} · ${b.numberOfRooms} room(s)',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                        trailing: const Icon(
-                          Icons.chevron_right_rounded,
-                          color: StayoraColors.blue,
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                    child: ListTile(
-                      dense: true,
-                      leading: CircleAvatar(
-                        backgroundColor:
-                            _statusColor('Waiting list').withOpacity(0.2),
-                        child: Icon(
-                          Icons.person_rounded,
-                          size: 20,
-                          color: _statusColor('Waiting list'),
-                        ),
-                      ),
-                      title: Text(
-                        b.userName,
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                      subtitle: Text(
-                        '${DateFormat('MMM d', 'en').format(b.checkIn)} – ${DateFormat('MMM d', 'en').format(b.checkOut)} · ${b.numberOfRooms} room(s)',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      trailing: const Icon(
-                        Icons.chevron_right_rounded,
-                        color: StayoraColors.blue,
-                        size: 20,
-                      ),
-                      onTap: () => _showBookingDetailsById(context, e.id),
-                    ),
-                  );
-                }),
-                  ],
-                ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
-      );
-  },
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -2510,7 +3031,11 @@ class _CalendarPageState extends State<CalendarPage> {
             ],
           ),
           child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: _firebaseService.bookingDocStream(userId, hotelId, bookingId),
+            stream: _firebaseService.bookingDocStream(
+              userId,
+              hotelId,
+              bookingId,
+            ),
             builder: (context, snapshot) {
               if (!snapshot.hasData) {
                 return const Padding(
@@ -2600,25 +3125,32 @@ class _CalendarPageState extends State<CalendarPage> {
                 },
                 onEditFull: () {
                   Navigator.pop(dialogContext);
-                  nestedNavigator.push(
-                    MaterialPageRoute(
-                        builder: (context) {
-                          final resolved = fullBooking.resolvedSelectedRooms(_roomIdToNameMap);
-                          return AddBookingPage(
-                            existingBooking: fullBooking,
-                            preselectedRoom: resolved.isNotEmpty ? resolved.first : '—',
-                            preselectedStartDate: fullBooking.checkIn,
-                            preselectedEndDate: fullBooking.checkOut,
-                            preselectedNumberOfRooms: fullBooking.numberOfRooms,
-                          );
-                        },
-                    ),
-                  ).then((bookingCreated) {
-                    if (bookingCreated == true) {
-                      _subscribeToBookings();
-                      _subscribeToWaitingList();
-                    }
-                  });
+                  nestedNavigator
+                      .push(
+                        MaterialPageRoute(
+                          builder: (context) {
+                            final resolved = fullBooking.resolvedSelectedRooms(
+                              _roomIdToNameMap,
+                            );
+                            return AddBookingPage(
+                              existingBooking: fullBooking,
+                              preselectedRoom: resolved.isNotEmpty
+                                  ? resolved.first
+                                  : '—',
+                              preselectedStartDate: fullBooking.checkIn,
+                              preselectedEndDate: fullBooking.checkOut,
+                              preselectedNumberOfRooms:
+                                  fullBooking.numberOfRooms,
+                            );
+                          },
+                        ),
+                      )
+                      .then((bookingCreated) {
+                        if (bookingCreated == true) {
+                          _subscribeToBookings();
+                          _subscribeToWaitingList();
+                        }
+                      });
                 },
                 onClose: () => Navigator.pop(dialogContext),
               );
@@ -2631,7 +3163,8 @@ class _CalendarPageState extends State<CalendarPage> {
 
   /// Skeleton overlay showing where the booking will be placed (preferred room + as many rooms × nights as fit).
   Widget _buildDragSkeletonOverlay() {
-    final booking = _getWaitingListBookingById(_skeletonWaitingListBookingId!) ??
+    final booking =
+        _getWaitingListBookingById(_skeletonWaitingListBookingId!) ??
         _bookingModelsById[_skeletonWaitingListBookingId!];
     if (booking == null) return const SizedBox.shrink();
 
@@ -2647,7 +3180,10 @@ class _CalendarPageState extends State<CalendarPage> {
     final nRooms = booking.numberOfRooms;
     final nNights = booking.numberOfNights;
     // Preview uses the same logic as drop: as many rooms/nights as fit from this cell (so user sees exactly where it will go).
-    final nRoomsEffective = nRooms.clamp(1, _displayedRoomNames.length - roomIndex);
+    final nRoomsEffective = nRooms.clamp(
+      1,
+      _displayedRoomNames.length - roomIndex,
+    );
     final nNightsEffective = nNights.clamp(1, _dates.length - dateIndex);
     final isValid = nRoomsEffective >= 1 && nNightsEffective >= 1;
 
@@ -2664,14 +3200,10 @@ class _CalendarPageState extends State<CalendarPage> {
           width: width,
           height: height,
           decoration: BoxDecoration(
-            color: (isValid
-                    ? StayoraColors.purple
-                    : StayoraColors.error)
+            color: (isValid ? StayoraColors.purple : StayoraColors.error)
                 .withOpacity(0.35),
             border: Border.all(
-              color: isValid
-                  ? StayoraColors.purple
-                  : StayoraColors.error,
+              color: isValid ? StayoraColors.purple : StayoraColors.error,
               width: 2,
             ),
             borderRadius: BorderRadius.circular(8),
@@ -2695,17 +3227,18 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   Widget _buildDayRow(DateTime date, bool isToday) {
+    final scheme = Theme.of(context).colorScheme;
+    final isWeekend =
+        date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
+    Color rowColor = scheme.surface;
+    if (isToday) {
+      rowColor = StayoraColors.blue.withOpacity(0.08);
+    } else if (isWeekend) {
+      rowColor = scheme.surfaceContainerLowest.withOpacity(0.5);
+    }
     return Container(
-      height: _dayRowHeight, // Row height stays the same, gap is between rows
-      decoration: BoxDecoration(
-        color: isToday
-            ? StayoraColors.blue.withOpacity(0.05)
-            : Theme.of(context).colorScheme.surface,
-        border: Border(
-          top: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.3), width: 1),
-          bottom: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.3), width: 1),
-        ),
-      ),
+      height: _dayRowHeight,
+      decoration: BoxDecoration(color: rowColor),
       child: Row(
         children: [
           // Spacer for sticky day label column
@@ -2734,7 +3267,9 @@ class _CalendarPageState extends State<CalendarPage> {
             top: 0,
             bottom: 0,
             width: 1,
-            child: Container(color: Theme.of(context).colorScheme.outline.withOpacity(0.3)),
+            child: Container(
+              color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+            ),
           ),
 
           // Background for the whole date row (filled, not rounded)
@@ -2790,6 +3325,69 @@ class _CalendarPageState extends State<CalendarPage> {
 
   Widget _buildRoomCell(String room, DateTime date, CalendarBooking? booking) {
     final isSelected = _isCellInSelection(room, date);
+    final isHovered = _hoveredRoom == room &&
+        _hoveredDate != null &&
+        _hoveredDate!.year == date.year &&
+        _hoveredDate!.month == date.month &&
+        _hoveredDate!.day == date.day;
+
+    // One bubble per booking: same booking in adjacent cell = no visual break
+    final roomIndex = _displayedRoomNames.indexOf(room);
+    final prevDate = date.subtract(const Duration(days: 1));
+    final nextDate = date.add(const Duration(days: 1));
+    final isSameBookingLeft = booking != null &&
+        roomIndex > 0 &&
+        _getBooking(_displayedRoomNames[roomIndex - 1], date)?.bookingId ==
+            booking.bookingId;
+    final isSameBookingRight = booking != null &&
+        roomIndex < _displayedRoomNames.length - 1 &&
+        _getBooking(_displayedRoomNames[roomIndex + 1], date)?.bookingId ==
+            booking.bookingId;
+    final isSameBookingAbove = booking != null &&
+        _getBooking(room, prevDate)?.bookingId == booking.bookingId;
+    final isSameBookingBelow = booking != null &&
+        _getBooking(room, nextDate)?.bookingId == booking.bookingId;
+
+    // First room (in display order) that has this booking on this date
+    final firstRoomIndex = booking != null
+        ? _displayedRoomNames.indexWhere(
+            (r) => _getBooking(r, date)?.bookingId == booking.bookingId,
+          )
+        : -1;
+    // How many consecutive rooms this booking spans on this date
+    int roomSpan = 1;
+    if (booking != null && firstRoomIndex >= 0) {
+      roomSpan = 0;
+      for (int i = firstRoomIndex; i < _displayedRoomNames.length; i++) {
+        if (_getBooking(_displayedRoomNames[i], date)?.bookingId ==
+            booking.bookingId) {
+          roomSpan++;
+        } else {
+          break;
+        }
+      }
+    }
+    // Show info once: 1 room → first (left) cell; 2+ rooms → middle cell (top-middle of bubble)
+    final middleRoomIndex =
+        roomSpan >= 2 ? firstRoomIndex + (roomSpan ~/ 2) : firstRoomIndex;
+    final isInfoCell = booking != null &&
+        firstRoomIndex >= 0 &&
+        booking.isFirstNight &&
+        (roomSpan == 1
+            ? _displayedRoomNames[firstRoomIndex] == room
+            : roomIndex == middleRoomIndex);
+
+    final scheme = Theme.of(context).colorScheme;
+    final outlineColor = scheme.outline.withOpacity(0.3);
+    final cellRightBorderColor = (booking != null && isSameBookingRight)
+        ? Colors.transparent
+        : outlineColor;
+    final cellTopBorderColor = (booking != null && isSameBookingAbove)
+        ? Colors.transparent
+        : outlineColor;
+    final cellBottomBorderColor = (booking != null && isSameBookingBelow)
+        ? Colors.transparent
+        : outlineColor;
 
     return DragTarget<_WaitingListDragPayload>(
       onWillAcceptWithDetails: (details) => true,
@@ -2817,216 +3415,404 @@ class _CalendarPageState extends State<CalendarPage> {
       },
       builder: (context, candidateData, rejectedData) {
         final isHighlighted = candidateData.isNotEmpty;
-        return GestureDetector(
-          onTap: () {
-            if (booking != null) {
-              _showBookingDetails(context, room, date, booking);
-            } else if (!_isSelecting) {
-              _showBookingDialog([room], [date], false);
-            }
-          },
-          child: Container(
-        width: _roomColumnWidth,
-        height: _dayRowHeight,
-        decoration: BoxDecoration(
-          color: isHighlighted
-              ? StayoraColors.purple.withOpacity(0.25)
-              : isSelected
-                  ? StayoraColors.blue.withOpacity(0.2)
-                  : Theme.of(context).colorScheme.surface,
-          border: Border(
-            right: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.3), width: 1),
-            top: isSelected
-                ? BorderSide(
-                    color: StayoraColors.blue.withOpacity(0.5),
-                    width: 2,
-                  )
-                : BorderSide.none,
-            bottom: isSelected
-                ? BorderSide(
-                    color: StayoraColors.blue.withOpacity(0.5),
-                    width: 2,
-                  )
-                : BorderSide.none,
-            left: isSelected
-                ? BorderSide(
-                    color: StayoraColors.blue.withOpacity(0.5),
-                    width: 2,
-                  )
-                : BorderSide.none,
-          ),
-        ),
-        child: Stack(
-          children: [
-            // Booking display (long-press to drag to another cell)
-            if (booking != null)
-              LongPressDraggable<_WaitingListDragPayload>(
-                data: _WaitingListDragPayload(bookingId: booking.bookingId),
-                onDragEnd: (_) {
-                  setState(() {
-                    _skeletonWaitingListBookingId = null;
-                    _skeletonRoom = null;
-                    _skeletonDate = null;
-                  });
-                },
-                feedback: Material(
-                  elevation: 4,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: booking.color,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          booking.guestName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+        return MouseRegion(
+          onEnter: (_) => setState(() {
+            _hoveredRoom = room;
+            _hoveredDate = date;
+          }),
+          onExit: (_) => setState(() {
+            _hoveredRoom = null;
+            _hoveredDate = null;
+          }),
+          child: GestureDetector(
+            onTap: () {
+              if (booking != null) {
+                _showBookingDetails(context, room, date, booking);
+              } else if (!_isSelecting) {
+                _showBookingDialog([room], [date], false);
+              }
+            },
+            child: Container(
+              width: _roomColumnWidth,
+              height: _dayRowHeight,
+              decoration: BoxDecoration(
+                color: isHighlighted
+                    ? StayoraColors.purple.withOpacity(0.25)
+                    : isSelected
+                    ? StayoraColors.blue.withOpacity(0.2)
+                    : Theme.of(context).colorScheme.surface,
+                border: Border(
+                  top: isSelected
+                      ? BorderSide(
+                          color: StayoraColors.blue.withOpacity(0.5),
+                          width: 2,
+                        )
+                      : BorderSide(
+                          color: cellTopBorderColor,
+                          width: 1,
                         ),
-                        if (booking.totalNights > 1) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            '${booking.totalNights} nights',
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.9),
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+                  bottom: isSelected
+                      ? BorderSide(
+                          color: StayoraColors.blue.withOpacity(0.5),
+                          width: 2,
+                        )
+                      : BorderSide(
+                          color: cellBottomBorderColor,
+                          width: 1,
+                        ),
+                  left: isSelected
+                      ? BorderSide(
+                          color: StayoraColors.blue.withOpacity(0.5),
+                          width: 2,
+                        )
+                      : BorderSide.none,
+                  right: BorderSide(
+                    color: cellRightBorderColor,
+                    width: 1,
                   ),
                 ),
-                childWhenDragging: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      height: double.infinity,
-                      decoration: BoxDecoration(
-                        color: booking.color.withOpacity(0.4),
-                        borderRadius: BorderRadius.horizontal(
-                          left: booking.isFirstNight
-                              ? const Radius.circular(8)
-                              : Radius.zero,
-                          right: booking.isLastNight
-                              ? const Radius.circular(8)
-                              : Radius.zero,
-                        ),
+              ),
+              child: Stack(
+                children: [
+                  // Booking card: left stripe, surface, elevation, hierarchy
+                  if (booking != null)
+                    LongPressDraggable<_WaitingListDragPayload>(
+                      data: _WaitingListDragPayload(bookingId: booking.bookingId),
+                      onDragEnd: (_) {
+                        setState(() {
+                          _skeletonWaitingListBookingId = null;
+                          _skeletonRoom = null;
+                          _skeletonDate = null;
+                        });
+                      },
+                      feedback: _buildBookingCardContent(
+                        context,
+                        booking,
+                        stripeColor: _statusColor(booking.status),
+                        compact: true,
+                        forFeedback: true,
+                      ),
+                      childWhenDragging: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          _buildGridBookingCard(
+                            context,
+                            room,
+                            date,
+                            booking,
+                            isHovered: false,
+                            isDragging: true,
+                            isConnectedLeft: isSameBookingLeft,
+                            isConnectedRight: isSameBookingRight,
+                            isConnectedTop: isSameBookingAbove,
+                            isConnectedBottom: isSameBookingBelow,
+                            showInfo: isInfoCell,
+                            centerInfoInBubble: roomSpan >= 2,
+                          ),
+                        ],
+                      ),
+                      child: _buildGridBookingCard(
+                        context,
+                        room,
+                        date,
+                        booking,
+                        isHovered: isHovered,
+                        isDragging: false,
+                        isConnectedLeft: isSameBookingLeft,
+                        isConnectedRight: isSameBookingRight,
+                        isConnectedTop: isSameBookingAbove,
+                        isConnectedBottom: isSameBookingBelow,
+                        showInfo: isInfoCell,
+                        centerInfoInBubble: roomSpan >= 2,
                       ),
                     ),
-                  ],
-                ),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
+                  // Selection overlay
+                  if (isSelected && booking == null)
                     Container(
                       width: double.infinity,
                       height: double.infinity,
                       decoration: BoxDecoration(
-                        color: booking.color,
-                        borderRadius: BorderRadius.horizontal(
-                          left: booking.isFirstNight
-                              ? const Radius.circular(8)
-                              : Radius.zero,
-                          right: booking.isLastNight
-                              ? const Radius.circular(8)
-                              : Radius.zero,
-                        ),
-                        boxShadow: booking.isFirstNight
-                            ? [
-                                BoxShadow(
-                                  color: Theme.of(context).colorScheme.shadow.withOpacity(0.1),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ]
-                            : null,
+                        color: StayoraColors.blue.withOpacity(0.15),
                       ),
-                      child: booking.isFirstNight
-                          ? Padding(
-                              padding: const EdgeInsets.only(
-                                left: 10,
-                                right: 8,
-                                top: 6,
-                                bottom: 6,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    booking.guestName,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// One grid cell's booking card: left stripe, surface, shadow, status, hover.
+  /// Connected sides share no gap/border so the whole booking is one bubble.
+  /// [showInfo]: show guest name, nights, phone, status in one cell (first night; 1 room = left, 2+ rooms = middle).
+  /// [centerInfoInBubble]: when true (2+ rooms), center the info horizontally in the cell for top-middle of bubble.
+  Widget _buildGridBookingCard(
+    BuildContext context,
+    String room,
+    DateTime date,
+    CalendarBooking booking, {
+    required bool isHovered,
+    required bool isDragging,
+    bool isConnectedLeft = false,
+    bool isConnectedRight = false,
+    bool isConnectedTop = false,
+    bool isConnectedBottom = false,
+    bool showInfo = true,
+    bool centerInfoInBubble = false,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final scheme = Theme.of(context).colorScheme;
+    final cardBg = isDark
+        ? scheme.surfaceContainerHighest
+        : scheme.surfaceContainerLowest;
+    final cardBgResolved =
+        isDragging ? cardBg.withOpacity(0.6) : cardBg;
+    // Status color from legend: border goes around the whole bubble
+    final statusColor = _statusColor(booking.status);
+    const radius = 10.0;
+    // One bubble: round only the four outer corners of the whole block
+    final topLeft = (isConnectedTop || isConnectedLeft) ? 0.0 : radius;
+    final topRight = (isConnectedTop || isConnectedRight) ? 0.0 : radius;
+    final bottomLeft = (isConnectedBottom || isConnectedLeft) ? 0.0 : radius;
+    final bottomRight = (isConnectedBottom || isConnectedRight) ? 0.0 : radius;
+
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      margin: EdgeInsets.only(
+        top: isConnectedTop ? 0 : 2,
+        bottom: isConnectedBottom ? 0 : 2,
+        left: isConnectedLeft ? 0 : 2,
+        right: isConnectedRight ? 0 : 2,
+      ),
+      decoration: BoxDecoration(
+        color: cardBgResolved,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(topLeft),
+          topRight: Radius.circular(topRight),
+          bottomLeft: Radius.circular(bottomLeft),
+          bottomRight: Radius.circular(bottomRight),
+        ),
+        border: Border(
+          top: isConnectedTop
+              ? BorderSide.none
+              : BorderSide(color: statusColor, width: 2),
+          bottom: isConnectedBottom
+              ? BorderSide.none
+              : BorderSide(color: statusColor, width: 2),
+          left: isConnectedLeft
+              ? BorderSide.none
+              : BorderSide(color: statusColor, width: 2),
+          right: isConnectedRight
+              ? BorderSide.none
+              : BorderSide(color: statusColor, width: 2),
+        ),
+        boxShadow: [
+          if (showInfo && !isDragging)
+            BoxShadow(
+              color: scheme.shadow.withOpacity(isDark ? 0.2 : 0.08),
+              blurRadius: isHovered ? 8 : 4,
+              offset: Offset(0, isHovered ? 3 : 2),
+            ),
+          if (isHovered && !isDragging)
+            BoxShadow(
+              color: statusColor.withOpacity(0.35),
+              blurRadius: 8,
+              spreadRadius: 0,
+            ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(topLeft),
+          topRight: Radius.circular(topRight),
+          bottomLeft: Radius.circular(bottomLeft),
+          bottomRight: Radius.circular(bottomRight),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Content — only in the single "first" cell of the booking (color line is the border around bubble)
+            Expanded(
+              child: showInfo
+                  ? Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            left: 6,
+                            right: 8,
+                            top: 2,
+                            bottom: 2,
+                          ),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: centerInfoInBubble
+                                ? Alignment.center
+                                : Alignment.centerLeft,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: centerInfoInBubble
+                                  ? CrossAxisAlignment.center
+                                  : CrossAxisAlignment.start,
+                              children: [
+                                // Line 1 — Primary: guest name
+                                Text(
+                                  booking.guestName,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: scheme.onSurface,
                                   ),
-                                  if (booking.totalNights > 1)
-                                    Text(
-                                      '${booking.totalNights} nights',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                // Line 2 — Secondary: nights • status
+                                Text(
+                                  '${booking.totalNights} night${booking.totalNights != 1 ? 's' : ''} • ${booking.status}',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    color: scheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                // Line 3 — Phone (easy to see at a glance)
+                                if (booking.phone.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 1),
+                                    child: Text(
+                                      booking.phone,
                                       style: TextStyle(
-                                        color: Colors.white.withOpacity(0.9),
                                         fontSize: 9,
+                                        color: scheme.onSurfaceVariant,
+                                        fontWeight: FontWeight.w400,
                                       ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
-                                ],
-                              ),
-                            )
-                          : const SizedBox(),
-                    ),
-                    // Advance payment dot — top-right of the first night cell
-                    if (booking.isFirstNight &&
-                        booking.advancePaymentStatus != 'not_required')
-                      Positioned(
-                        top: 5,
-                        right: 5,
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: _advanceIndicatorColor(
-                              booking.advancePaymentStatus,
-                            ),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.7),
-                              width: 1.5,
+                                  ),
+                              ],
                             ),
                           ),
                         ),
-                      ),
-                  ],
-                ),
-              ),
-            // Selection overlay
-            if (isSelected && booking == null)
-              Container(
-                width: double.infinity,
-                height: double.infinity,
-                decoration: BoxDecoration(
-                  color: StayoraColors.blue.withOpacity(0.15),
-                ),
-              ),
+                        // Status dot — top-right
+                        Positioned(
+                          top: 4,
+                          right: 6,
+                          child: Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: _statusColor(booking.status),
+                              border: Border.all(
+                                color: cardBg,
+                                width: 1,
+                              ),
+                            ),
+                          ),
+                        ),
+                        // Advance payment dot — next to status when relevant
+                        if (booking.advancePaymentStatus != 'not_required')
+                          Positioned(
+                            top: 4,
+                            right: 14,
+                            child: Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _advanceIndicatorColor(
+                                  booking.advancePaymentStatus,
+                                ),
+                                border: Border.all(
+                                  color: cardBg,
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    )
+                  : const SizedBox.shrink(),
+            ),
           ],
         ),
       ),
     );
-      },
+  }
+
+  /// Compact card for drag feedback (stripe + name + nights).
+  Widget _buildBookingCardContent(
+    BuildContext context,
+    CalendarBooking booking, {
+    required Color stripeColor,
+    bool compact = true,
+    bool forFeedback = false,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      elevation: 4,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: scheme.outline.withOpacity(0.2),
+            width: 1,
+          ),
+        ),
+        child: IntrinsicHeight(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 4,
+                decoration: BoxDecoration(
+                  color: stripeColor,
+                  borderRadius: const BorderRadius.horizontal(
+                    left: Radius.circular(4),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    booking.guestName,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      color: scheme.onSurface,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (booking.totalNights > 1) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      '${booking.totalNights} nights',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -3061,7 +3847,11 @@ class _CalendarPageState extends State<CalendarPage> {
             ],
           ),
           child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: _firebaseService.bookingDocStream(userId, hotelId, bookingId),
+            stream: _firebaseService.bookingDocStream(
+              userId,
+              hotelId,
+              bookingId,
+            ),
             builder: (context, snapshot) {
               if (!snapshot.hasData) {
                 return const Padding(
@@ -3151,21 +3941,23 @@ class _CalendarPageState extends State<CalendarPage> {
                 },
                 onEditFull: () {
                   Navigator.pop(dialogContext);
-                  nestedNavigator.push(
-                    MaterialPageRoute(
-                      builder: (context) => AddBookingPage(
-                        existingBooking: fullBooking,
-                        preselectedRoom: room,
-                        preselectedStartDate: fullBooking.checkIn,
-                        preselectedEndDate: fullBooking.checkOut,
-                        preselectedNumberOfRooms: fullBooking.numberOfRooms,
-                      ),
-                    ),
-                  ).then((bookingCreated) {
-                    if (bookingCreated == true) {
-                      _subscribeToBookings();
-                    }
-                  });
+                  nestedNavigator
+                      .push(
+                        MaterialPageRoute(
+                          builder: (context) => AddBookingPage(
+                            existingBooking: fullBooking,
+                            preselectedRoom: room,
+                            preselectedStartDate: fullBooking.checkIn,
+                            preselectedEndDate: fullBooking.checkOut,
+                            preselectedNumberOfRooms: fullBooking.numberOfRooms,
+                          ),
+                        ),
+                      )
+                      .then((bookingCreated) {
+                        if (bookingCreated == true) {
+                          _subscribeToBookings();
+                        }
+                      });
                 },
                 onClose: () => Navigator.pop(dialogContext),
               );
@@ -3200,7 +3992,10 @@ class _CalendarPageState extends State<CalendarPage> {
               children: [
                 Text(
                   label,
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                 ),
@@ -3248,7 +4043,10 @@ class _CalendarPageState extends State<CalendarPage> {
               children: [
                 Text(
                   'Status',
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Container(
@@ -3328,7 +4126,10 @@ class _CalendarPageState extends State<CalendarPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Text(
                   'This will permanently delete the booking. This action cannot be undone.',
-                  style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -3343,7 +4144,7 @@ class _CalendarPageState extends State<CalendarPage> {
                         onPressed: () => Navigator.pop(ctx, true),
                         style: FilledButton.styleFrom(
                           backgroundColor: Colors.red,
-                          foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                          foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10),
@@ -3356,14 +4157,18 @@ class _CalendarPageState extends State<CalendarPage> {
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
-                      child: TextButton(
+                      child: FilledButton(
                         onPressed: () => Navigator.pop(ctx, false),
-                        style: TextButton.styleFrom(
-                          foregroundColor: StayoraColors.blue,
+                        style: FilledButton.styleFrom(
+                          backgroundColor:
+                              Theme.of(ctx).colorScheme.inverseSurface,
+                          foregroundColor:
+                              Theme.of(ctx).colorScheme.onInverseSurface,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
+                          elevation: 0,
                         ),
                         child: const Text('Cancel'),
                       ),
@@ -3429,23 +4234,25 @@ class _CalendarPageState extends State<CalendarPage> {
     ); // Check-out is the day after last night
 
     // Navigate to Add Booking page with preselected values (nested navigator so nav bar stays)
-    Navigator.of(context, rootNavigator: false).push(
-      MaterialPageRoute(
-        builder: (context) => AddBookingPage(
-          preselectedRoom: rooms.length == 1 ? rooms.first : null,
-          preselectedStartDate: startDate,
-          preselectedEndDate: endDate,
-          preselectedNumberOfRooms: rooms.length,
-          preselectedRoomsNextToEachOther: roomsNextToEachOther,
-          preselectedRoomsIndex: preselectedRoomIndexes,
-        ),
-      ),
-    ).then((bookingCreated) {
-      if (bookingCreated == true) {
-        // Refresh the calendar if booking was created
-        setState(() {});
-      }
-    });
+    Navigator.of(context, rootNavigator: false)
+        .push(
+          MaterialPageRoute(
+            builder: (context) => AddBookingPage(
+              preselectedRoom: rooms.length == 1 ? rooms.first : null,
+              preselectedStartDate: startDate,
+              preselectedEndDate: endDate,
+              preselectedNumberOfRooms: rooms.length,
+              preselectedRoomsNextToEachOther: roomsNextToEachOther,
+              preselectedRoomsIndex: preselectedRoomIndexes,
+            ),
+          ),
+        )
+        .then((bookingCreated) {
+          if (bookingCreated == true) {
+            // Refresh the calendar if booking was created
+            setState(() {});
+          }
+        });
   }
 
   bool isSameDay(DateTime a, DateTime b) {
@@ -3456,5 +4263,535 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 }
 
+/// Cursor-style before | after mini calendar for a chain of moves.
+class _ChainPreviewCalendar extends StatelessWidget {
+  const _ChainPreviewCalendar({
+    required this.actions,
+    required this.bookingModelsById,
+    required this.roomIdToNameMap,
+  });
 
+  final List<MoveBookingAction> actions;
+  final Map<String, BookingModel> bookingModelsById;
+  final Map<String, String> roomIdToNameMap;
 
+  static DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  @override
+  Widget build(BuildContext context) {
+    const double cellWidth = 22.0;
+    const double rowHeight = 32.0;
+    const double roomLabelWidth = 64.0;
+
+    DateTime rangeStart = _day(actions.first.newCheckIn);
+    DateTime rangeEnd = _day(actions.first.newCheckOut);
+    for (final a in actions) {
+      final b = bookingModelsById[a.bookingId];
+      if (b == null) continue;
+      final s = _day(b.checkIn);
+      final e = _day(b.checkOut);
+      if (s.isBefore(rangeStart)) rangeStart = s;
+      if (e.isAfter(rangeEnd)) rangeEnd = e;
+    }
+    final totalDays = rangeEnd.difference(rangeStart).inDays.clamp(2, 14);
+
+    final affectedRoomIds = <String>{};
+    for (final a in actions) {
+      affectedRoomIds.add(a.fromRoomId);
+      affectedRoomIds.add(a.toRoomId);
+    }
+    final roomOrder = affectedRoomIds.toList()..sort();
+
+    // Before: fromRoomId has the booking
+    final before = <String, List<_Slot>>{};
+    for (final a in actions) {
+      final b = bookingModelsById[a.bookingId];
+      if (b == null) continue;
+      before
+          .putIfAbsent(a.fromRoomId, () => [])
+          .add(
+            _Slot(
+              guestName: b.userName,
+              checkIn: b.checkIn,
+              checkOut: b.checkOut,
+            ),
+          );
+    }
+    for (final rid in roomOrder) {
+      before.putIfAbsent(rid, () => []);
+    }
+
+    // After: toRoomId has the booking
+    final after = <String, List<_Slot>>{};
+    for (final a in actions) {
+      final b = bookingModelsById[a.bookingId];
+      if (b == null) continue;
+      after
+          .putIfAbsent(a.toRoomId, () => [])
+          .add(
+            _Slot(
+              guestName: b.userName,
+              checkIn: a.newCheckIn,
+              checkOut: a.newCheckOut,
+            ),
+          );
+    }
+    for (final rid in roomOrder) {
+      after.putIfAbsent(rid, () => []);
+    }
+
+    final colorScheme = Theme.of(context).colorScheme;
+    final barColor = StayoraColors.blue.withOpacity(0.85);
+    final emptyColor = colorScheme.surfaceContainerHighest.withOpacity(0.4);
+    final timelineWidth = totalDays * cellWidth;
+
+    Widget buildPanel(
+      String title,
+      Map<String, List<_Slot>> state,
+      bool isAfter,
+    ) {
+      return Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: isAfter
+              ? colorScheme.primaryContainer.withOpacity(0.08)
+              : colorScheme.surfaceContainerHighest.withOpacity(0.25),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: colorScheme.outline.withOpacity(0.2)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: colorScheme.onSurfaceVariant,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: roomLabelWidth,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        height: 18,
+                        child: Text(
+                          '',
+                          style: TextStyle(
+                            fontSize: 9,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      ...roomOrder.map((rid) {
+                        final name = roomIdToNameMap[rid] ?? rid;
+                        return SizedBox(
+                          height: rowHeight,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              name,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                                color: colorScheme.onSurface,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: SizedBox(
+                    width: timelineWidth,
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          height: 18,
+                          child: Row(
+                            children: List.generate(totalDays, (i) {
+                              final d = rangeStart.add(Duration(days: i));
+                              return SizedBox(
+                                width: cellWidth,
+                                child: Center(
+                                  child: Text(
+                                    '${d.day}',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }),
+                          ),
+                        ),
+                        ...roomOrder.map((rid) {
+                          final slots = state[rid] ?? [];
+                          return SizedBox(
+                            height: rowHeight,
+                            child: _roomTimelineRow(
+                              context,
+                              cellWidth: cellWidth,
+                              totalDays: totalDays,
+                              rangeStart: rangeStart,
+                              slots: slots,
+                              barColor: barColor,
+                              emptyColor: emptyColor,
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: buildPanel('Before', before, false)),
+        Container(
+          width: 2,
+          margin: const EdgeInsets.symmetric(horizontal: 6),
+          color: colorScheme.outline.withOpacity(0.35),
+        ),
+        Expanded(child: buildPanel('After', after, true)),
+      ],
+    );
+  }
+
+  Widget _roomTimelineRow(
+    BuildContext context, {
+    required double cellWidth,
+    required int totalDays,
+    required DateTime rangeStart,
+    required List<_Slot> slots,
+    required Color barColor,
+    required Color emptyColor,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Stack(
+      children: [
+        Row(
+          children: List.generate(
+            totalDays,
+            (i) => Container(
+              width: cellWidth - 0.5,
+              decoration: BoxDecoration(
+                color: emptyColor,
+                border: Border(
+                  right: BorderSide(
+                    color: colorScheme.outline.withOpacity(0.15),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        for (final slot in slots) ...[
+          () {
+            final s = _day(slot.checkIn);
+            final e = _day(slot.checkOut);
+            final startCol = s
+                .difference(rangeStart)
+                .inDays
+                .clamp(0, totalDays - 1);
+            final endCol = e.difference(rangeStart).inDays.clamp(1, totalDays);
+            if (endCol <= startCol) return const SizedBox.shrink();
+            return Positioned(
+              left: startCol * cellWidth + 1.5,
+              top: 3,
+              bottom: 3,
+              width: (endCol - startCol) * cellWidth - 3,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: barColor,
+                  borderRadius: BorderRadius.circular(3),
+                  border: Border.all(color: StayoraColors.blue, width: 1),
+                ),
+                child: Center(
+                  child: Text(
+                    slot.guestName,
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            );
+          }(),
+        ],
+      ],
+    );
+  }
+}
+
+class _Slot {
+  const _Slot({
+    required this.guestName,
+    required this.checkIn,
+    required this.checkOut,
+  });
+  final String guestName;
+  final DateTime checkIn;
+  final DateTime checkOut;
+}
+
+/// Mini timeline showing a booking moving from one room row to another (before → after).
+class _MovePreviewTimeline extends StatelessWidget {
+  const _MovePreviewTimeline({
+    required this.fromRoomName,
+    required this.toRoomName,
+    required this.beforeCheckIn,
+    required this.beforeCheckOut,
+    required this.afterCheckIn,
+    required this.afterCheckOut,
+  });
+
+  final String fromRoomName;
+  final String toRoomName;
+  final DateTime beforeCheckIn;
+  final DateTime beforeCheckOut;
+  final DateTime afterCheckIn;
+  final DateTime afterCheckOut;
+
+  static DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  @override
+  Widget build(BuildContext context) {
+    const double cellWidth = 28.0;
+    const double rowHeight = 36.0;
+
+    final bStart = _day(beforeCheckIn);
+    final bEnd = _day(beforeCheckOut);
+    final aStart = _day(afterCheckIn);
+    final aEnd = _day(afterCheckOut);
+    final rangeStart = bStart.isBefore(aStart) ? bStart : aStart;
+    final rangeEnd = bEnd.isAfter(aEnd) ? bEnd : aEnd;
+    final totalDays = rangeEnd.difference(rangeStart).inDays.clamp(2, 14);
+
+    final beforeStartCol = bStart
+        .difference(rangeStart)
+        .inDays
+        .clamp(0, totalDays - 1);
+    final beforeEndCol = bEnd.difference(rangeStart).inDays.clamp(1, totalDays);
+    final afterStartCol = aStart
+        .difference(rangeStart)
+        .inDays
+        .clamp(0, totalDays - 1);
+    final afterEndCol = aEnd.difference(rangeStart).inDays.clamp(1, totalDays);
+
+    final colorScheme = Theme.of(context).colorScheme;
+    final barColor = StayoraColors.blue.withOpacity(0.85);
+    final emptyColor = colorScheme.surfaceContainerHighest.withOpacity(0.4);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colorScheme.outline.withOpacity(0.25)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'How the booking moves',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurfaceVariant,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 10),
+          // Day labels row
+          SizedBox(
+            height: 22,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 72,
+                  child: Text(
+                    '',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                Row(
+                  children: List.generate(totalDays, (i) {
+                    final d = rangeStart.add(Duration(days: i));
+                    return SizedBox(
+                      width: cellWidth,
+                      child: Center(
+                        child: Text(
+                          '${d.day}',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          // Before row: booking in "from" room
+          _timelineRow(
+            context,
+            label: 'From',
+            roomName: fromRoomName,
+            cellWidth: cellWidth,
+            rowHeight: rowHeight,
+            totalDays: totalDays,
+            barStartCol: beforeStartCol,
+            barEndCol: beforeEndCol,
+            barColor: barColor,
+            emptyColor: emptyColor,
+          ),
+          const SizedBox(height: 6),
+          // After row: booking in "to" room
+          _timelineRow(
+            context,
+            label: 'To',
+            roomName: toRoomName,
+            cellWidth: cellWidth,
+            rowHeight: rowHeight,
+            totalDays: totalDays,
+            barStartCol: afterStartCol,
+            barEndCol: afterEndCol,
+            barColor: barColor,
+            emptyColor: emptyColor,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _timelineRow(
+    BuildContext context, {
+    required String label,
+    required String roomName,
+    required double cellWidth,
+    required double rowHeight,
+    required int totalDays,
+    required int barStartCol,
+    required int barEndCol,
+    required Color barColor,
+    required Color emptyColor,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final timelineWidth = totalDays * cellWidth;
+
+    return SizedBox(
+      height: rowHeight,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 72,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Text(
+                    roomName,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: colorScheme.onSurface,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: SizedBox(
+              width: timelineWidth,
+              height: rowHeight,
+              child: Stack(
+                children: [
+                  // Grid cells
+                  Row(
+                    children: List.generate(
+                      totalDays,
+                      (i) => Container(
+                        width: cellWidth - 0.5,
+                        decoration: BoxDecoration(
+                          color: emptyColor,
+                          border: Border(
+                            right: BorderSide(
+                              color: colorScheme.outline.withOpacity(0.2),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Booking bar
+                  Positioned(
+                    left: barStartCol * cellWidth + 2,
+                    top: 4,
+                    bottom: 4,
+                    width: (barEndCol - barStartCol) * cellWidth - 4,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: barColor,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: StayoraColors.blue, width: 1),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

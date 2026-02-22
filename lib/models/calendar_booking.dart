@@ -14,6 +14,12 @@ class CalendarBooking {
   /// Advance payment status: not_required, waiting, paid.
   final String advancePaymentStatus;
 
+  /// Booking status for card chip/dot: Confirmed, Pending, Paid, Unpaid, Cancelled, Waiting list.
+  final String status;
+
+  /// Guest phone for display on the calendar card.
+  final String phone;
+
   const CalendarBooking({
     required this.bookingId,
     required this.guestName,
@@ -22,5 +28,7 @@ class CalendarBooking {
     required this.isLastNight,
     required this.totalNights,
     this.advancePaymentStatus = 'not_required',
+    this.status = 'Pending',
+    this.phone = '',
   });
 }

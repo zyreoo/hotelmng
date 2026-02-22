@@ -1,15 +1,3 @@
-// ignore_for_file: unused_element, unused_local_variable
-
-/// WIRING GUIDANCE — Example snippets for using validation + audit logging.
-/// No UI code; callers decide how to show errors.
-///
-/// Flow:
-/// 1. Before save (create/update): build input, load existing bookings for room(s),
-///    call validateBookingInput (or validateBookingRawInput). On error: return
-///    structured error to caller and optionally log VALIDATION_FAILED / OVERLAP_BLOCKED.
-/// 2. After successful create/update/delete: log BOOKING_CREATED / BOOKING_UPDATED /
-///    BOOKING_DELETED (non-blocking).
-
 import 'package:hotelmng/utils/audit_log_models.dart';
 import 'package:hotelmng/utils/audit_log_writer.dart';
 import 'package:hotelmng/utils/audit_logger.dart';
@@ -28,7 +16,6 @@ void exampleBeforeSave({
   required String userId,
   required AuditLogWriter auditWriter,
 }) {
-  // 1) Validate (pure; no DB inside)
   final error = validateBookingRawInput(
     roomId: roomId,
     checkInUtc: checkInUtc,
@@ -43,7 +30,9 @@ void exampleBeforeSave({
 
     // 3) Optional: log validation failure (non-blocking; must not throw)
     final isOverlap = error.code == 'BOOKING_OVERLAP';
-    final action = isOverlap ? AuditAction.overlapBlocked : AuditAction.validationFailed;
+    final action = isOverlap
+        ? AuditAction.overlapBlocked
+        : AuditAction.validationFailed;
     final metadata = <String, dynamic>{
       'errorCode': error.code,
       'field': error.field,
