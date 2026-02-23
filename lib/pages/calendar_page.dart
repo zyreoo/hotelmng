@@ -15,19 +15,14 @@ import '../utils/stayora_colors.dart';
 import '../utils/currency_formatter.dart';
 import '../utils/gap_detector.dart';
 import '../utils/optimization_suggestions.dart';
+import '../features/calendar/models/calendar_cell_data.dart';
 import '../features/calendar/widgets/booking_details_form.dart';
 import '../features/calendar/widgets/calendar_day_view_card.dart';
-import '../widgets/common/legend_item.dart';
 import '../widgets/loading_empty_states.dart';
 import '../widgets/stayora_logo.dart';
+import '../features/calendar/widgets/calendar_bottom_section.dart';
 import 'add_booking_page.dart';
 import 'room_management_page.dart';
-
-/// Payload when dragging a booking from the waiting list onto the calendar.
-class _WaitingListDragPayload {
-  const _WaitingListDragPayload({required this.bookingId});
-  final String bookingId;
-}
 
 class CalendarPage extends StatefulWidget {
   const CalendarPage({super.key});
@@ -94,21 +89,22 @@ class _CalendarPageState extends State<CalendarPage> {
   DateTime? _lastSearchedDate;
 
   // Selection state for drag-and-drop booking
-  int _numberOfSelectedRooms = 0;
   bool _roomsNextToEachOther = false;
   String? _selectionStartRoom;
   DateTime? _selectionStartDate;
   String? _selectionEndRoom;
   DateTime? _selectionEndDate;
 
-  /// When dragging a waiting-list booking over the grid, show a skeleton at this cell.
-  String? _skeletonWaitingListBookingId;
-  String? _skeletonRoom;
-  DateTime? _skeletonDate;
+  /// Hover state — in a [ValueNotifier] so only the affected cell rebuilds on
+  /// mouse enter/exit instead of the entire page.
+  final _hoverNotifier = ValueNotifier<_HoverState?>(null);
 
-  /// Hover state for booking cards (desktop/tablet).
-  String? _hoveredRoom;
-  DateTime? _hoveredDate;
+  /// Skeleton drag state — same ValueNotifier trick: only the overlay redraws.
+  final _skeletonNotifier = ValueNotifier<_SkeletonState?>(null);
+
+  /// Pre-computed per-(room, date) cell data. Rebuilt once after every booking
+  /// change via [_rebuildCellCache], so [_buildRoomCell] never runs O(n) loops.
+  final Map<DateTime, Map<String, CalendarCellData>> _cellDataCache = {};
 
   static List<String> get statusOptions => BookingModel.statusOptions;
 
@@ -167,6 +163,7 @@ class _CalendarPageState extends State<CalendarPage> {
           };
           _roomNamesLoaded = true;
         });
+        _rebuildCellCache();
         _subscribeToBookings();
       }
     } catch (_) {
@@ -935,8 +932,6 @@ class _CalendarPageState extends State<CalendarPage> {
 
     final currentOffset = _verticalScrollController.offset;
     final daysToAdd = _loadMoreDays;
-    // Capture oldEarliestDate BEFORE updating it
-    final oldEarliestDate = _earliestDate;
     final newEarliestDate = _earliestDate.subtract(Duration(days: daysToAdd));
 
     if (!mounted) return;
@@ -1185,6 +1180,8 @@ class _CalendarPageState extends State<CalendarPage> {
     _debounceTimer?.cancel();
     _bookingsSubscription?.cancel();
     _waitingListSubscription?.cancel();
+    _hoverNotifier.dispose();
+    _skeletonNotifier.dispose();
     _verticalScrollController.dispose();
     _horizontalScrollController.dispose();
     _roomHeadersScrollController.dispose();
@@ -1192,36 +1189,70 @@ class _CalendarPageState extends State<CalendarPage> {
     super.dispose();
   }
 
-  void _addBooking(
-    String room,
-    DateTime startDate,
-    int nights,
-    String guestName,
-    Color color,
-  ) {
-    for (int i = 0; i < nights; i++) {
-      final nightDate = DateTime(
-        startDate.year,
-        startDate.month,
-        startDate.day,
-      ).add(Duration(days: i));
-      _bookings[nightDate] ??= {};
-      _bookings[nightDate]![room] = CalendarBooking(
-        bookingId: '',
-        guestName: guestName,
-        color: color,
-        isFirstNight: i == 0,
-        isLastNight: i == nights - 1,
-        totalNights: nights,
-        status: 'Pending',
-        phone: '',
-      );
-    }
-  }
-
   CalendarBooking? _getBooking(String room, DateTime date) {
     final nightDate = DateTime(date.year, date.month, date.day);
     return _bookings[nightDate]?[room];
+  }
+
+  /// Rebuilds the per-cell data cache from the current [_bookings] map and
+  /// [_displayedRoomNames]. Call this after every booking change (debounced).
+  void _rebuildCellCache() {
+    final rooms = _displayedRoomNames;
+    _cellDataCache.clear();
+
+    for (final date in _dates) {
+      final dateKey = DateTime(date.year, date.month, date.day);
+      final prevKey = dateKey.subtract(const Duration(days: 1));
+      final nextKey = dateKey.add(const Duration(days: 1));
+      final rowCache = <String, CalendarCellData>{};
+
+      for (int ri = 0; ri < rooms.length; ri++) {
+        final room = rooms[ri];
+        final booking = _getBooking(room, date);
+        if (booking == null) {
+          rowCache[room] = CalendarCellData.empty;
+          continue;
+        }
+        final bid = booking.bookingId;
+        final connLeft =
+            ri > 0 && _getBooking(rooms[ri - 1], date)?.bookingId == bid;
+        final connRight =
+            ri < rooms.length - 1 &&
+            _getBooking(rooms[ri + 1], date)?.bookingId == bid;
+        final connTop = _getBooking(room, prevKey)?.bookingId == bid;
+        final connBottom = _getBooking(room, nextKey)?.bookingId == bid;
+
+        // First room index for this booking on this date.
+        int firstRoomIdx = ri;
+        while (firstRoomIdx > 0 &&
+            _getBooking(rooms[firstRoomIdx - 1], date)?.bookingId == bid) {
+          firstRoomIdx--;
+        }
+        int span = 0;
+        for (int i = firstRoomIdx; i < rooms.length; i++) {
+          if (_getBooking(rooms[i], date)?.bookingId == bid) {
+            span++;
+          } else {
+            break;
+          }
+        }
+        final midIdx = firstRoomIdx + (span ~/ 2);
+        final isInfoCell =
+            booking.isFirstNight &&
+            (span == 1 ? ri == firstRoomIdx : ri == midIdx);
+
+        rowCache[room] = CalendarCellData(
+          booking: booking,
+          isConnectedLeft: connLeft,
+          isConnectedRight: connRight,
+          isConnectedTop: connTop,
+          isConnectedBottom: connBottom,
+          isInfoCell: isInfoCell,
+          centerInfoInBubble: span >= 2,
+        );
+      }
+      _cellDataCache[dateKey] = rowCache;
+    }
   }
 
   // Selection helper methods
@@ -1284,8 +1315,6 @@ class _CalendarPageState extends State<CalendarPage> {
 
   void _startSelection(String room, DateTime date) {
     setState(() {
-      // starting on a single room
-      _numberOfSelectedRooms = 1;
       _isSelecting = true;
       _roomsNextToEachOther = false;
       _selectionStartRoom = room;
@@ -1300,17 +1329,6 @@ class _CalendarPageState extends State<CalendarPage> {
       setState(() {
         _selectionEndRoom = room;
         _selectionEndDate = date;
-
-        // update how many rooms are currently spanned horizontally
-        if (_selectionStartRoom != null) {
-          final startIndex = _displayedRoomNames.indexOf(_selectionStartRoom!);
-          final endIndex = _displayedRoomNames.indexOf(_selectionEndRoom!);
-          if (startIndex != -1 && endIndex != -1) {
-            final minIndex = startIndex < endIndex ? startIndex : endIndex;
-            final maxIndex = startIndex > endIndex ? startIndex : endIndex;
-            _numberOfSelectedRooms = maxIndex - minIndex + 1;
-          }
-        }
       });
     }
   }
@@ -1415,7 +1433,9 @@ class _CalendarPageState extends State<CalendarPage> {
   ) async {
     final userId = AuthScopeData.of(context).uid;
     final hotelId = HotelProvider.of(context).hotelId;
-    if (userId == null || hotelId == null) return;
+    if (userId == null || hotelId == null) {
+      return;
+    }
 
     // Resolve booking: from waiting list or from grid (_bookingModelsById)
     BookingModel? booking;
@@ -1688,9 +1708,18 @@ class _CalendarPageState extends State<CalendarPage> {
           (snapshot) {
             _processBookingChanges(snapshot.docChanges, rangeStart, rangeEnd);
           },
-          onError: (error) {
+          onError: (error, stackTrace) {
             debugPrint('Firestore booking subscription error: $error');
+            if (mounted) {
+              final msg = error.toString().contains('permission-denied')
+                  ? 'Calendar: sign in or check Firestore rules.'
+                  : 'Calendar: could not load bookings.';
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(msg), backgroundColor: StayoraColors.error),
+              );
+            }
           },
+          cancelOnError: false,
         );
     _subscribeToWaitingList();
   }
@@ -1721,9 +1750,18 @@ class _CalendarPageState extends State<CalendarPage> {
                 ..addAll(list);
             });
           },
-          onError: (error) {
+          onError: (error, stackTrace) {
             debugPrint('Firestore waiting list subscription error: $error');
+            if (mounted && error.toString().contains('permission-denied')) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Waiting list: sign in or check Firestore rules.'),
+                  backgroundColor: StayoraColors.error,
+                ),
+              );
+            }
           },
+          cancelOnError: false,
         );
   }
 
@@ -1853,7 +1891,7 @@ class _CalendarPageState extends State<CalendarPage> {
             totalNights: totalNights,
             advancePaymentStatus: bookingModel.advancePaymentStatus,
             status: bookingModel.status,
-            phone: bookingModel.userPhone ?? '',
+            phone: bookingModel.userPhone,
           );
           needsUpdate = true;
         }
@@ -1872,6 +1910,7 @@ class _CalendarPageState extends State<CalendarPage> {
     _debounceTimer = Timer(_debounceDuration, () {
       if (mounted) {
         setState(() {});
+        _rebuildCellCache();
       }
     });
   }
@@ -2060,39 +2099,38 @@ class _CalendarPageState extends State<CalendarPage> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 8),
-                        InkWell(
-                          onTap: _showDateSearchDialog,
+                        Material(
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(8),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 4,
-                              horizontal: 2,
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.search_rounded,
-                                  size: 18,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface,
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(
+                          child: InkWell(
+                            onTap: _showDateSearchDialog,
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 10,
+                                horizontal: 12,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.search_rounded,
+                                    size: 18,
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
                                     DateFormat('MMM d, yyyy').format(
                                       _lastSearchedDate ?? DateTime.now(),
                                     ),
                                     style: Theme.of(context).textTheme.bodyLarge
                                         ?.copyWith(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurface,
+                                          color: Theme.of(context).colorScheme.onSurface,
                                         ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -2266,6 +2304,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       ),
                     )
                   : Column(
+                      mainAxisAlignment: MainAxisAlignment.start,
                       children: [
                         Expanded(
                           child: Container(
@@ -2286,94 +2325,105 @@ class _CalendarPageState extends State<CalendarPage> {
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(16),
                               child: Stack(
+                                fit: StackFit.expand,
                                 children: [
-                                  // Main scrollable grid
+                                  // Main scrollable grid: vertical scroll outer,
+                                  // horizontal inner, Column of rows so the grid
+                                  // has intrinsic height and is always visible.
                                   Positioned.fill(
                                     child: Padding(
                                       padding: EdgeInsets.only(
                                         top: _headerHeight,
                                       ),
-                                      child: GestureDetector(
-                                        key: _gridKey,
-                                        onPanStart: (details) {
-                                          final cell = _getCellFromPosition(
-                                            details.localPosition,
-                                          );
-                                          if (cell != null) {
-                                            // Only start selection on empty cells
-                                            if (_getBooking(
-                                                  cell['room']!,
-                                                  cell['date']!,
-                                                ) ==
-                                                null) {
-                                              _startSelection(
-                                                cell['room']!,
-                                                cell['date']!,
-                                              );
-                                            }
-                                          }
-                                        },
-                                        onPanUpdate: (details) {
-                                          if (_isSelecting) {
+                                      child: SizedBox.expand(
+                                        child: Listener(
+                                          key: _gridKey,
+                                          behavior: HitTestBehavior.translucent,
+                                          onPointerDown: (event) {
                                             final cell = _getCellFromPosition(
-                                              details.localPosition,
+                                              event.localPosition,
                                             );
                                             if (cell != null) {
-                                              // Allow selection to continue even over booked cells
-                                              _updateSelection(
-                                                cell['room']!,
-                                                cell['date']!,
-                                              );
+                                              if (_getBooking(
+                                                    cell['room']!,
+                                                    cell['date']!,
+                                                  ) ==
+                                                  null) {
+                                                _startSelection(
+                                                  cell['room']!,
+                                                  cell['date']!,
+                                                );
+                                              }
                                             }
-                                          }
-                                        },
-                                        onPanEnd: (details) {
-                                          if (_isSelecting) {
-                                            _endSelection();
-                                          }
-                                        },
-                                        onPanCancel: () {
-                                          if (_isSelecting) {
-                                            setState(() {
-                                              _isSelecting = false;
-                                              _selectionStartRoom = null;
-                                              _selectionStartDate = null;
-                                              _selectionEndRoom = null;
-                                              _selectionEndDate = null;
-                                            });
-                                          }
-                                        },
-                                        child: SingleChildScrollView(
-                                          controller: _verticalScrollController,
-                                          scrollDirection: Axis.vertical,
-                                          padding: EdgeInsets.zero,
+                                          },
+                                          onPointerMove: (event) {
+                                            if (_isSelecting) {
+                                              final cell = _getCellFromPosition(
+                                                event.localPosition,
+                                              );
+                                              if (cell != null) {
+                                                _updateSelection(
+                                                  cell['room']!,
+                                                  cell['date']!,
+                                                );
+                                              }
+                                            }
+                                          },
+                                          onPointerUp: (_) {
+                                            if (_isSelecting) {
+                                              _endSelection();
+                                            }
+                                          },
+                                          onPointerCancel: (_) {
+                                            if (_isSelecting) {
+                                              setState(() {
+                                                _isSelecting = false;
+                                                _selectionStartRoom = null;
+                                                _selectionStartDate = null;
+                                                _selectionEndRoom = null;
+                                                _selectionEndDate = null;
+                                              });
+                                            }
+                                          },
                                           child: SingleChildScrollView(
                                             controller:
-                                                _horizontalScrollController,
-                                            scrollDirection: Axis.horizontal,
+                                                _verticalScrollController,
+                                            scrollDirection: Axis.vertical,
                                             padding: EdgeInsets.zero,
-                                            child: Stack(
-                                              clipBehavior: Clip.none,
-                                              children: [
-                                                Column(
-                                                  children: _dates.map((date) {
-                                                    final isToday = isSameDay(
-                                                      date,
-                                                      DateTime.now(),
-                                                    );
-                                                    return _buildDayRow(
-                                                      date,
-                                                      isToday,
-                                                    );
-                                                  }).toList(),
-                                                ),
-                                                // Skeleton overlay when dragging a waiting-list (or grid) booking over the calendar
-                                                if (_skeletonWaitingListBookingId !=
-                                                        null &&
-                                                    _skeletonRoom != null &&
-                                                    _skeletonDate != null)
-                                                  _buildDragSkeletonOverlay(),
-                                              ],
+                                            child: SingleChildScrollView(
+                                              controller:
+                                                  _horizontalScrollController,
+                                              scrollDirection: Axis.horizontal,
+                                              padding: EdgeInsets.zero,
+                                              child: Builder(
+                                                builder: (context) {
+                                                  final dateList = _dates;
+                                                  return Container(
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .surfaceContainerLowest,
+                                                    child: Column(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: dateList.map((
+                                                        date,
+                                                      ) {
+                                                        final isToday =
+                                                            isSameDay(
+                                                              date,
+                                                              DateTime.now(),
+                                                            );
+                                                        return RepaintBoundary(
+                                                          child: _buildDayRow(
+                                                            date,
+                                                            isToday,
+                                                          ),
+                                                        );
+                                                      }).toList(),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -2414,14 +2464,14 @@ class _CalendarPageState extends State<CalendarPage> {
                                       ),
                                       child: Row(
                                         children: [
-                                          // Empty corner cell (fixed)
+                                          // Empty corner cell (fixed) — same as day column
                                           Container(
                                             width: _dayLabelWidth,
                                             height: _headerHeight,
                                             decoration: BoxDecoration(
                                               color: Theme.of(context)
                                                   .colorScheme
-                                                  .surfaceContainerHighest,
+                                                  .surface,
                                               border: Border(
                                                 right: BorderSide(
                                                   color: Theme.of(context)
@@ -2487,9 +2537,10 @@ class _CalendarPageState extends State<CalendarPage> {
                                                               .isNotEmpty
                                                       ? roomModel.tags.first
                                                       : null;
-                                                  final headerBg = Theme.of(
-                                                    context,
-                                                  ).colorScheme.surfaceContainerLowest;
+                                                  final headerBg =
+                                                      Theme.of(context)
+                                                          .colorScheme
+                                                          .surface;
                                                   return Container(
                                                     width: _roomColumnWidth,
                                                     height: 50,
@@ -2497,9 +2548,13 @@ class _CalendarPageState extends State<CalendarPage> {
                                                       color: headerBg,
                                                       border: Border(
                                                         right: BorderSide(
-                                                          color: Theme.of(
-                                                            context,
-                                                          ).colorScheme.outline.withOpacity(0.2),
+                                                          color:
+                                                              Theme.of(context)
+                                                                  .colorScheme
+                                                                  .outline
+                                                                  .withOpacity(
+                                                                    0.2,
+                                                                  ),
                                                           width: 1,
                                                         ),
                                                       ),
@@ -2618,6 +2673,28 @@ class _CalendarPageState extends State<CalendarPage> {
                                     ),
                                   ),
 
+                                  // Skeleton drag-drop overlay — lives in the
+                                  // outer Stack so its Positioned coordinates
+                                  // are already viewport-relative.
+                                  // Uses ListenableBuilder so only the overlay
+                                  // redraws on drag-move, not the whole page.
+                                  ListenableBuilder(
+                                    listenable: Listenable.merge([
+                                      _skeletonNotifier,
+                                      _verticalScrollController,
+                                      _horizontalScrollController,
+                                    ]),
+                                    builder: (context, _) {
+                                      final skeleton = _skeletonNotifier.value;
+                                      if (skeleton == null) {
+                                        return const SizedBox.shrink();
+                                      }
+                                      return _buildDragSkeletonOverlay(
+                                        skeleton,
+                                      );
+                                    },
+                                  ),
+
                                   // Red line overlay for today's date
                                   if (_dates.any(
                                     (date) => isSameDay(date, DateTime.now()),
@@ -2656,14 +2733,19 @@ class _CalendarPageState extends State<CalendarPage> {
                                       },
                                     ),
                                 ],
+                              ),
+                            ),
+                          ),
                         ),
+                        CalendarBottomSection(
+                          waitingListBookings: _waitingListBookings,
+                          onDropOnSection: _moveBookingToWaitingList,
+                          onClearSkeleton: () =>
+                              _skeletonNotifier.value = null,
+                          onShowDetails: _showBookingDetailsById,
+                          statusColor: _statusColor,
+                          advanceIndicatorColor: _advanceIndicatorColor,
                         ),
-                        ),
-                        ),
-                        // Waiting list then legend (below calendar)
-                        _buildWaitingListSection(),
-                        const SizedBox(height: 16),
-                        _buildLegendSection(),
                       ],
                     ),
             ),
@@ -2708,300 +2790,6 @@ class _CalendarPageState extends State<CalendarPage> {
             size: 28,
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildLegendSection() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.info_outline_rounded,
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Status Legend',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 16,
-                runSpacing: 8,
-                children: [
-                  LegendItem(
-                    color: _statusColor('Confirmed'),
-                    label: 'Confirmed',
-                  ),
-                  LegendItem(color: _statusColor('Pending'), label: 'Pending'),
-                  LegendItem(color: _statusColor('Paid'), label: 'Paid'),
-                  LegendItem(color: _statusColor('Unpaid'), label: 'Unpaid'),
-                  LegendItem(
-                    color: _statusColor('Cancelled'),
-                    label: 'Cancelled',
-                  ),
-                  LegendItem(
-                    color: _statusColor('Waiting list'),
-                    label: 'Waiting list',
-                  ),
-                  // Advance payment (dot on booking)
-                  LegendItem(
-                    color: _advanceIndicatorColor('paid'),
-                    label: 'Advance paid',
-                  ),
-                  LegendItem(
-                    color: _advanceIndicatorColor('waiting'),
-                    label: 'Advance pending',
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWaitingListSection() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-      child: DragTarget<_WaitingListDragPayload>(
-        onWillAcceptWithDetails: (details) => true,
-        onAcceptWithDetails: (details) {
-          _moveBookingToWaitingList(details.data.bookingId);
-        },
-        builder: (context, candidateData, rejectedData) {
-          final isHighlighted = candidateData.isNotEmpty;
-          return Card(
-            clipBehavior: Clip.antiAlias,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: isHighlighted
-                  ? const BorderSide(color: StayoraColors.purple, width: 2)
-                  : BorderSide.none,
-            ),
-            color: isHighlighted
-                ? StayoraColors.purple.withOpacity(0.08)
-                : null,
-            child: Theme(
-              data: Theme.of(
-                context,
-              ).copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                tilePadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-                leading: Icon(
-                  Icons.list_alt_rounded,
-                  color: _waitingListBookings.isEmpty
-                      ? Theme.of(context).colorScheme.onSurfaceVariant
-                      : StayoraColors.purple,
-                  size: 24,
-                ),
-                title: Text(
-                  'Waiting list',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                trailing: Text(
-                  '${_waitingListBookings.length}',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: _waitingListBookings.isEmpty
-                        ? Theme.of(context).colorScheme.onSurfaceVariant
-                        : StayoraColors.purple,
-                  ),
-                ),
-                children: [
-                  if (_waitingListBookings.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-                      child: Text(
-                        'No reservations on the waiting list. Bookings saved as "Waiting list" (e.g. over capacity) appear here.',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurfaceVariant,
-                          height: 1.4,
-                        ),
-                      ),
-                    )
-                  else
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-                          child: Text(
-                            'Long-press an item and drag it to a calendar cell to place it. Any booking there will move to the waiting list.',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                              height: 1.3,
-                            ),
-                          ),
-                        ),
-                        ..._waitingListBookings.map((e) {
-                          final b = e.booking;
-                          final payload = _WaitingListDragPayload(
-                            bookingId: e.id,
-                          );
-                          return LongPressDraggable<_WaitingListDragPayload>(
-                            data: payload,
-                            onDragEnd: (_) {
-                              setState(() {
-                                _skeletonWaitingListBookingId = null;
-                                _skeletonRoom = null;
-                                _skeletonDate = null;
-                              });
-                            },
-                            feedback: Material(
-                              elevation: 4,
-                              borderRadius: BorderRadius.circular(12),
-                              child: ConstrainedBox(
-                                constraints: const BoxConstraints(
-                                  maxWidth: 220,
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.person_rounded,
-                                        color: _statusColor('Waiting list'),
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Flexible(
-                                        child: Text(
-                                          b.userName,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w500,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '${b.numberOfRooms} room(s)',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            childWhenDragging: Opacity(
-                              opacity: 0.5,
-                              child: ListTile(
-                                dense: true,
-                                leading: CircleAvatar(
-                                  backgroundColor: _statusColor(
-                                    'Waiting list',
-                                  ).withOpacity(0.2),
-                                  child: Icon(
-                                    Icons.person_rounded,
-                                    size: 20,
-                                    color: _statusColor('Waiting list'),
-                                  ),
-                                ),
-                                title: Text(
-                                  b.userName,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  '${DateFormat('MMM d', 'en').format(b.checkIn)} – ${DateFormat('MMM d', 'en').format(b.checkOut)} · ${b.numberOfRooms} room(s)',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                                trailing: const Icon(
-                                  Icons.chevron_right_rounded,
-                                  color: StayoraColors.blue,
-                                  size: 20,
-                                ),
-                              ),
-                            ),
-                            child: ListTile(
-                              dense: true,
-                              leading: CircleAvatar(
-                                backgroundColor: _statusColor(
-                                  'Waiting list',
-                                ).withOpacity(0.2),
-                                child: Icon(
-                                  Icons.person_rounded,
-                                  size: 20,
-                                  color: _statusColor('Waiting list'),
-                                ),
-                              ),
-                              title: Text(
-                                b.userName,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              subtitle: Text(
-                                '${DateFormat('MMM d', 'en').format(b.checkIn)} – ${DateFormat('MMM d', 'en').format(b.checkOut)} · ${b.numberOfRooms} room(s)',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                              trailing: const Icon(
-                                Icons.chevron_right_rounded,
-                                color: StayoraColors.blue,
-                                size: 20,
-                              ),
-                              onTap: () =>
-                                  _showBookingDetailsById(context, e.id),
-                            ),
-                          );
-                        }),
-                      ],
-                    ),
-                  const SizedBox(height: 8),
-                ],
-              ),
-            ),
-          );
-        },
       ),
     );
   }
@@ -3161,34 +2949,45 @@ class _CalendarPageState extends State<CalendarPage> {
     );
   }
 
-  /// Skeleton overlay showing where the booking will be placed (preferred room + as many rooms × nights as fit).
-  Widget _buildDragSkeletonOverlay() {
+  /// Skeleton overlay showing where the dropped booking will land.
+  /// Positioned relative to the viewport (accounting for scroll offsets) so it
+  /// can live in the outer Stack rather than inside the scroll area.
+  Widget _buildDragSkeletonOverlay(_SkeletonState skeleton) {
     final booking =
-        _getWaitingListBookingById(_skeletonWaitingListBookingId!) ??
-        _bookingModelsById[_skeletonWaitingListBookingId!];
+        _getWaitingListBookingById(skeleton.bookingId) ??
+        _bookingModelsById[skeleton.bookingId];
     if (booking == null) return const SizedBox.shrink();
 
-    final roomIndex = _displayedRoomNames.indexOf(_skeletonRoom!);
+    final roomIndex = _displayedRoomNames.indexOf(skeleton.room);
     final dateIndex = _dates.indexWhere(
       (d) =>
-          d.year == _skeletonDate!.year &&
-          d.month == _skeletonDate!.month &&
-          d.day == _skeletonDate!.day,
+          d.year == skeleton.date.year &&
+          d.month == skeleton.date.month &&
+          d.day == skeleton.date.day,
     );
     if (roomIndex < 0 || dateIndex < 0) return const SizedBox.shrink();
 
-    final nRooms = booking.numberOfRooms;
-    final nNights = booking.numberOfNights;
-    // Preview uses the same logic as drop: as many rooms/nights as fit from this cell (so user sees exactly where it will go).
-    final nRoomsEffective = nRooms.clamp(
+    final nRoomsEffective = booking.numberOfRooms.clamp(
       1,
       _displayedRoomNames.length - roomIndex,
     );
-    final nNightsEffective = nNights.clamp(1, _dates.length - dateIndex);
+    final nNightsEffective = booking.numberOfNights.clamp(
+      1,
+      _dates.length - dateIndex,
+    );
     final isValid = nRoomsEffective >= 1 && nNightsEffective >= 1;
 
-    final left = _dayLabelWidth + roomIndex * _roomColumnWidth;
-    final top = dateIndex * _dayRowHeight;
+    // Viewport-relative coordinates (scroll offsets subtracted so the overlay
+    // follows the cell even while the grid scrolls under it).
+    final scrollX = _horizontalScrollController.hasClients
+        ? _horizontalScrollController.offset
+        : 0.0;
+    final scrollY = _verticalScrollController.hasClients
+        ? _verticalScrollController.offset
+        : 0.0;
+
+    final left = _dayLabelWidth + roomIndex * _roomColumnWidth - scrollX;
+    final top = _headerHeight + dateIndex * _dayRowHeight - scrollY;
     final width = nRoomsEffective * _roomColumnWidth;
     final height = nNightsEffective * _dayRowHeight;
 
@@ -3243,11 +3042,13 @@ class _CalendarPageState extends State<CalendarPage> {
         children: [
           // Spacer for sticky day label column
           SizedBox(width: _dayLabelWidth),
-          // Room cells
+          // Room cells — read pre-computed data from cache.
           Row(
             children: _displayedRoomNames.map((room) {
-              final booking = _getBooking(room, date);
-              return _buildRoomCell(room, date, booking);
+              final dateKey = DateTime(date.year, date.month, date.day);
+              final cellData =
+                  _cellDataCache[dateKey]?[room] ?? CalendarCellData.empty;
+              return _buildRoomCell(room, date, cellData);
             }).toList(),
           ),
         ],
@@ -3323,107 +3124,46 @@ class _CalendarPageState extends State<CalendarPage> {
     );
   }
 
-  Widget _buildRoomCell(String room, DateTime date, CalendarBooking? booking) {
+  /// Builds a single room × date cell using pre-computed [cellData] from the
+  /// cache. Hover and skeleton state are read via [ValueListenableBuilder] so
+  /// only the affected cell — not the whole page — rebuilds on mouse events.
+  Widget _buildRoomCell(String room, DateTime date, CalendarCellData cellData) {
+    final booking = cellData.booking;
     final isSelected = _isCellInSelection(room, date);
-    final isHovered = _hoveredRoom == room &&
-        _hoveredDate != null &&
-        _hoveredDate!.year == date.year &&
-        _hoveredDate!.month == date.month &&
-        _hoveredDate!.day == date.day;
-
-    // One bubble per booking: same booking in adjacent cell = no visual break
-    final roomIndex = _displayedRoomNames.indexOf(room);
-    final prevDate = date.subtract(const Duration(days: 1));
-    final nextDate = date.add(const Duration(days: 1));
-    final isSameBookingLeft = booking != null &&
-        roomIndex > 0 &&
-        _getBooking(_displayedRoomNames[roomIndex - 1], date)?.bookingId ==
-            booking.bookingId;
-    final isSameBookingRight = booking != null &&
-        roomIndex < _displayedRoomNames.length - 1 &&
-        _getBooking(_displayedRoomNames[roomIndex + 1], date)?.bookingId ==
-            booking.bookingId;
-    final isSameBookingAbove = booking != null &&
-        _getBooking(room, prevDate)?.bookingId == booking.bookingId;
-    final isSameBookingBelow = booking != null &&
-        _getBooking(room, nextDate)?.bookingId == booking.bookingId;
-
-    // First room (in display order) that has this booking on this date
-    final firstRoomIndex = booking != null
-        ? _displayedRoomNames.indexWhere(
-            (r) => _getBooking(r, date)?.bookingId == booking.bookingId,
-          )
-        : -1;
-    // How many consecutive rooms this booking spans on this date
-    int roomSpan = 1;
-    if (booking != null && firstRoomIndex >= 0) {
-      roomSpan = 0;
-      for (int i = firstRoomIndex; i < _displayedRoomNames.length; i++) {
-        if (_getBooking(_displayedRoomNames[i], date)?.bookingId ==
-            booking.bookingId) {
-          roomSpan++;
-        } else {
-          break;
-        }
-      }
-    }
-    // Show info once: 1 room → first (left) cell; 2+ rooms → middle cell (top-middle of bubble)
-    final middleRoomIndex =
-        roomSpan >= 2 ? firstRoomIndex + (roomSpan ~/ 2) : firstRoomIndex;
-    final isInfoCell = booking != null &&
-        firstRoomIndex >= 0 &&
-        booking.isFirstNight &&
-        (roomSpan == 1
-            ? _displayedRoomNames[firstRoomIndex] == room
-            : roomIndex == middleRoomIndex);
 
     final scheme = Theme.of(context).colorScheme;
     final outlineColor = scheme.outline.withOpacity(0.3);
-    final cellRightBorderColor = (booking != null && isSameBookingRight)
+    final cellRightBorderColor = cellData.isConnectedRight
         ? Colors.transparent
         : outlineColor;
-    final cellTopBorderColor = (booking != null && isSameBookingAbove)
+    final cellTopBorderColor = cellData.isConnectedTop
         ? Colors.transparent
         : outlineColor;
-    final cellBottomBorderColor = (booking != null && isSameBookingBelow)
+    final cellBottomBorderColor = cellData.isConnectedBottom
         ? Colors.transparent
         : outlineColor;
 
-    return DragTarget<_WaitingListDragPayload>(
-      onWillAcceptWithDetails: (details) => true,
-      onMove: (details) {
-        setState(() {
-          _skeletonWaitingListBookingId = details.data.bookingId;
-          _skeletonRoom = room;
-          _skeletonDate = date;
-        });
-      },
-      onLeave: (_) {
-        setState(() {
-          _skeletonWaitingListBookingId = null;
-          _skeletonRoom = null;
-          _skeletonDate = null;
-        });
-      },
+    return DragTarget<WaitingListDragPayload>(
+      onWillAcceptWithDetails: (_) => true,
+      // Update notifier (no setState) — only the skeleton overlay widget rebuilds.
+      onMove: (details) => _skeletonNotifier.value = _SkeletonState(
+        bookingId: details.data.bookingId,
+        room: room,
+        date: date,
+      ),
+      onLeave: (_) => _skeletonNotifier.value = null,
       onAcceptWithDetails: (details) {
         _onDropWaitingListBooking(details.data.bookingId, room, date);
-        setState(() {
-          _skeletonWaitingListBookingId = null;
-          _skeletonRoom = null;
-          _skeletonDate = null;
-        });
+        _skeletonNotifier.value = null;
       },
-      builder: (context, candidateData, rejectedData) {
+      builder: (context, candidateData, _) {
         final isHighlighted = candidateData.isNotEmpty;
         return MouseRegion(
-          onEnter: (_) => setState(() {
-            _hoveredRoom = room;
-            _hoveredDate = date;
-          }),
-          onExit: (_) => setState(() {
-            _hoveredRoom = null;
-            _hoveredDate = null;
-          }),
+          // Update notifier (no setState) — only the ValueListenableBuilder
+          // inside each cell rebuilds when hover changes.
+          onEnter: (_) =>
+              _hoverNotifier.value = _HoverState(room: room, date: date),
+          onExit: (_) => _hoverNotifier.value = null,
           child: GestureDetector(
             onTap: () {
               if (booking != null) {
@@ -3432,111 +3172,103 @@ class _CalendarPageState extends State<CalendarPage> {
                 _showBookingDialog([room], [date], false);
               }
             },
-            child: Container(
-              width: _roomColumnWidth,
-              height: _dayRowHeight,
-              decoration: BoxDecoration(
-                color: isHighlighted
-                    ? StayoraColors.purple.withOpacity(0.25)
-                    : isSelected
-                    ? StayoraColors.blue.withOpacity(0.2)
-                    : Theme.of(context).colorScheme.surface,
-                border: Border(
-                  top: isSelected
-                      ? BorderSide(
-                          color: StayoraColors.blue.withOpacity(0.5),
-                          width: 2,
-                        )
-                      : BorderSide(
-                          color: cellTopBorderColor,
-                          width: 1,
-                        ),
-                  bottom: isSelected
-                      ? BorderSide(
-                          color: StayoraColors.blue.withOpacity(0.5),
-                          width: 2,
-                        )
-                      : BorderSide(
-                          color: cellBottomBorderColor,
-                          width: 1,
-                        ),
-                  left: isSelected
-                      ? BorderSide(
-                          color: StayoraColors.blue.withOpacity(0.5),
-                          width: 2,
-                        )
-                      : BorderSide.none,
-                  right: BorderSide(
-                    color: cellRightBorderColor,
-                    width: 1,
+            child: ValueListenableBuilder<_HoverState?>(
+              valueListenable: _hoverNotifier,
+              builder: (context, hoverState, _) {
+                final isHovered =
+                    hoverState != null &&
+                    hoverState.room == room &&
+                    hoverState.date.year == date.year &&
+                    hoverState.date.month == date.month &&
+                    hoverState.date.day == date.day;
+                return Container(
+                  width: _roomColumnWidth,
+                  height: _dayRowHeight,
+                  decoration: BoxDecoration(
+                    color: isHighlighted
+                        ? StayoraColors.purple.withOpacity(0.25)
+                        : isSelected
+                        ? StayoraColors.blue.withOpacity(0.2)
+                        : scheme.surface,
+                    border: Border(
+                      top: isSelected
+                          ? BorderSide(
+                              color: StayoraColors.blue.withOpacity(0.5),
+                              width: 2,
+                            )
+                          : BorderSide(color: cellTopBorderColor, width: 1),
+                      bottom: isSelected
+                          ? BorderSide(
+                              color: StayoraColors.blue.withOpacity(0.5),
+                              width: 2,
+                            )
+                          : BorderSide(color: cellBottomBorderColor, width: 1),
+                      left: isSelected
+                          ? BorderSide(
+                              color: StayoraColors.blue.withOpacity(0.5),
+                              width: 2,
+                            )
+                          : BorderSide.none,
+                      right: BorderSide(color: cellRightBorderColor, width: 1),
+                    ),
                   ),
-                ),
-              ),
-              child: Stack(
-                children: [
-                  // Booking card: left stripe, surface, elevation, hierarchy
-                  if (booking != null)
-                    LongPressDraggable<_WaitingListDragPayload>(
-                      data: _WaitingListDragPayload(bookingId: booking.bookingId),
-                      onDragEnd: (_) {
-                        setState(() {
-                          _skeletonWaitingListBookingId = null;
-                          _skeletonRoom = null;
-                          _skeletonDate = null;
-                        });
-                      },
-                      feedback: _buildBookingCardContent(
-                        context,
-                        booking,
-                        stripeColor: _statusColor(booking.status),
-                        compact: true,
-                        forFeedback: true,
-                      ),
-                      childWhenDragging: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          _buildGridBookingCard(
+                  child: Stack(
+                    children: [
+                      if (booking != null)
+                        LongPressDraggable<WaitingListDragPayload>(
+                          data: WaitingListDragPayload(
+                            bookingId: booking.bookingId,
+                          ),
+                          onDragStarted: () {},
+                          onDragEnd: (_) => _skeletonNotifier.value = null,
+                          feedback: _buildBookingCardContent(
+                            context,
+                            booking,
+                            stripeColor: _statusColor(booking.status),
+                            compact: true,
+                            forFeedback: true,
+                          ),
+                          childWhenDragging: _buildGridBookingCard(
                             context,
                             room,
                             date,
                             booking,
                             isHovered: false,
                             isDragging: true,
-                            isConnectedLeft: isSameBookingLeft,
-                            isConnectedRight: isSameBookingRight,
-                            isConnectedTop: isSameBookingAbove,
-                            isConnectedBottom: isSameBookingBelow,
-                            showInfo: isInfoCell,
-                            centerInfoInBubble: roomSpan >= 2,
+                            isConnectedLeft: cellData.isConnectedLeft,
+                            isConnectedRight: cellData.isConnectedRight,
+                            isConnectedTop: cellData.isConnectedTop,
+                            isConnectedBottom: cellData.isConnectedBottom,
+                            showInfo: cellData.isInfoCell,
+                            centerInfoInBubble: cellData.centerInfoInBubble,
                           ),
-                        ],
-                      ),
-                      child: _buildGridBookingCard(
-                        context,
-                        room,
-                        date,
-                        booking,
-                        isHovered: isHovered,
-                        isDragging: false,
-                        isConnectedLeft: isSameBookingLeft,
-                        isConnectedRight: isSameBookingRight,
-                        isConnectedTop: isSameBookingAbove,
-                        isConnectedBottom: isSameBookingBelow,
-                        showInfo: isInfoCell,
-                        centerInfoInBubble: roomSpan >= 2,
-                      ),
-                    ),
-                  // Selection overlay
-                  if (isSelected && booking == null)
-                    Container(
-                      width: double.infinity,
-                      height: double.infinity,
-                      decoration: BoxDecoration(
-                        color: StayoraColors.blue.withOpacity(0.15),
-                      ),
-                    ),
-                ],
-              ),
+                          child: _buildGridBookingCard(
+                            context,
+                            room,
+                            date,
+                            booking,
+                            isHovered: isHovered,
+                            isDragging: false,
+                            isConnectedLeft: cellData.isConnectedLeft,
+                            isConnectedRight: cellData.isConnectedRight,
+                            isConnectedTop: cellData.isConnectedTop,
+                            isConnectedBottom: cellData.isConnectedBottom,
+                            showInfo: cellData.isInfoCell,
+                            centerInfoInBubble: cellData.centerInfoInBubble,
+                          ),
+                        ),
+                      if (isSelected && booking == null)
+                        Container(
+                          width: double.infinity,
+                          height: double.infinity,
+                          decoration: BoxDecoration(
+                            color: StayoraColors.blue.withOpacity(0.15),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
             ),
           ),
         );
@@ -3567,8 +3299,7 @@ class _CalendarPageState extends State<CalendarPage> {
     final cardBg = isDark
         ? scheme.surfaceContainerHighest
         : scheme.surfaceContainerLowest;
-    final cardBgResolved =
-        isDragging ? cardBg.withOpacity(0.6) : cardBg;
+    final cardBgResolved = isDragging ? cardBg.withOpacity(0.6) : cardBg;
     // Status color from legend: border goes around the whole bubble
     final statusColor = _statusColor(booking.status);
     const radius = 10.0;
@@ -3709,10 +3440,7 @@ class _CalendarPageState extends State<CalendarPage> {
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: _statusColor(booking.status),
-                              border: Border.all(
-                                color: cardBg,
-                                width: 1,
-                              ),
+                              border: Border.all(color: cardBg, width: 1),
                             ),
                           ),
                         ),
@@ -3729,10 +3457,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                 color: _advanceIndicatorColor(
                                   booking.advancePaymentStatus,
                                 ),
-                                border: Border.all(
-                                  color: cardBg,
-                                  width: 1,
-                                ),
+                                border: Border.all(color: cardBg, width: 1),
                               ),
                             ),
                           ),
@@ -3763,10 +3488,7 @@ class _CalendarPageState extends State<CalendarPage> {
         decoration: BoxDecoration(
           color: scheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: scheme.outline.withOpacity(0.2),
-            width: 1,
-          ),
+          border: Border.all(color: scheme.outline.withOpacity(0.2), width: 1),
         ),
         child: IntrinsicHeight(
           child: Row(
@@ -4160,10 +3882,12 @@ class _CalendarPageState extends State<CalendarPage> {
                       child: FilledButton(
                         onPressed: () => Navigator.pop(ctx, false),
                         style: FilledButton.styleFrom(
-                          backgroundColor:
-                              Theme.of(ctx).colorScheme.inverseSurface,
-                          foregroundColor:
-                              Theme.of(ctx).colorScheme.onInverseSurface,
+                          backgroundColor: Theme.of(
+                            ctx,
+                          ).colorScheme.inverseSurface,
+                          foregroundColor: Theme.of(
+                            ctx,
+                          ).colorScheme.onInverseSurface,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10),
@@ -4548,6 +4272,25 @@ class _ChainPreviewCalendar extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Hover (room, date) for per-cell hover highlight without full page rebuild.
+class _HoverState {
+  const _HoverState({required this.room, required this.date});
+  final String room;
+  final DateTime date;
+}
+
+/// Drag-over state for waiting-list → grid drop preview.
+class _SkeletonState {
+  const _SkeletonState({
+    required this.bookingId,
+    required this.room,
+    required this.date,
+  });
+  final String bookingId;
+  final String room;
+  final DateTime date;
 }
 
 class _Slot {

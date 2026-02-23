@@ -91,17 +91,17 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
         : widget.paymentMethods.first;
     _advancePaymentMethod =
         (b.advancePaymentMethod != null && b.advancePaymentMethod!.isNotEmpty)
-            ? b.advancePaymentMethod!
-            : widget.paymentMethods.first;
+        ? b.advancePaymentMethod!
+        : widget.paymentMethods.first;
     _advanceStatus =
         (b.advanceStatus != null &&
-                BookingModel.advanceStatusOptions.contains(b.advanceStatus))
-            ? b.advanceStatus!
-            : (b.advancePercent != null && b.advancePercent! > 0
-                ? (b.advanceAmountPaid >= b.advanceAmountRequired
+            BookingModel.advanceStatusOptions.contains(b.advanceStatus))
+        ? b.advanceStatus!
+        : (b.advancePercent != null && b.advancePercent! > 0
+              ? (b.advanceAmountPaid >= b.advanceAmountRequired
                     ? 'received'
                     : 'pending')
-                : 'not_required');
+              : 'not_required');
     _notesController = TextEditingController(text: b.notes ?? '');
 
     _initialStatus = _status;
@@ -114,10 +114,12 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
   }
 
   bool get _hasChanges {
-    final currentAmount =
-        CurrencyFormatter.parseMoneyStringToCents(_amountController.text.trim());
+    final currentAmount = CurrencyFormatter.parseMoneyStringToCents(
+      _amountController.text.trim(),
+    );
     final currentAdvance = CurrencyFormatter.parseMoneyStringToCents(
-        _advanceAmountController.text.trim());
+      _advanceAmountController.text.trim(),
+    );
     final currentNotes = _notesController.text.trim();
     return _status != _initialStatus ||
         currentAmount != _initialAmount ||
@@ -162,10 +164,10 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
                 child: Text(
                   'Unsaved Changes',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 20,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 20,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -224,9 +226,11 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
     switch (result) {
       case 'save':
         final amount = CurrencyFormatter.parseMoneyStringToCents(
-            _amountController.text.trim());
+          _amountController.text.trim(),
+        );
         final advanceAmount = CurrencyFormatter.parseMoneyStringToCents(
-            _advanceAmountController.text.trim());
+          _advanceAmountController.text.trim(),
+        );
         final updated = widget.fullBooking.copyWith(
           status: _status,
           amountOfMoneyPaid: amount,
@@ -272,10 +276,10 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
               borderRadius: BorderRadius.circular(12),
               border: bordered
                   ? Border.all(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .outline
-                          .withOpacity(0.5))
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.outline.withOpacity(0.5),
+                    )
                   : null,
             ),
             child: Center(
@@ -337,28 +341,40 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
           Text(
             'Booking Details',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 17,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
+              fontWeight: FontWeight.w600,
+              fontSize: 17,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
           ),
           const SizedBox(height: 20),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Column(
               children: [
-                widget.buildDetailRow(Icons.person_rounded, 'Guest', b.userName),
+                widget.buildDetailRow(
+                  Icons.person_rounded,
+                  'Guest',
+                  b.userName,
+                ),
+                const SizedBox(height: 12),
+                widget.buildDetailRow(
+                  Icons.phone_rounded,
+                  'Phone',
+                  b.userPhone.isNotEmpty ? b.userPhone : '—',
+                ),
                 const SizedBox(height: 12),
                 widget.buildDetailRow(
                   Icons.hotel_rounded,
                   () {
-                    final resolved =
-                        b.resolvedSelectedRooms(widget.roomIdToName);
+                    final resolved = b.resolvedSelectedRooms(
+                      widget.roomIdToName,
+                    );
                     return resolved.length > 1 ? 'Rooms' : 'Room';
                   }(),
                   () {
-                    final resolved =
-                        b.resolvedSelectedRooms(widget.roomIdToName);
+                    final resolved = b.resolvedSelectedRooms(
+                      widget.roomIdToName,
+                    );
                     return resolved.isNotEmpty
                         ? resolved.join(', ')
                         : widget.room;
@@ -481,10 +497,12 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
     );
   }
 
-  Widget _timestampBadge(BuildContext context,
-      {required IconData icon,
-      required Color color,
-      required String text}) {
+  Widget _timestampBadge(
+    BuildContext context, {
+    required IconData icon,
+    required Color color,
+    required String text,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
@@ -501,7 +519,10 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
             child: Text(
               text,
               style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w500, color: color),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: color,
+              ),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -511,23 +532,7 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
   }
 
   List<Widget> _advanceSection(BuildContext context, BookingModel b) {
-    final advStatus = b.advancePaymentStatus;
     final cf = widget.currencyFormatter;
-    if (advStatus == 'not_required') {
-      return [
-        SectionCard(
-          title: 'Advance payment',
-          child: Text(
-            'No advance required',
-            style: TextStyle(
-              fontSize: 13,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-      ];
-    }
     return [
       SectionCard(
         title: 'Advance payment',
@@ -548,10 +553,15 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
             TextFormField(
               controller: _advanceAmountController,
               inputFormatters: [MoneyInputFormatter()],
-              decoration: _fieldDecoration(context, 'Advance paid', '0.00',
-                  icon: Icons.payments_rounded),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: _fieldDecoration(
+                context,
+                'Advance paid',
+                '0.00',
+                icon: Icons.payments_rounded,
+              ),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 10),
@@ -559,17 +569,21 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
               value: widget.paymentMethods.contains(_advancePaymentMethod)
                   ? _advancePaymentMethod
                   : widget.paymentMethods.first,
-              decoration:
-                  _fieldDecoration(context, 'Advance payment method', null),
+              decoration: _fieldDecoration(
+                context,
+                'Advance payment method',
+                null,
+              ),
               items: widget.paymentMethods
                   .map((m) => DropdownMenuItem(value: m, child: Text(m)))
                   .toList(),
               onChanged: (v) => setState(
-                  () => _advancePaymentMethod = v ?? widget.paymentMethods.first),
+                () => _advancePaymentMethod = v ?? widget.paymentMethods.first,
+              ),
             ),
             const SizedBox(height: 10),
             Text(
-              'Advance received?',
+              'Advance status',
               style: TextStyle(
                 fontSize: 12,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -582,10 +596,18 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
               runSpacing: 6,
               children: [
                 ChoiceChip(
+                  label: const Text('Not required'),
+                  selected: _advanceStatus == 'not_required',
+                  onSelected: (_) =>
+                      setState(() => _advanceStatus = 'not_required'),
+                  selectedColor: Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerHighest.withOpacity(0.8),
+                ),
+                ChoiceChip(
                   label: const Text('Pending'),
                   selected: _advanceStatus == 'pending',
-                  onSelected: (_) =>
-                      setState(() => _advanceStatus = 'pending'),
+                  onSelected: (_) => setState(() => _advanceStatus = 'pending'),
                   selectedColor: StayoraColors.warning.withOpacity(0.3),
                 ),
                 ChoiceChip(
@@ -598,37 +620,41 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
               ],
             ),
             const SizedBox(height: 10),
-            Builder(builder: (context) {
-              final advancePaid =
-                  CurrencyFormatter.parseMoneyStringToCents(
-                      _advanceAmountController.text.trim());
-              final remaining =
-                  (b.calculatedTotal - advancePaid).clamp(0, b.calculatedTotal);
-              return Row(
-                children: [
-                  Icon(
-                    Icons.account_balance_wallet_rounded,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Remaining: ${cf.format(remaining)}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: remaining > 0
-                            ? StayoraColors.warning
-                            : Theme.of(context).colorScheme.onSurface,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
+            Builder(
+              builder: (context) {
+                final advancePaid = CurrencyFormatter.parseMoneyStringToCents(
+                  _advanceAmountController.text.trim(),
+                );
+                final remaining = (b.calculatedTotal - advancePaid).clamp(
+                  0,
+                  b.calculatedTotal,
+                );
+                return Row(
+                  children: [
+                    Icon(
+                      Icons.account_balance_wallet_rounded,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
-                  ),
-                ],
-              );
-            }),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Remaining: ${cf.format(remaining)}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: remaining > 0
+                              ? StayoraColors.warning
+                              : Theme.of(context).colorScheme.onSurface,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -644,16 +670,18 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
           value: _status,
           decoration: _fieldDecoration(context, 'Status', null),
           items: widget.statusOptions
-              .map((s) => DropdownMenuItem(
-                    value: s,
-                    child: Text(
-                      s,
-                      style: TextStyle(
-                        color: widget.getStatusColor(s),
-                        fontWeight: FontWeight.w600,
-                      ),
+              .map(
+                (s) => DropdownMenuItem(
+                  value: s,
+                  child: Text(
+                    s,
+                    style: TextStyle(
+                      color: widget.getStatusColor(s),
+                      fontWeight: FontWeight.w600,
                     ),
-                  ))
+                  ),
+                ),
+              )
               .toList(),
           onChanged: (v) => setState(() => _status = v ?? _status),
         ),
@@ -661,8 +689,12 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
         TextFormField(
           controller: _amountController,
           inputFormatters: [MoneyInputFormatter()],
-          decoration: _fieldDecoration(context, 'Amount paid', '0.00',
-              icon: Icons.payments_rounded),
+          decoration: _fieldDecoration(
+            context,
+            'Amount paid',
+            '0.00',
+            icon: Icons.payments_rounded,
+          ),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           onChanged: (_) => setState(() {}),
         ),
@@ -688,8 +720,10 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
             fillColor: Theme.of(context).colorScheme.surface,
             alignLabelWithHint: true,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
+            ),
           ),
           maxLines: 2,
           onChanged: (_) => setState(() {}),
@@ -721,9 +755,11 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
       child: FilledButton.icon(
         onPressed: () async {
           final amount = CurrencyFormatter.parseMoneyStringToCents(
-              _amountController.text.trim());
+            _amountController.text.trim(),
+          );
           final advanceAmount = CurrencyFormatter.parseMoneyStringToCents(
-              _advanceAmountController.text.trim());
+            _advanceAmountController.text.trim(),
+          );
           final updated = b.copyWith(
             status: _status,
             amountOfMoneyPaid: amount,
@@ -742,8 +778,9 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
           backgroundColor: StayoraColors.success,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 14),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
           elevation: 0,
         ),
       ),
@@ -759,8 +796,9 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
           backgroundColor: StayoraColors.blue,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 14),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
           elevation: 0,
         ),
         child: const Text(
@@ -782,8 +820,9 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
           backgroundColor: Colors.red,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 14),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
       ),
     );
@@ -799,8 +838,9 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
           backgroundColor: scheme.inverseSurface,
           foregroundColor: scheme.onInverseSurface,
           padding: const EdgeInsets.symmetric(vertical: 14),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
           elevation: 0,
         ),
         child: const Text('Close'),
