@@ -107,6 +107,7 @@ class _WaitingListCardState extends State<_WaitingListCard> {
       onLeave: (_) => widget.onClearSkeleton(),
       builder: (context, candidateData, _) {
         final isHighlighted = candidateData.isNotEmpty;
+        const headerHeight = 48.0;
         return Container(
           decoration: BoxDecoration(
             color: isHighlighted
@@ -121,77 +122,78 @@ class _WaitingListCardState extends State<_WaitingListCard> {
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            verticalDirection: VerticalDirection.down,
             children: [
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () => setState(() => _expanded = !_expanded),
-                  borderRadius: BorderRadius.zero,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.list_alt_rounded,
-                          size: 20,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          'Waiting list',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: scheme.onSurface,
-                              ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
+              // Header row (fixed height so list always opens below)
+              SizedBox(
+                height: headerHeight,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => setState(() => _expanded = !_expanded),
+                    borderRadius: BorderRadius.zero,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.list_alt_rounded,
+                            size: 20,
+                            color: scheme.onSurfaceVariant,
                           ),
-                          decoration: BoxDecoration(
-                            color: scheme.surfaceContainerLowest,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '${list.length}',
-                            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
+                          const SizedBox(width: 10),
+                          Text(
+                            'Waiting list',
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
                                   color: scheme.onSurface,
                                 ),
                           ),
-                        ),
-                        const Spacer(),
-                        Icon(
-                          _expanded
-                              ? Icons.keyboard_arrow_up_rounded
-                              : Icons.keyboard_arrow_down_rounded,
-                          size: 24,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceContainerLowest,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '${list.length}',
+                              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: scheme.onSurface,
+                                  ),
+                            ),
+                          ),
+                          const Spacer(),
+                          Icon(
+                            _expanded
+                                ? Icons.keyboard_arrow_up_rounded
+                                : Icons.keyboard_arrow_down_rounded,
+                            size: 24,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
+              // List: directly below header so it opens downward
               if (_expanded && list.isNotEmpty)
-                Align(
-                  alignment: Alignment.topCenter,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 260),
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: list.map((e) {
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 260),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: list.map((e) {
                         final payload = WaitingListDragPayload(bookingId: e.id);
                         return Padding(
                           padding: const EdgeInsets.only(top: 8),
@@ -227,8 +229,7 @@ class _WaitingListCardState extends State<_WaitingListCard> {
                             ),
                           ),
                         );
-                        }).toList(),
-                      ),
+                      }).toList(),
                     ),
                   ),
                 ),
