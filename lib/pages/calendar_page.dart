@@ -1026,7 +1026,7 @@ class _CalendarPageState extends State<CalendarPage> {
               child: Container(
                 constraints: const BoxConstraints(maxWidth: 320),
                 decoration: BoxDecoration(
-                  color: StayoraColors.surfaceLight,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
@@ -1071,6 +1071,17 @@ class _CalendarPageState extends State<CalendarPage> {
                               initialDate: date,
                               firstDate: DateTime(2020),
                               lastDate: DateTime(2030),
+                              builder: (context, child) {
+                                final isDark = Theme.of(context).brightness == Brightness.dark;
+                                return Theme(
+                                  data: Theme.of(context).copyWith(
+                                    colorScheme: isDark
+                                        ? const ColorScheme.dark(primary: StayoraColors.blue)
+                                        : const ColorScheme.light(primary: StayoraColors.blue),
+                                  ),
+                                  child: child!,
+                                );
+                              },
                             );
                             if (picked != null) {
                               setModalState(() => date = picked);
@@ -2719,6 +2730,10 @@ class _CalendarPageState extends State<CalendarPage> {
                                             _headerHeight +
                                             (todayIndex * _dayRowHeight) -
                                             scrollOffset;
+                                        // Only draw the line when it's in the grid body (not over room headers)
+                                        if (lineY < _headerHeight) {
+                                          return const SizedBox.shrink();
+                                        }
 
                                         return Positioned(
                                           top: lineY,
@@ -2726,8 +2741,8 @@ class _CalendarPageState extends State<CalendarPage> {
                                               _dayLabelWidth, // Start after date column
                                           right: 0,
                                           height: 2,
-                                          child: const ColoredBox(
-                                            color: Colors.red,
+                                          child: ColoredBox(
+                                            color: Theme.of(context).colorScheme.error,
                                           ),
                                         );
                                       },
