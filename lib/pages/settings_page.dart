@@ -5,6 +5,7 @@ import '../services/hotel_provider.dart';
 import '../services/theme_provider.dart';
 import '../utils/stayora_colors.dart';
 import '../widgets/stayora_logo.dart';
+import '../widgets/app_notification.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -57,23 +58,11 @@ class _SettingsPageState extends State<SettingsPage> {
       await HotelProvider.of(context).setCurrentHotel(updatedHotel);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Currency updated to $currencyCode'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: StayoraColors.success,
-          ),
-        );
+        showAppNotification(context, 'Currency updated to $currencyCode', type: AppNotificationType.success);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to update currency: $e'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: StayoraColors.error,
-          ),
-        );
+        showAppNotification(context, 'Failed to update currency: $e', type: AppNotificationType.error);
       }
     } finally {
       if (mounted) {
@@ -198,29 +187,11 @@ class _SettingsPageState extends State<SettingsPage> {
           .update(updatedHotel.toFirestore());
       await hotelProvider.setCurrentHotel(updatedHotel);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Hotel name updated successfully'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: StayoraColors.success,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
+        showAppNotification(context, 'Hotel name updated successfully', type: AppNotificationType.success);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to update hotel name: $e'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: StayoraColors.error,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
+        showAppNotification(context, 'Failed to update hotel name: $e', type: AppNotificationType.error);
       }
     }
   }
@@ -355,29 +326,11 @@ class _SettingsPageState extends State<SettingsPage> {
           .update(updatedHotel.toFirestore());
       await hotelProvider.setCurrentHotel(updatedHotel);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Total rooms updated successfully'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: StayoraColors.success,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
+        showAppNotification(context, 'Total rooms updated successfully', type: AppNotificationType.success);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to update total rooms: $e'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: StayoraColors.error,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
+        showAppNotification(context, 'Failed to update total rooms: $e', type: AppNotificationType.error);
       }
     }
   }

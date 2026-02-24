@@ -6,6 +6,7 @@ import '../services/auth_provider.dart';
 import '../utils/currency_formatter.dart';
 import '../utils/money_input_formatter.dart';
 import '../utils/stayora_colors.dart';
+import '../widgets/app_notification.dart';
 import '../widgets/stayora_logo.dart';
 
 class ServicesPage extends StatelessWidget {
@@ -405,21 +406,11 @@ class ServicesPage extends StatelessWidget {
                               final price = CurrencyFormatter.parseMoneyStringToCents(
                                   priceController.text.trim());
                               if (name.isEmpty) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Name is required'),
-                                    behavior: SnackBarBehavior.floating,
-                                  ),
-                                );
+                                showAppNotification(context, 'Name is required');
                                 return;
                               }
                               if (price < 0) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Price must be 0 or more'),
-                                    behavior: SnackBarBehavior.floating,
-                                  ),
-                                );
+                                showAppNotification(context, 'Price must be 0 or more');
                                 return;
                               }
                               final category = categoryController.text.trim();
@@ -440,13 +431,7 @@ class ServicesPage extends StatelessWidget {
                                 if (context.mounted) Navigator.pop(context, true);
                               } catch (e) {
                                 if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Error: $e'),
-                                      behavior: SnackBarBehavior.floating,
-                                      backgroundColor: Theme.of(context).colorScheme.error,
-                                    ),
-                                  );
+                                  showAppNotification(context, 'Error: $e', type: AppNotificationType.error);
                                 }
                               }
                             },
@@ -479,14 +464,10 @@ class ServicesPage extends StatelessWidget {
       ),
     );
     if (result == true && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            existing == null ? 'Service added' : 'Service updated',
-          ),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: StayoraColors.success,
-        ),
+      showAppNotification(
+        context,
+        existing == null ? 'Service added' : 'Service updated',
+        type: AppNotificationType.success,
       );
     }
   }
@@ -524,23 +505,11 @@ class ServicesPage extends StatelessWidget {
       try {
         await firebaseService.deleteService(userId, hotelId, service.id!);
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Service deleted'),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: StayoraColors.success,
-            ),
-          );
+          showAppNotification(context, 'Service deleted', type: AppNotificationType.success);
         }
       } catch (e) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error: $e'),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-          );
+          showAppNotification(context, 'Error: $e', type: AppNotificationType.error);
         }
       }
     }

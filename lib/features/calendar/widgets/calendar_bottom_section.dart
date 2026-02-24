@@ -290,6 +290,20 @@ class _CompactBookingChip extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
+                if (booking.selectedRooms != null && booking.selectedRooms!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      'Room${booking.selectedRooms!.length > 1 ? 's' : ''}: ${booking.selectedRooms!.join(', ')}',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 Text(
                   '${booking.numberOfNights} night${booking.numberOfNights != 1 ? 's' : ''} • ${booking.status}',
                   style: TextStyle(

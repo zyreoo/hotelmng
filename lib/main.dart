@@ -6,6 +6,7 @@ import 'navigation/app_shell.dart';
 import 'services/auth_provider.dart';
 import 'services/theme_provider.dart';
 import 'theme/app_theme.dart';
+import 'widgets/app_notification.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -49,7 +50,9 @@ class _AppRoot extends StatelessWidget {
       themeMode: themeMode,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      home: const AuthGate(),
+      home: AppNotificationScope(
+        child: const AuthGate(),
+      ),
     );
   }
 }

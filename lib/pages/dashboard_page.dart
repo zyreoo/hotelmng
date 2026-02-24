@@ -11,6 +11,7 @@ import '../utils/gap_detector.dart';
 import '../utils/money_input_formatter.dart';
 import '../utils/optimization_suggestions.dart';
 import '../utils/stayora_colors.dart';
+import '../widgets/app_notification.dart';
 import '../widgets/loading_empty_states.dart';
 import 'add_booking_page.dart';
 
@@ -416,29 +417,11 @@ class _DashboardPageState extends State<DashboardPage> {
         await _firebaseService.updateBooking(userId, hotelId, updated);
         if (mounted) {
           await _loadBookings(userId, hotelId);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Advance marked as received'),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: StayoraColors.success,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          );
+          showAppNotification(context, 'Advance marked as received', type: AppNotificationType.success);
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to update: $e'),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: StayoraColors.error,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          );
+          showAppNotification(context, 'Failed to update: $e', type: AppNotificationType.error);
         }
       }
     }

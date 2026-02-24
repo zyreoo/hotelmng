@@ -3,6 +3,7 @@ import '../models/employer_model.dart';
 import '../services/firebase_service.dart';
 import '../services/auth_provider.dart';
 import '../utils/stayora_colors.dart';
+import 'app_notification.dart';
 
 class EmployeeSearchWidget extends StatefulWidget {
   final String? hotelId;
@@ -229,20 +230,10 @@ class _EmployeeSearchWidgetState extends State<EmployeeSearchWidget> {
         final created = result.copyWith(id: employerId);
         _selectEmployee(created);
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Employee created'),
-            backgroundColor: StayoraColors.success,
-          ),
-        );
+        showAppNotification(context, 'Employee created', type: AppNotificationType.success);
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error creating employee: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        showAppNotification(context, 'Error creating employee: $e', type: AppNotificationType.error);
       }
     }
   }

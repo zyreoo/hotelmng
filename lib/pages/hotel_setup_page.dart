@@ -6,6 +6,7 @@ import '../services/auth_provider.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../utils/stayora_colors.dart';
+import '../widgets/app_notification.dart';
 import '../widgets/stayora_logo.dart';
 import 'add_employee_page.dart';
 
@@ -153,23 +154,12 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
       if (mounted) {
         await _loadSetupRooms();
         setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Room "$name" added'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: StayoraColors.success,
-          ),
-        );
+        showAppNotification(context, 'Room "$name" added', type: AppNotificationType.success);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to add room: $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        showAppNotification(context, 'Failed to add room: $e', type: AppNotificationType.error);
       }
     }
   }

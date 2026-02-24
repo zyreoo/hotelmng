@@ -5,6 +5,7 @@ import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
 import '../utils/stayora_colors.dart';
+import '../widgets/app_notification.dart';
 import '../widgets/stayora_logo.dart';
 
 class AddEmployeePage extends StatefulWidget {
@@ -168,30 +169,15 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
 
     if (_nameController.text.trim().isEmpty ||
         _phoneController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please fill in name and phone'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      showAppNotification(context, 'Please fill in name and phone');
       return;
     }
     if (_role == 'Other' && _roleController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter the role when "Other" is selected'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      showAppNotification(context, 'Please enter the role when "Other" is selected');
       return;
     }
     if (_department == 'Other' && _departmentController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter the department when "Other" is selected'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      showAppNotification(context, 'Please enter the department when "Other" is selected');
       return;
     }
 
@@ -237,13 +223,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
           await _firebaseService.addDepartment(userId, hotelId, departmentValue);
         }
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${employer.name} updated'),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: StayoraColors.success,
-            ),
-          );
+          showAppNotification(context, '${employer.name} updated', type: AppNotificationType.success);
           Navigator.pop(context, employer);
         }
       } else {
@@ -266,13 +246,7 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
           await _firebaseService.addDepartment(userId, hotelId, departmentValue);
         }
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Employee ${employer.name} added'),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: StayoraColors.success,
-            ),
-          );
+          showAppNotification(context, 'Employee ${employer.name} added', type: AppNotificationType.success);
           Navigator.pop(context, true);
         }
       }
@@ -280,16 +254,10 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
       if (mounted) Navigator.pop(context);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              _isEditMode
-                  ? 'Error updating employee: $e'
-                  : 'Error adding employee: $e',
-            ),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.red,
-          ),
+        showAppNotification(
+          context,
+          _isEditMode ? 'Error updating employee: $e' : 'Error adding employee: $e',
+          type: AppNotificationType.error,
         );
       }
     }

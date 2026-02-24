@@ -8,6 +8,7 @@ import '../models/shift_model.dart';
 import '../services/auth_provider.dart';
 import '../services/hotel_provider.dart';
 import '../utils/stayora_colors.dart';
+import '../widgets/app_notification.dart';
 import '../widgets/stayora_logo.dart';
 
 class SchedulePage extends StatefulWidget {
@@ -716,20 +717,10 @@ class _SchedulePageState extends State<SchedulePage> {
     try {
       await batch.commit();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Shifts created successfully'),
-          backgroundColor: StayoraColors.success,
-        ),
-      );
+      showAppNotification(context, 'Shifts created successfully', type: AppNotificationType.success);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error creating shifts: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      showAppNotification(context, 'Error creating shifts: $e', type: AppNotificationType.error);
     }
   }
 
@@ -814,12 +805,7 @@ class _SchedulePageState extends State<SchedulePage> {
                           Navigator.pop(dialogContext);
                           await _deleteShift(shift.shiftId);
                           if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Shift deleted'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
+                          showAppNotification(context, 'Shift deleted', type: AppNotificationType.success);
                         },
                         icon: const Icon(Icons.delete_outline_rounded, size: 18),
                         label: const Text('Delete Shift'),
@@ -2176,13 +2162,7 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
     final role = _roleController.text.trim().isEmpty ? 'Regular Shift' : _roleController.text.trim();
     await widget.savePreset(ShiftPreset(name: name, startTime: start, endTime: end, role: role));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Preset saved'),
-        backgroundColor: StayoraColors.success,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    showAppNotification(context, 'Preset saved', type: AppNotificationType.success);
     _loadPresets();
   }
 
@@ -2203,13 +2183,7 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
     );
     if (result != null && mounted) {
       await widget.updatePreset(result);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Preset updated'),
-          backgroundColor: StayoraColors.success,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      showAppNotification(context, 'Preset updated', type: AppNotificationType.success);
       _loadPresets();
       _applyPreset(result);
     } else if (result == null && mounted) {
@@ -2564,15 +2538,7 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                                   : _pickedDays;
                               if (_pickInDialog &&
                                   (effectiveEmployeeIds.isEmpty || effectiveDays.isEmpty)) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Select at least one employee and one day',
-                                    ),
-                                    backgroundColor: Colors.orange,
-                                    behavior: SnackBarBehavior.floating,
-                                  ),
-                                );
+                                showAppNotification(context, 'Select at least one employee and one day');
                                 return;
                               }
                               Navigator.pop(context);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import '../services/firebase_service.dart';
 import '../services/auth_provider.dart';
+import 'app_notification.dart';
 import 'stayora_logo.dart';
 
 class ClientSearchWidget extends StatefulWidget {
@@ -76,12 +77,7 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
           _searchResults = [];
           _isSearching = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Search failed: ${e.toString().split('\n').first}'),
-            backgroundColor: Colors.red.shade700,
-          ),
-        );
+        showAppNotification(context, 'Search failed: ${e.toString().split('\n').first}', type: AppNotificationType.error);
       }
       debugPrint('Client search error: $e');
     }
@@ -202,12 +198,7 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
         _selectClient(createdClient);
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error creating client: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          showAppNotification(context, 'Error creating client: $e', type: AppNotificationType.error);
         }
       }
     }

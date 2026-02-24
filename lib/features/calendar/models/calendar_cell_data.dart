@@ -1,7 +1,5 @@
 import '../../../models/calendar_booking.dart';
 
-/// Pre-computed data for a single room×date cell so [_buildRoomCell] doesn't
-/// recompute connections and info-cell flags on every build.
 class CalendarCellData {
   const CalendarCellData({
     required this.booking,
@@ -11,9 +9,9 @@ class CalendarCellData {
     required this.isConnectedBottom,
     required this.isInfoCell,
     required this.centerInfoInBubble,
+    this.roomSpan = 1,
   });
 
-  /// Empty cell (no booking).
   static const CalendarCellData empty = CalendarCellData(
     booking: null,
     isConnectedLeft: false,
@@ -22,6 +20,7 @@ class CalendarCellData {
     isConnectedBottom: false,
     isInfoCell: false,
     centerInfoInBubble: false,
+    roomSpan: 1,
   );
 
   final CalendarBooking? booking;
@@ -31,4 +30,5 @@ class CalendarCellData {
   final bool isConnectedBottom;
   final bool isInfoCell;
   final bool centerInfoInBubble;
+  final int roomSpan;
 }

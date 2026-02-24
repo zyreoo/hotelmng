@@ -5,6 +5,7 @@ import '../services/auth_provider.dart';
 import '../services/hotel_provider.dart';
 import '../services/firebase_service.dart';
 import '../utils/stayora_colors.dart';
+import '../widgets/app_notification.dart';
 import '../widgets/loading_empty_states.dart';
 import '../utils/currency_formatter.dart';
 import 'add_booking_page.dart';
@@ -167,25 +168,11 @@ class _ClientsPageState extends State<ClientsPage> {
       await FirebaseService().updateBooking(userId, hotelId, updated);
       if (mounted) {
         await _loadData();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Status updated to $newStatus'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: StayoraColors.success,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-        );
+        showAppNotification(context, 'Status updated to $newStatus', type: AppNotificationType.success);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to update: $e'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: StayoraColors.error,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-        );
+        showAppNotification(context, 'Failed to update: $e', type: AppNotificationType.error);
       }
     }
   }

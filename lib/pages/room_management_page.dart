@@ -5,6 +5,7 @@ import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
 import '../utils/stayora_colors.dart';
 import '../widgets/stayora_logo.dart';
+import '../widgets/app_notification.dart';
 
 /// Manage rooms: add, edit name, delete. Shown from the calendar.
 /// Room count is capped by Settings > Total Rooms.
@@ -62,13 +63,9 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
 
   Future<void> _addRoom(String userId, String hotelId) async {
     if (!_canAddRoom) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Maximum of $_maxRooms rooms reached. Change Total Rooms in Settings to add more.',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
+      showAppNotification(
+        context,
+        'Maximum of $_maxRooms rooms reached. Change Total Rooms in Settings to add more.',
       );
       return;
     }
@@ -78,22 +75,11 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       await _firebaseService.createRoom(userId, hotelId, name);
       if (mounted) _loadRooms(userId, hotelId);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Room "$name" added'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: StayoraColors.success,
-          ),
-        );
+        showAppNotification(context, 'Room "$name" added', type: AppNotificationType.success);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to add room: $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        showAppNotification(context, 'Failed to add room: $e', type: AppNotificationType.error);
       }
     }
   }
@@ -107,22 +93,11 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       await _firebaseService.updateRoom(userId, hotelId, room.id!, name);
       if (mounted) _loadRooms(userId, hotelId);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Room updated'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: StayoraColors.success,
-          ),
-        );
+        showAppNotification(context, 'Room updated', type: AppNotificationType.success);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to update room: $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        showAppNotification(context, 'Failed to update room: $e', type: AppNotificationType.error);
       }
     }
   }
@@ -139,12 +114,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       if (mounted) _loadRooms(userId, hotelId);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to update: $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        showAppNotification(context, 'Failed to update: $e', type: AppNotificationType.error);
       }
     }
   }
@@ -159,12 +129,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       if (mounted) _loadRooms(userId, hotelId);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to update tags: $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        showAppNotification(context, 'Failed to update tags: $e', type: AppNotificationType.error);
       }
     }
   }
@@ -337,21 +302,11 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       await _firebaseService.deleteRoom(userId, hotelId, room.id!);
       if (mounted) _loadRooms(userId, hotelId);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Room deleted'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        showAppNotification(context, 'Room deleted', type: AppNotificationType.success);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to delete room: $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        showAppNotification(context, 'Failed to delete room: $e', type: AppNotificationType.error);
       }
     }
   }

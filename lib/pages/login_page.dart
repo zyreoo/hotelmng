@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_provider.dart';
 import '../utils/stayora_colors.dart';
 import '../widgets/stayora_logo.dart';
+import '../widgets/app_notification.dart';
 import 'sign_up_page.dart';
 
 /// App brand blue for primary buttons (matches StayoraLogo).
@@ -167,29 +168,11 @@ class _LoginPageState extends State<LoginPage> {
           email: emailController.text.trim(),
         );
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Password reset link sent! Check your email.'),
-              backgroundColor: StayoraColors.success,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          );
+          showAppNotification(context, 'Password reset link sent! Check your email.', type: AppNotificationType.success);
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(_messageForAuthError(e)),
-              backgroundColor: StayoraColors.error,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          );
+          showAppNotification(context, _messageForAuthError(e), type: AppNotificationType.error);
         }
       }
     }

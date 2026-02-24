@@ -8,6 +8,7 @@ import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
 import '../widgets/employeer_search_widget.dart';
 import '../widgets/stayora_logo.dart';
+import '../widgets/app_notification.dart';
 import 'add_employee_page.dart';
 import 'user_page.dart';
 
@@ -454,13 +455,7 @@ class _EmployeeCard extends StatelessWidget {
                 Navigator.pop(context);
                 await onDelete?.call(employee.id);
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('${employee.name} removed'),
-                      behavior: SnackBarBehavior.floating,
-                      backgroundColor: StayoraColors.success,
-                    ),
-                  );
+                  showAppNotification(context, '${employee.name} removed', type: AppNotificationType.success);
                 }
               },
             ),
@@ -536,12 +531,7 @@ class _BottomSheetOption extends StatelessWidget {
           onPressed!();
         } else {
           Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('$label functionality'),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          showAppNotification(context, '$label functionality');
         }
       },
       child: Padding(

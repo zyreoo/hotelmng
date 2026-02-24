@@ -20,6 +20,7 @@ import '../features/calendar/widgets/booking_details_form.dart';
 import '../features/calendar/widgets/calendar_day_view_card.dart';
 import '../widgets/loading_empty_states.dart';
 import '../widgets/stayora_logo.dart';
+import '../widgets/app_notification.dart';
 import '../features/calendar/widgets/calendar_bottom_section.dart';
 import 'add_booking_page.dart';
 import 'room_management_page.dart';
@@ -278,9 +279,7 @@ class _CalendarPageState extends State<CalendarPage> {
   void _showSuggestionsBottomSheet() {
     final suggestions = _calendarOptimizationSuggestions;
     if (suggestions.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No optimization suggestions right now.')),
-      );
+      showAppNotification(context, 'No optimization suggestions right now.');
       return;
     }
     showModalBottomSheet<void>(
@@ -514,12 +513,9 @@ class _CalendarPageState extends State<CalendarPage> {
     final candidate = _findBookingMatchingGapDates(gap, roomId);
     if (candidate == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'No booking with the same dates (${DateFormat('MMM d').format(gap.gapStart)}–${DateFormat('MMM d').format(gap.gapEnd)}) in another room to move into $roomName.',
-          ),
-        ),
+      showAppNotification(
+        context,
+        'No booking with the same dates (${DateFormat('MMM d').format(gap.gapStart)}–${DateFormat('MMM d').format(gap.gapEnd)}) in another room to move into $roomName.',
       );
       return;
     }
@@ -590,11 +586,7 @@ class _CalendarPageState extends State<CalendarPage> {
     );
     await _updateBooking(userId, hotelId, updated);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${candidate.userName}\'s booking moved to $roomName.'),
-        ),
-      );
+      showAppNotification(context, '${candidate.userName}\'s booking moved to $roomName.', type: AppNotificationType.success);
     }
   }
 
@@ -782,11 +774,7 @@ class _CalendarPageState extends State<CalendarPage> {
     );
     await _updateBooking(userId, hotelId, updated);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${booking.userName}\'s booking moved to $toRoomName.'),
-        ),
-      );
+      showAppNotification(context, '${booking.userName}\'s booking moved to $toRoomName.', type: AppNotificationType.success);
     }
   }
 
@@ -1260,6 +1248,7 @@ class _CalendarPageState extends State<CalendarPage> {
           isConnectedBottom: connBottom,
           isInfoCell: isInfoCell,
           centerInfoInBubble: span >= 2,
+          roomSpan: span,
         );
       }
       _cellDataCache[dateKey] = rowCache;
@@ -1417,13 +1406,7 @@ class _CalendarPageState extends State<CalendarPage> {
     if (mounted) setState(() {});
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${model.userName} moved to waiting list'),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: StayoraColors.purple,
-        ),
-      );
+      showAppNotification(context, '${model.userName} moved to waiting list');
     }
   }
 
@@ -1461,12 +1444,7 @@ class _CalendarPageState extends State<CalendarPage> {
     booking ??= _bookingModelsById[bookingId];
     if (booking == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Booking not found'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        showAppNotification(context, 'Booking not found', type: AppNotificationType.error);
       }
       return;
     }
@@ -1507,13 +1485,7 @@ class _CalendarPageState extends State<CalendarPage> {
       await _updateBooking(userId, hotelId, updated);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not place booking: $e'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: StayoraColors.error,
-          ),
-        );
+        showAppNotification(context, 'Could not place booking: $e', type: AppNotificationType.error);
       }
       return;
     }
@@ -1534,14 +1506,10 @@ class _CalendarPageState extends State<CalendarPage> {
     );
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${booking.userName} moved to ${targetRooms.join(", ")}',
-          ),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: StayoraColors.success,
-        ),
+      showAppNotification(
+        context,
+        '${booking.userName} moved to ${targetRooms.join(", ")}',
+        type: AppNotificationType.success,
       );
     }
   }
@@ -1725,9 +1693,7 @@ class _CalendarPageState extends State<CalendarPage> {
               final msg = error.toString().contains('permission-denied')
                   ? 'Calendar: sign in or check Firestore rules.'
                   : 'Calendar: could not load bookings.';
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(msg), backgroundColor: StayoraColors.error),
-              );
+              showAppNotification(context, msg, type: AppNotificationType.error);
             }
           },
           cancelOnError: false,
@@ -1764,12 +1730,7 @@ class _CalendarPageState extends State<CalendarPage> {
           onError: (error, stackTrace) {
             debugPrint('Firestore waiting list subscription error: $error');
             if (mounted && error.toString().contains('permission-denied')) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('Waiting list: sign in or check Firestore rules.'),
-                  backgroundColor: StayoraColors.error,
-                ),
-              );
+              showAppNotification(context, 'Waiting list: sign in or check Firestore rules.', type: AppNotificationType.error);
             }
           },
           cancelOnError: false,
@@ -2351,6 +2312,9 @@ class _CalendarPageState extends State<CalendarPage> {
                                           key: _gridKey,
                                           behavior: HitTestBehavior.translucent,
                                           onPointerDown: (event) {
+                                            // On phone/narrow screens, do not start drag-selection so
+                                            // the user can scroll the calendar without opening the add-booking flow.
+                                            if (MediaQuery.sizeOf(context).width < 768) return;
                                             final cell = _getCellFromPosition(
                                               event.localPosition,
                                             );
@@ -2892,18 +2856,11 @@ class _CalendarPageState extends State<CalendarPage> {
                 onSave: (updated) async {
                   await _updateBooking(userId, hotelId, updated);
                   if (dialogContext.mounted) {
-                    ScaffoldMessenger.of(dialogContext).showSnackBar(
-                      const SnackBar(
-                        content: Text('Booking updated'),
-                        behavior: SnackBarBehavior.floating,
-                        backgroundColor: StayoraColors.success,
-                      ),
-                    );
+                    showAppNotification(dialogContext, 'Booking updated', type: AppNotificationType.success);
                   }
                 },
                 onDelete: () async {
                   final navigator = Navigator.of(dialogContext);
-                  final messenger = ScaffoldMessenger.of(dialogContext);
                   final confirm = await _showDeleteConfirmation(dialogContext);
                   if (confirm != true) return;
                   if (!mounted) return;
@@ -2917,13 +2874,7 @@ class _CalendarPageState extends State<CalendarPage> {
                     if (!mounted) return;
                     navigator.pop();
                     navigator.pop();
-                    messenger.showSnackBar(
-                      SnackBar(
-                        content: Text('Failed to delete: $e'),
-                        backgroundColor: Colors.red,
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
+                    showAppNotification(dialogContext, 'Failed to delete: $e', type: AppNotificationType.error);
                   }
                 },
                 onEditFull: () {
@@ -3228,6 +3179,7 @@ class _CalendarPageState extends State<CalendarPage> {
                     ),
                   ),
                   child: Stack(
+                    clipBehavior: Clip.none,
                     children: [
                       if (booking != null)
                         LongPressDraggable<WaitingListDragPayload>(
@@ -3256,6 +3208,8 @@ class _CalendarPageState extends State<CalendarPage> {
                             isConnectedBottom: cellData.isConnectedBottom,
                             showInfo: cellData.isInfoCell,
                             centerInfoInBubble: cellData.centerInfoInBubble,
+                            roomSpan: cellData.roomSpan,
+                            roomColumnWidth: _roomColumnWidth,
                           ),
                           child: _buildGridBookingCard(
                             context,
@@ -3270,6 +3224,8 @@ class _CalendarPageState extends State<CalendarPage> {
                             isConnectedBottom: cellData.isConnectedBottom,
                             showInfo: cellData.isInfoCell,
                             centerInfoInBubble: cellData.centerInfoInBubble,
+                            roomSpan: cellData.roomSpan,
+                            roomColumnWidth: _roomColumnWidth,
                           ),
                         ),
                       if (isSelected && booking == null)
@@ -3291,10 +3247,147 @@ class _CalendarPageState extends State<CalendarPage> {
     );
   }
 
+  /// Builds the info block (guest name, nights, status, phone) for a grid booking card.
+  /// When [roomSpan] > 1 and [roomColumnWidth] is set, the content uses the full bubble width.
+  Widget _buildCardInfoLayout({
+    required int roomSpan,
+    required double? roomColumnWidth,
+    required CalendarBooking booking,
+    required ColorScheme scheme,
+    required bool centerInfoInBubble,
+  }) {
+    final useFullBubbleWidth =
+        roomSpan > 1 && roomColumnWidth != null;
+    final contentWidth =
+        useFullBubbleWidth ? roomSpan * roomColumnWidth : null;
+
+    Widget layoutBuilder(BuildContext context, BoxConstraints constraints) {
+      final maxH = constraints.maxHeight;
+      final isMultiRoom = roomSpan > 1;
+      final compact = maxH < 32;
+
+      // Height thresholds to avoid overflow (row can be 32px in some layouts).
+      // - One line ~14px, two ~28px+, three ~42px+. Never exceed maxH.
+      final showNightsLine = maxH >= 34;
+      final showStatusSeparate =
+          isMultiRoom && maxH >= 42; // 3 lines: name + nights + status
+      // Show phone when there's enough vertical space (4 lines ~42px).
+      final showPhoneLine =
+          maxH >= 42 && booking.phone.isNotEmpty;
+      final maxW = contentWidth ?? constraints.maxWidth.clamp(0.0, 200.0);
+      return Align(
+        alignment: centerInfoInBubble
+            ? Alignment.center
+            : Alignment.centerLeft,
+        child: ClipRect(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxW, maxHeight: maxH),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: centerInfoInBubble
+                  ? CrossAxisAlignment.center
+                  : CrossAxisAlignment.start,
+              children: [
+                Text(
+                  booking.guestName,
+                  style: TextStyle(
+                    fontSize: compact ? 10 : 12,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface,
+                    letterSpacing: 0.2,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (showNightsLine) ...[
+                  const SizedBox(height: 2),
+                  if (showStatusSeparate) ...[
+                    Text(
+                      '${booking.totalNights} night${booking.totalNights != 1 ? 's' : ''}',
+                      style: TextStyle(
+                        fontSize: compact ? 9 : 10,
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.1,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      booking.status,
+                      style: TextStyle(
+                        fontSize: compact ? 9 : 10,
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.1,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ] else
+                    Text(
+                      '${booking.totalNights} night${booking.totalNights != 1 ? 's' : ''} • ${booking.status}',
+                      style: TextStyle(
+                        fontSize: compact ? 9 : 10,
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.1,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+                if (showPhoneLine) ...[
+                  const SizedBox(height: 1),
+                  Text(
+                    booking.phone,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w400,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // When multi-room, the parent only gives one cell width. Use OverflowBox so
+    // the content can use the full bubble width. Shift the content so it is
+    // centered in the bubble (half in one room, half in the other), not in the
+    // info cell: the info cell is the middle/right cell, so we shift left by
+    // (roomSpan - 1) / 2 * roomColumnWidth so the block sits half in each gap.
+    if (contentWidth != null && roomColumnWidth != null) {
+      final shiftLeft =
+          roomColumnWidth * (roomSpan - 1) / 2;
+      return OverflowBox(
+        alignment: Alignment.center,
+        maxWidth: contentWidth,
+        child: Transform.translate(
+          offset: Offset(-shiftLeft, 0),
+          child: SizedBox(
+            width: contentWidth,
+            child: LayoutBuilder(builder: layoutBuilder),
+          ),
+        ),
+      );
+    }
+    return LayoutBuilder(builder: layoutBuilder);
+  }
+
   /// One grid cell's booking card: left stripe, surface, shadow, status, hover.
   /// Connected sides share no gap/border so the whole booking is one bubble.
   /// [showInfo]: show guest name, nights, phone, status in one cell (first night; 1 room = left, 2+ rooms = middle).
   /// [centerInfoInBubble]: when true (2+ rooms), center the info horizontally in the cell for top-middle of bubble.
+  /// [roomSpan]: number of room columns this booking spans; info uses full width when > 1.
+  /// [roomColumnWidth]: width of one room column, used to size info when roomSpan > 1.
   Widget _buildGridBookingCard(
     BuildContext context,
     String room,
@@ -3308,6 +3401,8 @@ class _CalendarPageState extends State<CalendarPage> {
     bool isConnectedBottom = false,
     bool showInfo = true,
     bool centerInfoInBubble = false,
+    int roomSpan = 1,
+    double? roomColumnWidth,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scheme = Theme.of(context).colorScheme;
@@ -3370,79 +3465,70 @@ class _CalendarPageState extends State<CalendarPage> {
             ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(topLeft),
-          topRight: Radius.circular(topRight),
-          bottomLeft: Radius.circular(bottomLeft),
-          bottomRight: Radius.circular(bottomRight),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Content — only in the single "first" cell of the booking (color line is the border around bubble)
-            Expanded(
+      child: _buildCardRow(
+        topLeft: topLeft,
+        topRight: topRight,
+        bottomLeft: bottomLeft,
+        bottomRight: bottomRight,
+        showInfo: showInfo,
+        roomSpan: roomSpan,
+        roomColumnWidth: roomColumnWidth,
+        booking: booking,
+        scheme: scheme,
+        centerInfoInBubble: centerInfoInBubble,
+        cardBg: cardBg,
+        isHovered: isHovered,
+        isDragging: isDragging,
+        statusColor: statusColor,
+      ),
+    );
+  }
+
+  /// Inner row for the booking card. When [showInfo] and [roomSpan] > 1, we
+  /// omit ClipRRect so the info can overflow left into the adjacent cell without being clipped.
+  Widget _buildCardRow({
+    required double topLeft,
+    required double topRight,
+    required double bottomLeft,
+    required double bottomRight,
+    required bool showInfo,
+    required int roomSpan,
+    required double? roomColumnWidth,
+    required CalendarBooking booking,
+    required ColorScheme scheme,
+    required bool centerInfoInBubble,
+    required Color cardBg,
+    required bool isHovered,
+    required bool isDragging,
+    required Color statusColor,
+  }) {
+    final borderRadius = BorderRadius.only(
+      topLeft: Radius.circular(topLeft),
+      topRight: Radius.circular(topRight),
+      bottomLeft: Radius.circular(bottomLeft),
+      bottomRight: Radius.circular(bottomRight),
+    );
+    final row = Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
               child: showInfo
                   ? Stack(
                       clipBehavior: Clip.none,
                       children: [
                         Padding(
                           padding: const EdgeInsets.only(
-                            left: 6,
-                            right: 8,
-                            top: 2,
-                            bottom: 2,
+                            left: 8,
+                            right: 10,
+                            top: 4,
+                            bottom: 4,
                           ),
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: centerInfoInBubble
-                                ? Alignment.center
-                                : Alignment.centerLeft,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: centerInfoInBubble
-                                  ? CrossAxisAlignment.center
-                                  : CrossAxisAlignment.start,
-                              children: [
-                                // Line 1 — Primary: guest name
-                                Text(
-                                  booking.guestName,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: scheme.onSurface,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                // Line 2 — Secondary: nights • status
-                                Text(
-                                  '${booking.totalNights} night${booking.totalNights != 1 ? 's' : ''} • ${booking.status}',
-                                  style: TextStyle(
-                                    fontSize: 9,
-                                    color: scheme.onSurfaceVariant,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                // Line 3 — Phone (easy to see at a glance)
-                                if (booking.phone.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 1),
-                                    child: Text(
-                                      booking.phone,
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        color: scheme.onSurfaceVariant,
-                                        fontWeight: FontWeight.w400,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                              ],
-                            ),
+                          child: _buildCardInfoLayout(
+                            roomSpan: roomSpan,
+                            roomColumnWidth: roomColumnWidth,
+                            booking: booking,
+                            scheme: scheme,
+                            centerInfoInBubble: centerInfoInBubble,
                           ),
                         ),
                         // Status dot — top-right
@@ -3454,7 +3540,7 @@ class _CalendarPageState extends State<CalendarPage> {
                             height: 6,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: _statusColor(booking.status),
+                              color: statusColor,
                               border: Border.all(color: cardBg, width: 1),
                             ),
                           ),
@@ -3479,11 +3565,13 @@ class _CalendarPageState extends State<CalendarPage> {
                       ],
                     )
                   : const SizedBox.shrink(),
-            ),
-          ],
         ),
-      ),
+      ],
     );
+    if (showInfo && roomSpan > 1) {
+      return row;
+    }
+    return ClipRRect(borderRadius: borderRadius, child: row);
   }
 
   /// Compact card for drag feedback (stripe + name + nights).
@@ -3642,18 +3730,11 @@ class _CalendarPageState extends State<CalendarPage> {
                 onSave: (updated) async {
                   await _updateBooking(userId, hotelId, updated);
                   if (dialogContext.mounted) {
-                    ScaffoldMessenger.of(dialogContext).showSnackBar(
-                      const SnackBar(
-                        content: Text('Booking updated'),
-                        behavior: SnackBarBehavior.floating,
-                        backgroundColor: StayoraColors.success,
-                      ),
-                    );
+                    showAppNotification(dialogContext, 'Booking updated', type: AppNotificationType.success);
                   }
                 },
                 onDelete: () async {
                   final navigator = Navigator.of(dialogContext);
-                  final messenger = ScaffoldMessenger.of(dialogContext);
                   final confirm = await _showDeleteConfirmation(dialogContext);
                   if (confirm != true) return;
                   if (!mounted) return;
@@ -3667,13 +3748,7 @@ class _CalendarPageState extends State<CalendarPage> {
                     if (!mounted) return;
                     navigator.pop();
                     navigator.pop();
-                    messenger.showSnackBar(
-                      SnackBar(
-                        content: Text('Failed to delete: $e'),
-                        backgroundColor: Colors.red,
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
+                    showAppNotification(dialogContext, 'Failed to delete: $e', type: AppNotificationType.error);
                   }
                 },
                 onEditFull: () {

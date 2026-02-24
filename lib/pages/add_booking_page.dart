@@ -15,6 +15,7 @@ import '../utils/booking_overlap_validator.dart';
 import '../utils/currency_formatter.dart';
 import '../utils/money_input_formatter.dart';
 import '../utils/stayora_colors.dart';
+import '../widgets/app_notification.dart';
 import '../widgets/client_search_widget.dart';
 import '../services/firestore_audit_log_writer.dart';
 import 'services_page.dart';
@@ -578,12 +579,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
         // Validate new client form
         if (_clientNameController.text.isEmpty ||
             _clientPhoneController.text.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Please fill in client name and phone number'),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          showAppNotification(context, 'Please fill in client name and phone number');
           return;
         }
         // Create client model from form
@@ -599,14 +595,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
         if (_selectedClient == null ||
             _selectedClient!.name.isEmpty ||
             _selectedClient!.phone.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Please search and select a client, or create a new one',
-              ),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          showAppNotification(context, 'Please search and select a client, or create a new one');
           return;
         }
         clientToUse = _selectedClient;
@@ -617,25 +606,16 @@ class _AddBookingPageState extends State<AddBookingPage> {
             .where((room) => room.isNotEmpty)
             .length;
         if (selectedCount != _numberOfRooms) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Please select all $_numberOfRooms ${_numberOfRooms == 1 ? 'room' : 'rooms'}',
-              ),
-              behavior: SnackBarBehavior.floating,
-            ),
+          showAppNotification(
+            context,
+            'Please select all $_numberOfRooms ${_numberOfRooms == 1 ? 'room' : 'rooms'}',
           );
           return;
         }
       }
 
       if (_checkInDate == null || _checkOutDate == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please select check-in and check-out dates'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        showAppNotification(context, 'Please select check-in and check-out dates');
         return;
       }
 
@@ -653,9 +633,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
         if (hotelId == null || authUserId == null) {
           if (mounted) {
             Navigator.pop(context);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('No hotel selected or not authenticated')),
-            );
+            showAppNotification(context, 'No hotel selected or not authenticated');
           }
           return;
         }
@@ -717,13 +695,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
           if (rooms.length != _numberOfRooms) {
             if (mounted) {
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    'Please select all $_numberOfRooms ${_numberOfRooms == 1 ? 'room' : 'rooms'}',
-                  ),
-                  behavior: SnackBarBehavior.floating,
-                ),
+              showAppNotification(
+                context,
+                'Please select all $_numberOfRooms ${_numberOfRooms == 1 ? 'room' : 'rooms'}',
               );
             }
             return;
@@ -805,13 +779,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
             if (validationError != null) {
               if (mounted) Navigator.pop(context);
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(validationError.message),
-                    behavior: SnackBarBehavior.floating,
-                    backgroundColor: StayoraColors.error,
-                  ),
-                );
+                showAppNotification(context, validationError.message, type: AppNotificationType.error);
                 final writer = FirestoreAuditLogWriter(userId: authUserId, hotelId: hotelId);
                 final action = validationError.code == 'BOOKING_OVERLAP'
                     ? AuditAction.overlapBlocked
@@ -875,29 +843,20 @@ class _AddBookingPageState extends State<AddBookingPage> {
         // Show success (or waiting-list message when over capacity)
         if (mounted) {
           if (overCapacity) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'No capacity for these dates — added to waiting list. You can move it to confirmed when a room becomes available.',
-                ),
-                behavior: SnackBarBehavior.floating,
-                backgroundColor: StayoraColors.purple,
-              ),
+            showAppNotification(
+              context,
+              'No capacity for these dates — added to waiting list. You can move it to confirmed when a room becomes available.',
             );
           } else {
             final roomInfo = selectedRoomNumbers != null && selectedRoomNumbers.isNotEmpty
                 ? ' (${selectedRoomNumbers.join(', ')})'
                 : '';
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  widget.existingBooking != null
-                      ? 'Booking updated for ${userToUse.name}'
-                      : 'Booking created for ${userToUse.name}$roomInfo',
-                ),
-                behavior: SnackBarBehavior.floating,
-                backgroundColor: StayoraColors.success,
-              ),
+            showAppNotification(
+              context,
+              widget.existingBooking != null
+                  ? 'Booking updated for ${userToUse.name}'
+                  : 'Booking created for ${userToUse.name}$roomInfo',
+              type: AppNotificationType.success,
             );
           }
         }
@@ -912,13 +871,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
 
         // Show error
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error creating booking: $e'),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: Colors.red,
-            ),
-          );
+          showAppNotification(context, 'Error creating booking: $e', type: AppNotificationType.error);
         }
       }
     }
@@ -985,25 +938,13 @@ class _AddBookingPageState extends State<AddBookingPage> {
         ),
         FirestoreAuditLogWriter(userId: userId, hotelId: hotelId),
       );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Booking for ${booking.userName} deleted'),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: StayoraColors.blue,
-        ),
-      );
+      showAppNotification(context, 'Booking for ${booking.userName} deleted', type: AppNotificationType.success);
       if (Navigator.canPop(context)) {
         Navigator.pop(context, true);
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to delete: $e'),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+      showAppNotification(context, 'Failed to delete: $e', type: AppNotificationType.error);
     }
   }
 
