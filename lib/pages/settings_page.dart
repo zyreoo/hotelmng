@@ -1,6 +1,11 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../services/auth_provider.dart';
+import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../services/theme_provider.dart';
 import '../utils/currency_formatter.dart';
@@ -17,6 +22,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   bool _updatingCurrency = false;
+  bool _exportingBackup = false;
 
   static const List<Map<String, String>> _currencies = [
     {'code': 'EUR', 'symbol': '€', 'name': 'Euro'},
@@ -336,6 +342,322 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _exportBackup() async {
+    final hotel = HotelProvider.of(context).currentHotel;
+    final userId = AuthScopeData.of(context).uid;
+    if (hotel?.id == null || userId == null) return;
+
+    setState(() => _exportingBackup = true);
+    try {
+      final firebaseService = FirebaseService();
+      final hotelId = hotel!.id!;
+
+      final bookings = await firebaseService.getBookings(userId, hotelId);
+      final rooms = await firebaseService.getRooms(userId, hotelId);
+      final services = await firebaseService.getServices(userId, hotelId);
+
+      final data = {
+        'hotel': {...hotel.toFirestore(), 'id': hotelId},
+        'exportedAt': DateTime.now().toIso8601String(),
+        'bookings': bookings.map((b) => {
+          ...b.toFirestore(),
+          'id': b.id ?? '',
+        }).toList(),
+        'rooms': rooms.map((r) => {
+          ...r.toFirestore(),
+          'id': r.id ?? '',
+        }).toList(),
+        'services': services.map((s) => {
+          ...s.toFirestore(),
+          'id': s.id ?? '',
+        }).toList(),
+      };
+
+      final jsonStr =
+          const JsonEncoder.withIndent('  ').convert(data);
+      final fileName =
+          'stayora_backup_${DateTime.now().millisecondsSinceEpoch}.json';
+
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsString(jsonStr);
+
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/json')],
+        subject: 'STAYORA Backup – ${hotel.name}',
+      );
+    } catch (e) {
+      if (mounted) {
+        showAppNotification(context, 'Export failed: $e',
+            type: AppNotificationType.error);
+      }
+    } finally {
+      if (mounted) setState(() => _exportingBackup = false);
+    }
+  }
+
+  Future<void> _showHotelSwitcher() async {
+    final hotelProvider = HotelProvider.of(context);
+    final userId = AuthScopeData.of(context).uid;
+    if (userId == null) return;
+
+    final hotels = await hotelProvider.getHotelsForOwner(ownerId: userId);
+    if (!mounted) return;
+
+    if (hotels.isEmpty) {
+      showAppNotification(context, 'No hotels found.');
+      return;
+    }
+
+    final colorScheme = Theme.of(context).colorScheme;
+    final currentId = hotelProvider.currentHotel?.id;
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.7,
+          ),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 12),
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colorScheme.onSurfaceVariant.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Switch Hotel',
+                        style: Theme.of(ctx)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      TextButton.icon(
+                        icon: const Icon(Icons.add_rounded, size: 18),
+                        label: const Text('New'),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _showAddHotelDialog();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: hotels.length,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    itemBuilder: (ctx2, index) {
+                      final h = hotels[index];
+                      final isSelected = h.id == currentId;
+                      return ListTile(
+                        leading: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? StayoraLogo.stayoraBlue.withOpacity(0.1)
+                                : colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            Icons.hotel_rounded,
+                            color: isSelected
+                                ? StayoraLogo.stayoraBlue
+                                : colorScheme.onSurfaceVariant,
+                            size: 22,
+                          ),
+                        ),
+                        title: Text(
+                          h.name,
+                          style: TextStyle(
+                            fontWeight: isSelected
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '${h.totalRooms} rooms · ${h.currencyCode}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        trailing: isSelected
+                            ? Icon(Icons.check_circle_rounded,
+                                color: StayoraLogo.stayoraBlue)
+                            : null,
+                        onTap: isSelected
+                            ? null
+                            : () async {
+                                Navigator.pop(ctx);
+                                await hotelProvider.setCurrentHotel(h);
+                                if (mounted) {
+                                  showAppNotification(
+                                    context,
+                                    'Switched to ${h.name}',
+                                    type: AppNotificationType.success,
+                                  );
+                                }
+                              },
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showAddHotelDialog() async {
+    final nameController = TextEditingController();
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurfaceVariant
+                        .withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Add Hotel',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w600),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              TextField(
+                controller: nameController,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Hotel Name',
+                  hintText: 'Enter hotel name',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  filled: true,
+                  fillColor:
+                      Theme.of(context).colorScheme.surfaceContainerHighest,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        if (nameController.text.trim().isNotEmpty) {
+                          Navigator.pop(context, true);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Create'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (result == true && nameController.text.trim().isNotEmpty) {
+      final name = nameController.text.trim();
+      try {
+        if (!mounted) return;
+        final hotelProvider = HotelProvider.of(context);
+        final newHotel = await hotelProvider.createHotel(
+          name,
+          setAsCurrent: true,
+        );
+        if (mounted) {
+          showAppNotification(
+            context,
+            'Hotel "${newHotel.name}" created',
+            type: AppNotificationType.success,
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          showAppNotification(context, 'Failed to create hotel: $e',
+              type: AppNotificationType.error);
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = AuthScopeData.of(context);
@@ -433,6 +755,56 @@ class _SettingsPageState extends State<SettingsPage> {
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                         onTap: () => _showCurrencyPicker(context),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // Hotels Section
+                  _SectionHeader(title: 'Hotels'),
+                  const SizedBox(height: 12),
+                  _SettingsCard(
+                    children: [
+                      _SettingsTile(
+                        icon: Icons.hotel_rounded,
+                        title: 'Current Hotel',
+                        subtitle: hotel?.name ?? 'No hotel selected',
+                        trailing: Icon(
+                          Icons.swap_horiz_rounded,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        onTap: _showHotelSwitcher,
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // Data & Backup Section
+                  _SectionHeader(title: 'Data & Backup'),
+                  const SizedBox(height: 12),
+                  _SettingsCard(
+                    children: [
+                      _SettingsTile(
+                        icon: Icons.download_rounded,
+                        title: 'Export Backup',
+                        subtitle:
+                            'Save bookings, rooms and services as JSON',
+                        trailing: _exportingBackup
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Icon(
+                                Icons.chevron_right_rounded,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                        onTap: _exportingBackup ? null : _exportBackup,
                       ),
                     ],
                   ),

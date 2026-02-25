@@ -1,5 +1,7 @@
 rules_version = '2';
-// Deploy with: firebase deploy --only firestore:rules
+// Firestore security rules – deploy after editing:
+//   firebase deploy --only firestore:rules
+// Requires: request.auth.uid == userId (users can only access their own data).
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -52,6 +54,11 @@ service cloud.firestore {
         
         // Shifts
         match /shifts/{shiftId} {
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
+        
+        // Tasks (employee assignments)
+        match /tasks/{taskId} {
           allow read, write: if request.auth != null && request.auth.uid == userId;
         }
         

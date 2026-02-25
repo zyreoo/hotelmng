@@ -19,6 +19,7 @@ import '../features/calendar/models/calendar_cell_data.dart';
 import '../features/calendar/widgets/booking_details_form.dart';
 import '../features/calendar/widgets/calendar_day_view_card.dart';
 import '../widgets/loading_empty_states.dart';
+import '../widgets/common/legend_item.dart';
 import '../widgets/stayora_logo.dart';
 import '../widgets/app_notification.dart';
 import '../features/calendar/widgets/calendar_bottom_section.dart';
@@ -2239,6 +2240,43 @@ class _CalendarPageState extends State<CalendarPage> {
                 ],
               ),
             ),
+
+            // Housekeeping legend (room status colours)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: const [
+                    LegendItem(
+                      color: StayoraColors.teal,
+                      label: 'Clean',
+                    ),
+                    SizedBox(width: 12),
+                    LegendItem(
+                      color: StayoraColors.blue,
+                      label: 'Occupied',
+                    ),
+                    SizedBox(width: 12),
+                    LegendItem(
+                      color: StayoraColors.warning,
+                      label: 'Cleaning',
+                    ),
+                    SizedBox(width: 12),
+                    LegendItem(
+                      color: StayoraColors.error,
+                      label: 'Dirty',
+                    ),
+                    SizedBox(width: 12),
+                    LegendItem(
+                      color: StayoraColors.muted,
+                      label: 'Out of order',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
 
             // Calendar Grid or empty rooms state
             Expanded(

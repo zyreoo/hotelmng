@@ -6,6 +6,7 @@ import '../models/employer_model.dart';
 import '../models/service_model.dart';
 import '../models/room_model.dart';
 import '../models/shift_model.dart';
+import '../models/task_model.dart';
 
 class FirebaseService {
   FirebaseFirestore? _firestore;
@@ -105,6 +106,15 @@ class FirebaseService {
       .collection('hotels')
       .doc(hotelId)
       .collection('shifts');
+  CollectionReference<Map<String, dynamic>> _tasksRef(
+    String userId,
+    String hotelId,
+  ) => firestore
+      .collection('users')
+      .doc(userId)
+      .collection('hotels')
+      .doc(hotelId)
+      .collection('tasks');
 
   // ─── Shift operations ────────────────────────────────────────────────────
   Future<String> createShift(
@@ -619,5 +629,58 @@ class FirebaseService {
   ) async {
     if (!isInitialized) return;
     await _servicesRef(userId, hotelId).doc(serviceId).delete();
+  }
+
+  // ─── Tasks (assignments to employees) ─────────────────────────────────────
+  Stream<List<TaskModel>> tasksStream(String userId, String hotelId) {
+    if (!isInitialized) return Stream.value([]);
+    return _tasksRef(userId, hotelId)
+        .orderBy('dueDate', descending: false)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((d) => TaskModel.fromFirestore(d.data(), d.id))
+            .toList());
+  }
+
+  Future<List<TaskModel>> getTasks(String userId, String hotelId) async {
+    if (!isInitialized) return [];
+    final snapshot = await _tasksRef(userId, hotelId)
+        .orderBy('dueDate', descending: false)
+        .get();
+    return snapshot.docs
+        .map((d) => TaskModel.fromFirestore(d.data(), d.id))
+        .toList();
+  }
+
+  Future<String> createTask(
+    String userId,
+    String hotelId,
+    TaskModel task,
+  ) async {
+    if (!isInitialized) throw Exception('Firebase not initialized.');
+    if (task.title.trim().isEmpty) throw ArgumentError('Task title is required.');
+    if (task.assigneeId.isEmpty) throw ArgumentError('Assignee is required.');
+    final ref = await _tasksRef(userId, hotelId).add(task.toFirestore());
+    return ref.id;
+  }
+
+  Future<void> updateTask(
+    String userId,
+    String hotelId,
+    TaskModel task,
+  ) async {
+    if (!isInitialized || task.id == null || task.id!.isEmpty) {
+      throw Exception('Cannot update task: missing id.');
+    }
+    await _tasksRef(userId, hotelId).doc(task.id!).update(task.toFirestore());
+  }
+
+  Future<void> deleteTask(
+    String userId,
+    String hotelId,
+    String taskId,
+  ) async {
+    if (!isInitialized || taskId.isEmpty) return;
+    await _tasksRef(userId, hotelId).doc(taskId).delete();
   }
 }

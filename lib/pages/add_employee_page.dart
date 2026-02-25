@@ -4,7 +4,6 @@ import '../models/employer_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
 import '../services/auth_provider.dart';
-import '../utils/stayora_colors.dart';
 import '../widgets/app_notification.dart';
 import '../widgets/stayora_logo.dart';
 
@@ -29,6 +28,8 @@ class AddEmployeePage extends StatefulWidget {
 class _AddEmployeePageState extends State<AddEmployeePage> {
   final _formKey = GlobalKey<FormState>();
   final _firebaseService = FirebaseService();
+
+  bool _isSaving = false;
 
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
@@ -181,12 +182,17 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
       return;
     }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
-    );
+    final hotelId = _hotelId;
+    final userId = _userId;
+    if (hotelId == null || userId == null) {
+      showAppNotification(context, 'Session expired. Please try again.', type: AppNotificationType.error);
+      return;
+    }
 
+    if (!mounted) return;
+    setState(() => _isSaving = true);
+
+    Object? result;
     try {
       final roleValue = _role == 'Other' ? _roleController.text.trim() : _role;
       final departmentValue = _department == 'Other'
@@ -212,9 +218,6 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
           status: _status,
           updatedAt: DateTime.now(),
         );
-        final hotelId = _hotelId;
-        final userId = _userId;
-        if (hotelId == null || userId == null) return;
         await _firebaseService.updateEmployer(userId, hotelId, employer);
         if (_role == 'Other' && roleValue.isNotEmpty) {
           await _firebaseService.addRole(userId, hotelId, roleValue);
@@ -222,9 +225,9 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
         if (_department == 'Other' && departmentValue.isNotEmpty) {
           await _firebaseService.addDepartment(userId, hotelId, departmentValue);
         }
+        result = employer;
         if (mounted) {
           showAppNotification(context, '${employer.name} updated', type: AppNotificationType.success);
-          Navigator.pop(context, employer);
         }
       } else {
         final employer = EmployerModel(
@@ -235,9 +238,6 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
           department: departmentFinal,
           status: _status,
         );
-        final hotelId = _hotelId;
-        final userId = _userId;
-        if (hotelId == null || userId == null) return;
         await _firebaseService.createEmployer(userId, hotelId, employer);
         if (_role == 'Other' && roleValue.isNotEmpty) {
           await _firebaseService.addRole(userId, hotelId, roleValue);
@@ -245,20 +245,25 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
         if (_department == 'Other' && departmentValue.isNotEmpty) {
           await _firebaseService.addDepartment(userId, hotelId, departmentValue);
         }
+        result = true;
         if (mounted) {
           showAppNotification(context, 'Employee ${employer.name} added', type: AppNotificationType.success);
-          Navigator.pop(context, true);
         }
       }
     } catch (e) {
-      if (mounted) Navigator.pop(context);
-
       if (mounted) {
         showAppNotification(
           context,
           _isEditMode ? 'Error updating employee: $e' : 'Error adding employee: $e',
           type: AppNotificationType.error,
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+        if (result != null) {
+          Navigator.of(context).pop(result);
+        }
       }
     }
   }
@@ -271,10 +276,12 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      body: SafeArea(
-        child: Form(
-          key: _formKey,
-          child: CustomScrollView(
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Form(
+              key: _formKey,
+              child: CustomScrollView(
             slivers: [
               SliverToBoxAdapter(
                 child: Padding(
@@ -472,6 +479,15 @@ class _AddEmployeePageState extends State<AddEmployeePage> {
             ],
           ),
         ),
+      ),
+          if (_isSaving)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black54,
+                child: const Center(child: CircularProgressIndicator()),
+              ),
+            ),
+        ],
       ),
     );
   }

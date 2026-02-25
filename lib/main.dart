@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'firebase_options.dart';
 import 'navigation/app_shell.dart';
@@ -7,6 +8,7 @@ import 'services/auth_provider.dart';
 import 'services/theme_provider.dart';
 import 'theme/app_theme.dart';
 import 'widgets/app_notification.dart';
+import 'widgets/offline_banner.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,6 +16,11 @@ void main() async {
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
+    );
+    // Enable offline persistence so the app works with poor / no WiFi.
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
     );
     debugPrint('Firebase initialized successfully');
   } catch (e) {
@@ -51,7 +58,7 @@ class _AppRoot extends StatelessWidget {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       home: AppNotificationScope(
-        child: const AuthGate(),
+        child: const OfflineBannerWrapper(child: AuthGate()),
       ),
     );
   }

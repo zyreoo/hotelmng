@@ -216,6 +216,26 @@ class _DashboardPageState extends State<DashboardPage> {
     }).toList();
   }
 
+  /// Bookings checking in tomorrow.
+  List<BookingModel> get _checkInsTomorrowList {
+    final now = DateTime.now();
+    final tomorrow = DateTime(now.year, now.month, now.day + 1);
+    return _activeBookings.where((b) {
+      final ci = DateTime(b.checkIn.year, b.checkIn.month, b.checkIn.day);
+      return ci == tomorrow;
+    }).toList();
+  }
+
+  /// Bookings checking out tomorrow.
+  List<BookingModel> get _checkOutsTomorrowList {
+    final now = DateTime.now();
+    final tomorrow = DateTime(now.year, now.month, now.day + 1);
+    return _activeBookings.where((b) {
+      final co = DateTime(b.checkOut.year, b.checkOut.month, b.checkOut.day);
+      return co == tomorrow;
+    }).toList();
+  }
+
   /// Bookings with advance payment pending (future check-in, advance required but not received).
   List<BookingModel> get _advancesPendingList {
     final now = DateTime.now();
@@ -664,11 +684,15 @@ class _DashboardPageState extends State<DashboardPage> {
                                 // Reminders Section
                                 if (_checkInsTodayList.isNotEmpty ||
                                     _checkOutsTodayList.isNotEmpty ||
-                                    _advancesPendingList.isNotEmpty) ...[
+                                    _advancesPendingList.isNotEmpty ||
+                                    _checkInsTomorrowList.isNotEmpty ||
+                                    _checkOutsTomorrowList.isNotEmpty) ...[
                                   _RemindersCard(
                                     checkInsToday: _checkInsTodayList,
                                     checkOutsToday: _checkOutsTodayList,
                                     advancesPending: _advancesPendingList,
+                                    checkInsTomorrow: _checkInsTomorrowList,
+                                    checkOutsTomorrow: _checkOutsTomorrowList,
                                     currencyFormatter: currencyFormatter,
                                     onBookingTap: (booking) {
                                       Navigator.of(
@@ -934,6 +958,8 @@ class _RemindersCard extends StatelessWidget {
   final List<BookingModel> checkInsToday;
   final List<BookingModel> checkOutsToday;
   final List<BookingModel> advancesPending;
+  final List<BookingModel> checkInsTomorrow;
+  final List<BookingModel> checkOutsTomorrow;
   final CurrencyFormatter currencyFormatter;
   final Function(BookingModel) onBookingTap;
   final Future<void> Function(BookingModel)? onMarkAdvanceReceived;
@@ -942,6 +968,8 @@ class _RemindersCard extends StatelessWidget {
     required this.checkInsToday,
     required this.checkOutsToday,
     required this.advancesPending,
+    required this.checkInsTomorrow,
+    required this.checkOutsTomorrow,
     required this.currencyFormatter,
     required this.onBookingTap,
     this.onMarkAdvanceReceived,
@@ -1145,6 +1173,148 @@ class _RemindersCard extends StatelessWidget {
                 Center(
                   child: Text(
                     '+ ${advancesPending.length - 3} more',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+
+            // ── Tomorrow section ──────────────────────────────────────────
+            if (checkInsTomorrow.isNotEmpty || checkOutsTomorrow.isNotEmpty) ...[
+              if (checkInsToday.isNotEmpty ||
+                  checkOutsToday.isNotEmpty ||
+                  advancesPending.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                Divider(height: 1, color: Theme.of(context).dividerColor),
+                const SizedBox(height: 16),
+              ],
+              Row(
+                children: [
+                  Icon(
+                    Icons.event_rounded,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Tomorrow',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // Check-ins tomorrow
+            if (checkInsTomorrow.isNotEmpty) ...[
+              Row(
+                children: [
+                  Container(
+                    width: 4,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: StayoraColors.success.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Check-ins tomorrow (${checkInsTomorrow.length})',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              ...checkInsTomorrow.take(3).map((booking) {
+                return _ReminderItem(
+                  booking: booking,
+                  currencyFormatter: currencyFormatter,
+                  onTap: () => onBookingTap(booking),
+                  subtitle:
+                      '${booking.numberOfRooms} room(s) · ${booking.numberOfGuests} guest(s)',
+                );
+              }),
+              if (checkInsTomorrow.length > 3) ...[
+                const SizedBox(height: 8),
+                Center(
+                  child: Text(
+                    '+ ${checkInsTomorrow.length - 3} more',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+
+            if (checkInsTomorrow.isNotEmpty && checkOutsTomorrow.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Divider(
+                height: 1,
+                color: Theme.of(context).dividerColor.withOpacity(0.5),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // Check-outs tomorrow
+            if (checkOutsTomorrow.isNotEmpty) ...[
+              Row(
+                children: [
+                  Container(
+                    width: 4,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: StayoraColors.blue.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Check-outs tomorrow (${checkOutsTomorrow.length})',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              ...checkOutsTomorrow.take(3).map((booking) {
+                return _ReminderItem(
+                  booking: booking,
+                  currencyFormatter: currencyFormatter,
+                  onTap: () => onBookingTap(booking),
+                  subtitle:
+                      '${booking.numberOfRooms} room(s) · ${booking.numberOfGuests} guest(s)',
+                );
+              }),
+              if (checkOutsTomorrow.length > 3) ...[
+                const SizedBox(height: 8),
+                Center(
+                  child: Text(
+                    '+ ${checkOutsTomorrow.length - 3} more',
                     style: TextStyle(
                       fontSize: 13,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,

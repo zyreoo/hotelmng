@@ -12,6 +12,10 @@ import '../pages/employees_page.dart';
 import '../pages/schedule.dart';
 import '../pages/add_booking_page.dart';
 import '../pages/settings_page.dart';
+import '../pages/room_management_page.dart';
+import '../pages/services_page.dart';
+import '../pages/housekeeping_page.dart';
+import '../pages/tasks_page.dart';
 
 /// Wraps [child] with [HotelProvider] only when the user is logged in.
 class WrapHotelWhenLoggedIn extends StatelessWidget {
@@ -68,15 +72,19 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _selectedIndex = 0;
 
   final List<GlobalKey<NavigatorState>> _navigatorKeys =
-      List.generate(9, (_) => GlobalKey<NavigatorState>());
+      List.generate(13, (_) => GlobalKey<NavigatorState>());
 
-  /// Titles for the five pages reachable from the More menu (indices 4–8).
+  /// Titles for pages reachable from the More menu (indices 4–12).
   static const List<String> _menuPageTitles = [
     'Clients',
     'Calendar',
     'Employees',
     'Shifts',
     'Settings',
+    'Rooms',
+    'Services',
+    'Housekeeping',
+    'Tasks',
   ];
 
   List<Widget> _buildPageList(bool isDesktop) {
@@ -91,11 +99,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       const EmployeesPage(),
       const SchedulePage(),
       const SettingsPage(),
+      const RoomManagementPage(),
+      const ServicesPage(),
+      const HousekeepingPage(),
+      const TasksPage(),
     ];
     if (isDesktop) return raw;
-    // On mobile, wrap menu pages (4–8) with an AppBar that has a back arrow to More.
-    return List.generate(9, (i) {
-      if (i >= 4 && i <= 8) {
+    // On mobile, wrap menu pages (4–12) with an AppBar that has a back arrow to More.
+    return List.generate(13, (i) {
+      if (i >= 4 && i <= 12) {
         return _MobileBackToMenuWrapper(
           title: _menuPageTitles[i - 4],
           onBack: () => setState(() => _selectedIndex = 3),
@@ -114,10 +126,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     _NavItem(Icons.person_rounded, 'Clients'),
     _NavItem(Icons.people_rounded, 'Employees'),
     _NavItem(Icons.schedule_rounded, 'Shifts'),
+    _NavItem(Icons.task_alt_rounded, 'Tasks'),
     _NavItem(Icons.settings_rounded, 'Settings'),
+    _NavItem(Icons.meeting_room_rounded, 'Rooms'),
+    _NavItem(Icons.room_service_rounded, 'Services'),
+    _NavItem(Icons.cleaning_services_rounded, 'Housekeeping'),
   ];
 
-  static const List<int> _navIndexToPageIndex = [0, 1, 2, 5, 4, 6, 7, 8];
+  static const List<int> _navIndexToPageIndex = [0, 1, 2, 5, 4, 6, 7, 12, 8, 9, 10, 11];
 
   static const List<_NavItem> _mobileNavItems = [
     _NavItem(Icons.dashboard_rounded, 'Dashboard'),
@@ -132,6 +148,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _pageIndexToMobileBarIndex(int pageIndex) =>
       pageIndex <= 2 ? pageIndex : 3;
 
+
   @override
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width >= 768;
@@ -141,7 +158,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final pageList = _buildPageList(isDesktop);
     final tabStack = IndexedStack(
       index: _selectedIndex,
-      children: List.generate(9, (i) {
+      children: List.generate(13, (i) {
         return Navigator(
           key: _navigatorKeys[i],
           initialRoute: '/',
@@ -240,9 +257,35 @@ class _DesktopSidebar extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.all(24.0),
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 4),
               child: StayoraLogo(fontSize: 22, fontWeight: FontWeight.bold),
             ),
+            Builder(builder: (context) {
+              final hotel = HotelProvider.of(context).currentHotel;
+              if (hotel == null) return const SizedBox(height: 12);
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(24, 2, 24, 12),
+                child: Row(
+                  children: [
+                    Icon(Icons.hotel_rounded,
+                        size: 13, color: colorScheme.onSurfaceVariant),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        hotel.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
             const Divider(height: 1),
             const SizedBox(height: 8),
             Expanded(
@@ -342,12 +385,20 @@ class _MoreMenuPage extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final auth = AuthScopeData.of(context);
+    final hotel = HotelProvider.of(context).currentHotel;
 
-    const navItems = <_MoreItem>[
-      _MoreItem(Icons.calendar_month_rounded, 'Calendar',  5, Color(0xFFFF3B30)),
-      _MoreItem(Icons.person_rounded,         'Clients',   4, Color(0xFF34C759)),
-      _MoreItem(Icons.people_rounded,         'Employees', 6, Color(0xFFFF9500)),
-      _MoreItem(Icons.schedule_rounded,       'Shifts',    7, Color(0xFFAF52DE)),
+    const bookingNavItems = <_MoreItem>[
+      _MoreItem(Icons.calendar_month_rounded, 'Calendar',          5, Color(0xFFFF3B30)),
+      _MoreItem(Icons.person_rounded,         'Clients',           4, Color(0xFF34C759)),
+      _MoreItem(Icons.people_rounded,         'Employees',         6, Color(0xFFFF9500)),
+      _MoreItem(Icons.schedule_rounded,       'Shifts',            7, Color(0xFFAF52DE)),
+      _MoreItem(Icons.task_alt_rounded,       'Tasks',            12, Color(0xFF5AC8FA)),
+    ];
+
+    const hotelNavItems = <_MoreItem>[
+      _MoreItem(Icons.meeting_room_rounded,        'Rooms',        9,  Color(0xFF007AFF)),
+      _MoreItem(Icons.room_service_rounded,        'Services',    10,  Color(0xFF30B0C7)),
+      _MoreItem(Icons.cleaning_services_rounded,   'Housekeeping',11,  Color(0xFF64D2FF)),
     ];
 
     return Scaffold(
@@ -356,9 +407,9 @@ class _MoreMenuPage extends StatelessWidget {
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            // ── Large iOS-style title ────────────────────────────────
+            // ── Large iOS-style title + hotel name ───────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
               child: Text(
                 'More',
                 style: Theme.of(context).textTheme.headlineLarge?.copyWith(
@@ -367,18 +418,58 @@ class _MoreMenuPage extends StatelessWidget {
                 ),
               ),
             ),
+            if (hotel != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                child: Row(
+                  children: [
+                    Icon(Icons.hotel_rounded,
+                        size: 14, color: colorScheme.onSurfaceVariant),
+                    const SizedBox(width: 6),
+                    Text(
+                      hotel.name,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              const SizedBox(height: 16),
 
-            // ── Navigation group ─────────────────────────────────────
+            // ── Booking & People group ────────────────────────────────
             _IosGroupCard(
               isDark: isDark,
               children: [
-                for (int i = 0; i < navItems.length; i++) ...[
+                for (int i = 0; i < bookingNavItems.length; i++) ...[
                   _IosMenuRow(
-                    item: navItems[i],
+                    item: bookingNavItems[i],
                     colorScheme: colorScheme,
-                    onTap: () => onSelect(navItems[i].pageIndex),
+                    onTap: () => onSelect(bookingNavItems[i].pageIndex),
                   ),
-                  if (i < navItems.length - 1) _IosInsetDivider(isDark: isDark),
+                  if (i < bookingNavItems.length - 1)
+                    _IosInsetDivider(isDark: isDark),
+                ],
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // ── Hotel management group ────────────────────────────────
+            _IosGroupCard(
+              isDark: isDark,
+              children: [
+                for (int i = 0; i < hotelNavItems.length; i++) ...[
+                  _IosMenuRow(
+                    item: hotelNavItems[i],
+                    colorScheme: colorScheme,
+                    onTap: () => onSelect(hotelNavItems[i].pageIndex),
+                  ),
+                  if (i < hotelNavItems.length - 1)
+                    _IosInsetDivider(isDark: isDark),
                 ],
               ],
             ),
@@ -431,9 +522,9 @@ class _MoreMenuPage extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 14),
-                        Text(
+                        const Text(
                           'Sign Out',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w400,
                             color: Color(0xFFFF3B30),
