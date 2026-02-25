@@ -92,23 +92,37 @@ abstract final class AppTheme {
           color: Colors.black,
         ),
       ),
+      // iOS-style tab bar: no pill indicator, clean icon+label layout.
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: Colors.white,
-        indicatorColor: StayoraLogo.stayoraBlue.withOpacity(0.12),
+        elevation: 0,
+        shadowColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        // Remove the Material 3 pill highlight completely.
+        indicatorColor: Colors.transparent,
+        indicatorShape: const RoundedRectangleBorder(),
         labelTextStyle: MaterialStateProperty.resolveWith((states) {
           if (states.contains(MaterialState.selected)) {
-            return const TextStyle(fontSize: 11, fontWeight: FontWeight.w600);
+            return const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: StayoraLogo.stayoraBlue,
+            );
           }
-          return const TextStyle(fontSize: 11, fontWeight: FontWeight.w500);
+          return TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+            color: Colors.grey.shade500,
+          );
         }),
         iconTheme: MaterialStateProperty.resolveWith((states) {
           if (states.contains(MaterialState.selected)) {
-            return const IconThemeData(color: StayoraLogo.stayoraBlue);
+            return const IconThemeData(color: StayoraLogo.stayoraBlue, size: 24);
           }
-          return IconThemeData(color: Colors.grey.shade600);
+          return IconThemeData(color: Colors.grey.shade500, size: 24);
         }),
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        height: 65,
+        height: 60,
       ),
       dividerTheme: DividerThemeData(
         color: Colors.grey.shade200,
@@ -208,31 +222,36 @@ abstract final class AppTheme {
           fontWeight: FontWeight.w400,
         ),
       ),
+      // iOS-style tab bar — dark variant.
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: colorScheme.surface,
-        indicatorColor: StayoraLogo.stayoraBlue.withOpacity(0.2),
+        backgroundColor: const Color(0xFF1C1C1E),
+        elevation: 0,
+        shadowColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        indicatorColor: Colors.transparent,
+        indicatorShape: const RoundedRectangleBorder(),
         labelTextStyle: MaterialStateProperty.resolveWith((states) {
           if (states.contains(MaterialState.selected)) {
-            return TextStyle(
-              fontSize: 11,
+            return const TextStyle(
+              fontSize: 10,
               fontWeight: FontWeight.w600,
-              color: colorScheme.onSurface,
+              color: StayoraLogo.stayoraBlue,
             );
           }
           return TextStyle(
-            fontSize: 11,
+            fontSize: 10,
             fontWeight: FontWeight.w500,
-            color: colorScheme.onSurfaceVariant,
+            color: Colors.grey.shade600,
           );
         }),
         iconTheme: MaterialStateProperty.resolveWith((states) {
           if (states.contains(MaterialState.selected)) {
-            return const IconThemeData(color: StayoraLogo.stayoraBlue);
+            return const IconThemeData(color: StayoraLogo.stayoraBlue, size: 24);
           }
-          return IconThemeData(color: colorScheme.onSurfaceVariant);
+          return IconThemeData(color: Colors.grey.shade600, size: 24);
         }),
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        height: 65,
+        height: 60,
       ),
       dividerTheme: DividerThemeData(
         color: colorScheme.outline.withOpacity(0.3),

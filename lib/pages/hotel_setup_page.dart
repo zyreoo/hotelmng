@@ -75,6 +75,9 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
     }
   }
 
+  /// True when we're in setup wizard but hotel not yet created in DB (only on Finish).
+  bool get _isDraftSetup => _pendingHotel != null && (_pendingHotel!.id == null || _pendingHotel!.id!.isEmpty);
+
   Future<void> _createHotel() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
@@ -82,32 +85,21 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
       return;
     }
     setState(() {
-      _loading = true;
       _error = null;
+      final uid = AuthScopeData.of(context).uid ?? defaultOwnerId;
+      _pendingHotel = HotelModel(
+        id: null,
+        name: name,
+        ownerId: uid,
+        totalRooms: 0,
+      );
+      _phase = _SetupPhase.setupRooms;
+      _roomsLoaded = false;
+      _setupRooms = [];
+      _setupEmployees = [];
+      _employeesLoaded = false;
     });
-    try {
-      final scope = HotelProvider.of(context);
-      final hotel = await scope.createHotel(name, setAsCurrent: false);
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _pendingHotel = hotel;
-          _phase = _SetupPhase.setupRooms;
-          _roomsLoaded = false;
-          _setupRooms = [];
-          _setupEmployees = [];
-          _employeesLoaded = false;
-        });
-        _loadSetupRooms();
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = e.toString();
-        });
-      }
-    }
+    _loadSetupRooms();
   }
 
   String get _setupUserId =>
@@ -115,9 +107,15 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
   String get _setupHotelId => _pendingHotel?.id ?? '';
 
   Future<void> _loadSetupRooms() async {
-    final userId = _setupUserId;
     final hotelId = _setupHotelId;
-    if (userId.isEmpty || hotelId.isEmpty) return;
+    if (hotelId.isEmpty) {
+      if (mounted) setState(() {
+        _setupRooms = [];
+        _roomsLoaded = true;
+      });
+      return;
+    }
+    final userId = _setupUserId;
     try {
       final list = await _firebaseService.getRooms(userId, hotelId);
       if (mounted) {
@@ -132,9 +130,15 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
   }
 
   Future<void> _loadSetupEmployees() async {
-    final userId = _setupUserId;
     final hotelId = _setupHotelId;
-    if (userId.isEmpty || hotelId.isEmpty) return;
+    if (hotelId.isEmpty) {
+      if (mounted) setState(() {
+        _setupEmployees = [];
+        _employeesLoaded = true;
+      });
+      return;
+    }
+    final userId = _setupUserId;
     try {
       final list = await _firebaseService.getEmployers(userId, hotelId);
       if (mounted) {
@@ -151,9 +155,25 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
   Future<void> _addRoomInSetup() async {
     final name = await _showRoomNameDialog('');
     if (name == null || name.isEmpty || !mounted) return;
-    final userId = _setupUserId;
     final hotelId = _setupHotelId;
-    if (userId.isEmpty || hotelId.isEmpty) return;
+    if (hotelId.isEmpty) {
+      setState(() {
+        _setupRooms = [
+          ..._setupRooms,
+          RoomModel(id: 'draft_${DateTime.now().millisecondsSinceEpoch}', name: name),
+        ];
+      });
+      if (mounted) {
+        showAppNotification(
+          context,
+          'Room "$name" added',
+          type: AppNotificationType.success,
+        );
+      }
+      return;
+    }
+    final userId = _setupUserId;
+    if (userId.isEmpty) return;
     setState(() => _loading = true);
     try {
       await _firebaseService.createRoom(userId, hotelId, name);
@@ -184,10 +204,26 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
       currentName,
       title: 'Edit room',
     );
-    if (name == null || name.isEmpty || !mounted || room.id == null) return;
-    final userId = _setupUserId;
+    if (name == null || name.isEmpty || !mounted) return;
     final hotelId = _setupHotelId;
-    if (userId.isEmpty || hotelId.isEmpty) return;
+    if (hotelId.isEmpty) {
+      setState(() {
+        _setupRooms = _setupRooms
+            .map((r) => r.id == room.id ? r.copyWith(name: name) : r)
+            .toList();
+      });
+      if (mounted) {
+        showAppNotification(
+          context,
+          'Room updated',
+          type: AppNotificationType.success,
+        );
+      }
+      return;
+    }
+    if (room.id == null) return;
+    final userId = _setupUserId;
+    if (userId.isEmpty) return;
     setState(() => _loading = true);
     try {
       await _firebaseService.updateRoom(userId, hotelId, room.id!, name);
@@ -213,9 +249,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
   }
 
   Future<void> _deleteRoomInSetup(RoomModel room) async {
-    final userId = _setupUserId;
     final hotelId = _setupHotelId;
-    if (userId.isEmpty || hotelId.isEmpty || room.id == null) return;
     final colorScheme = Theme.of(context).colorScheme;
     final confirm = await showDialog<bool>(
       context: context,
@@ -264,6 +298,21 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
       },
     );
     if (confirm != true || !mounted) return;
+    if (hotelId.isEmpty) {
+      setState(() {
+        _setupRooms = _setupRooms.where((r) => r.id != room.id).toList();
+      });
+      if (mounted) {
+        showAppNotification(
+          context,
+          'Room deleted',
+          type: AppNotificationType.success,
+        );
+      }
+      return;
+    }
+    final userId = _setupUserId;
+    if (userId.isEmpty || room.id == null) return;
     setState(() => _loading = true);
     try {
       await _firebaseService.deleteRoom(userId, hotelId, room.id!);
@@ -292,13 +341,47 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
     List<int> roomsPerFloorByFloor,
     int startFloor,
   ) async {
-    final userId = _setupUserId;
     final hotelId = _setupHotelId;
-    if (userId.isEmpty || hotelId.isEmpty) return;
     if (roomsPerFloorByFloor.isEmpty) return;
+    if (hotelId.isEmpty) {
+      final existingNames = _setupRooms.map((r) => r.name).toSet();
+      final toAdd = <RoomModel>[];
+      int skipped = 0;
+      for (int f = 0; f < roomsPerFloorByFloor.length; f++) {
+        final floorNumber = startFloor + f;
+        final roomsOnFloor = roomsPerFloorByFloor[f];
+        if (roomsOnFloor <= 0) continue;
+        for (int i = 1; i <= roomsOnFloor; i++) {
+          final roomNumber = '$floorNumber${i.toString().padLeft(2, '0')}';
+          final roomName = 'Room $roomNumber';
+          if (existingNames.contains(roomName)) {
+            skipped++;
+            continue;
+          }
+          toAdd.add(RoomModel(
+            id: 'draft_${DateTime.now().millisecondsSinceEpoch}_${toAdd.length}',
+            name: roomName,
+          ));
+          existingNames.add(roomName);
+        }
+      }
+      setState(() => _setupRooms = [..._setupRooms, ...toAdd]);
+      if (mounted) {
+        final message = skipped > 0
+            ? 'Added ${toAdd.length} rooms ($skipped already existed)'
+            : 'Added ${toAdd.length} rooms';
+        showAppNotification(
+          context,
+          message,
+          type: AppNotificationType.success,
+        );
+      }
+      return;
+    }
+    final userId = _setupUserId;
+    if (userId.isEmpty) return;
     setState(() => _loading = true);
     try {
-      // So we don't create duplicates if user runs quick add again
       final existingNames = _setupRooms.map((r) => r.name).toSet();
       int created = 0;
       int skipped = 0;
@@ -445,16 +528,41 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
 
   Future<void> _addEmployeeInSetup() async {
     final userId = _setupUserId;
-    final hotelId = _setupHotelId;
-    if (userId.isEmpty || hotelId.isEmpty) return;
-    final added = await _showAddEmployeeSheet();
-    if (mounted && added == true) _loadSetupEmployees();
+    if (userId.isEmpty) return;
+    final result = await _showAddEmployeeSheet();
+    if (!mounted) return;
+    if (result is EmployerModel) {
+      setState(() => _setupEmployees = [..._setupEmployees, result]);
+      showAppNotification(
+        context,
+        '${result.name} added',
+        type: AppNotificationType.success,
+      );
+    } else if (result == true) {
+      _loadSetupEmployees();
+    }
   }
 
   Future<void> _editEmployeeInSetup(EmployerModel employee) async {
     final userId = _setupUserId;
     final hotelId = _setupHotelId;
-    if (userId.isEmpty || hotelId.isEmpty) return;
+    if (userId.isEmpty) return;
+    if (hotelId.isEmpty) {
+      final updated = await _showEditEmployeeSheet(employee);
+      if (mounted && updated != null) {
+        setState(() {
+          _setupEmployees = _setupEmployees
+              .map((e) => e.id == employee.id ? updated : e)
+              .toList();
+        });
+        showAppNotification(
+          context,
+          'Updated',
+          type: AppNotificationType.success,
+        );
+      }
+      return;
+    }
     final updated = await Navigator.push<EmployerModel>(
       context,
       MaterialPageRoute<EmployerModel>(
@@ -471,7 +579,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
   Future<void> _deleteEmployeeInSetup(EmployerModel employee) async {
     final userId = _setupUserId;
     final hotelId = _setupHotelId;
-    if (userId.isEmpty || hotelId.isEmpty || employee.id == null) return;
+    if (userId.isEmpty) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -496,6 +604,16 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
       ),
     );
     if (!mounted || confirmed != true) return;
+    if (hotelId.isEmpty) {
+      setState(() {
+        _setupEmployees = _setupEmployees.where((e) => e.id != employee.id).toList();
+      });
+      if (mounted) {
+        showAppNotification(context, '${employee.name} removed', type: AppNotificationType.success);
+      }
+      return;
+    }
+    if (employee.id == null) return;
     try {
       await _firebaseService.deleteEmployer(userId, hotelId, employee.id!);
       if (mounted) {
@@ -544,26 +662,29 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
   }
 
   /// Apple-style rectangular form sheet: name, phone, email, role, department (same as Add employee page).
-  /// On save, creates employee and returns true so list can live-update.
-  Future<bool?> _showAddEmployeeSheet() async {
+  /// When draft (no hotel in DB yet): returns [EmployerModel]. Otherwise creates in DB and returns true.
+  Future<Object?> _showAddEmployeeSheet() async {
     final colorScheme = Theme.of(context).colorScheme;
     final userId = _setupUserId;
     final hotelId = _setupHotelId;
-    if (userId.isEmpty || hotelId.isEmpty) return false;
+    if (userId.isEmpty) return null;
 
     List<String> roleOptions = List<String>.from(_defaultRoleOptions);
     List<String> departmentOptions = List<String>.from(_defaultDepartmentOptions);
-    try {
-      final roles = await _firebaseService.getRoles(userId, hotelId);
-      final departments = await _firebaseService.getDepartments(userId, hotelId);
-      if (mounted) {
-        roleOptions = _mergeRoleDepartmentOptions(_defaultRoleOptions, roles);
-        departmentOptions = _mergeRoleDepartmentOptions(_defaultDepartmentOptions, departments);
+    final isDraft = hotelId.isEmpty;
+    if (!isDraft) {
+      try {
+        final roles = await _firebaseService.getRoles(userId, hotelId);
+        final departments = await _firebaseService.getDepartments(userId, hotelId);
+        if (mounted) {
+          roleOptions = _mergeRoleDepartmentOptions(_defaultRoleOptions, roles);
+          departmentOptions = _mergeRoleDepartmentOptions(_defaultDepartmentOptions, departments);
+        }
+      } catch (_) {
+        // use defaults
       }
-    } catch (_) {
-      // use defaults
     }
-    if (!mounted) return false;
+    if (!mounted) return null;
 
     final nameController = TextEditingController();
     final phoneController = TextEditingController();
@@ -783,6 +904,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                             final roleFinal = roleValue.isEmpty ? selectedRole : roleValue;
                             final departmentFinal = departmentValue.isEmpty ? selectedDepartment : departmentValue;
                             final model = EmployerModel(
+                              id: isDraft ? 'draft_${DateTime.now().millisecondsSinceEpoch}' : null,
                               name: name,
                               phone: phoneController.text.trim(),
                               email: emailController.text.trim(),
@@ -790,6 +912,10 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                               department: departmentFinal,
                               status: 'Active',
                             );
+                            if (isDraft) {
+                              if (ctx.mounted) Navigator.pop(ctx, model);
+                              return;
+                            }
                             try {
                               await _firebaseService.createEmployer(
                                 userId,
@@ -850,6 +976,206 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
     );
   }
 
+  /// In-memory edit for draft setup. Returns updated [EmployerModel] or null if cancelled.
+  Future<EmployerModel?> _showEditEmployeeSheet(EmployerModel employee) async {
+    final colorScheme = Theme.of(context).colorScheme;
+    final nameController = TextEditingController(text: employee.name);
+    final phoneController = TextEditingController(text: employee.phone);
+    final emailController = TextEditingController(text: employee.email);
+    String selectedRole = _defaultRoleOptions.contains(employee.role) ? employee.role : 'Other';
+    String selectedDepartment = _defaultDepartmentOptions.contains(employee.department) ? employee.department : 'Other';
+    final otherRoleController = TextEditingController(text: _defaultRoleOptions.contains(employee.role) ? '' : employee.role);
+    final otherDepartmentController = TextEditingController(text: _defaultDepartmentOptions.contains(employee.department) ? '' : employee.department);
+
+    final inputDecoration = (String label, String hint) => InputDecoration(
+          labelText: label,
+          hintText: hint,
+          filled: true,
+          fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.6),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.3)),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        );
+    InputDecoration dropdownDecoration(String label) => InputDecoration(
+          labelText: label,
+          filled: true,
+          fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.6),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.3)),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        );
+
+    return showModalBottomSheet<EmployerModel>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        String? localError;
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: StatefulBuilder(
+            builder: (ctx, setModalState) {
+              return Container(
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 16,
+                      offset: const Offset(0, -2),
+                    ),
+                  ],
+                ),
+                padding: EdgeInsets.fromLTRB(24, 10, 24, 24 + MediaQuery.of(ctx).padding.bottom),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 36,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: colorScheme.onSurface.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        'Edit employee',
+                        style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: colorScheme.onSurface,
+                            ),
+                      ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: nameController,
+                        textCapitalization: TextCapitalization.words,
+                        decoration: inputDecoration('Name', 'e.g. Maria'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: phoneController,
+                        keyboardType: TextInputType.phone,
+                        decoration: inputDecoration('Phone', 'e.g. +1 234 567 8900'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: emailController,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: inputDecoration('Email', 'e.g. maria@hotel.com'),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: selectedRole,
+                        decoration: dropdownDecoration('Role'),
+                        items: _defaultRoleOptions
+                            .map((e) => DropdownMenuItem<String>(value: e, child: Text(e, style: TextStyle(color: colorScheme.onSurface))))
+                            .toList(),
+                        onChanged: (v) => setModalState(() => selectedRole = v ?? selectedRole),
+                        style: TextStyle(fontSize: 16, color: colorScheme.onSurface),
+                      ),
+                      if (selectedRole == 'Other') ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: otherRoleController,
+                          textCapitalization: TextCapitalization.words,
+                          decoration: inputDecoration('Other role', 'e.g. Concierge'),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: selectedDepartment,
+                        decoration: dropdownDecoration('Department'),
+                        items: _defaultDepartmentOptions
+                            .map((e) => DropdownMenuItem<String>(value: e, child: Text(e, style: TextStyle(color: colorScheme.onSurface))))
+                            .toList(),
+                        onChanged: (v) => setModalState(() => selectedDepartment = v ?? selectedDepartment),
+                        style: TextStyle(fontSize: 16, color: colorScheme.onSurface),
+                      ),
+                      if (selectedDepartment == 'Other') ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: otherDepartmentController,
+                          textCapitalization: TextCapitalization.words,
+                          decoration: inputDecoration('Other department', 'e.g. Maintenance'),
+                        ),
+                      ],
+                      if (localError != null) ...[
+                        const SizedBox(height: 12),
+                        Text(localError!, style: Theme.of(ctx).textTheme.bodySmall?.copyWith(color: StayoraColors.error, fontWeight: FontWeight.w500)),
+                      ],
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: () {
+                            final name = nameController.text.trim();
+                            if (name.isEmpty) {
+                              setModalState(() => localError = 'Enter a name.');
+                              return;
+                            }
+                            final roleFinal = selectedRole == 'Other' ? otherRoleController.text.trim() : selectedRole;
+                            final departmentFinal = selectedDepartment == 'Other' ? otherDepartmentController.text.trim() : selectedDepartment;
+                            if (selectedRole == 'Other' && roleFinal.isEmpty) {
+                              setModalState(() => localError = 'Enter a role.');
+                              return;
+                            }
+                            if (selectedDepartment == 'Other' && departmentFinal.isEmpty) {
+                              setModalState(() => localError = 'Enter a department.');
+                              return;
+                            }
+                            final updated = employee.copyWith(
+                              name: name,
+                              phone: phoneController.text.trim(),
+                              email: emailController.text.trim(),
+                              role: roleFinal.isEmpty ? selectedRole : roleFinal,
+                              department: departmentFinal.isEmpty ? selectedDepartment : departmentFinal,
+                            );
+                            Navigator.pop(ctx, updated);
+                          },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: StayoraLogo.stayoraBlue,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: const Text('Save'),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Center(
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          style: TextButton.styleFrom(
+                            foregroundColor: colorScheme.onSurfaceVariant,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          ),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   void _nextFromRooms() {
     setState(() {
       _phase = _SetupPhase.setupEmployees;
@@ -864,22 +1190,53 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
     setState(() => _loading = true);
     try {
       final userId = _setupUserId;
-      final hotelId = _setupHotelId;
-      final roomCount = _setupRooms.length;
+      final scope = HotelProvider.of(context);
+      HotelModel createdHotel;
 
-      // If we have created rooms during setup, keep hotel's totalRooms in sync.
-      HotelModel updatedHotel = hotel;
-      if (userId.isNotEmpty && hotelId.isNotEmpty && roomCount > 0) {
-        updatedHotel = hotel.copyWith(totalRooms: roomCount);
+      if (_isDraftSetup) {
+        // Create hotel in DB only when user presses Finish.
+        createdHotel = await scope.createHotel(hotel.name, setAsCurrent: false);
+        final hotelId = createdHotel.id!;
+        for (final room in _setupRooms) {
+          await _firebaseService.createRoom(userId, hotelId, room.name);
+        }
+        final customRoles = <String>{};
+        final customDepartments = <String>{};
+        for (final emp in _setupEmployees) {
+          await _firebaseService.createEmployer(userId, hotelId, emp);
+          if (!_defaultRoleOptions.contains(emp.role)) customRoles.add(emp.role);
+          if (!_defaultDepartmentOptions.contains(emp.department)) customDepartments.add(emp.department);
+        }
+        for (final r in customRoles) {
+          await _firebaseService.addRole(userId, hotelId, r);
+        }
+        for (final d in customDepartments) {
+          await _firebaseService.addDepartment(userId, hotelId, d);
+        }
+        final roomCount = _setupRooms.length;
+        createdHotel = createdHotel.copyWith(totalRooms: roomCount);
         await FirebaseFirestore.instance
             .collection('users')
             .doc(userId)
             .collection('hotels')
             .doc(hotelId)
-            .update(updatedHotel.toFirestore());
+            .update(createdHotel.toFirestore());
+      } else {
+        createdHotel = hotel;
+        final hotelId = _setupHotelId;
+        final roomCount = _setupRooms.length;
+        if (userId.isNotEmpty && hotelId.isNotEmpty && roomCount > 0) {
+          createdHotel = hotel.copyWith(totalRooms: roomCount);
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)
+              .collection('hotels')
+              .doc(hotelId)
+              .update(createdHotel.toFirestore());
+        }
       }
 
-      await HotelProvider.of(context).setCurrentHotel(updatedHotel);
+      await scope.setCurrentHotel(createdHotel);
       if (mounted) {
         setState(() {
           _loading = false;
@@ -1058,8 +1415,10 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Breathing room under app bar; step and title sit lower so top isn't busy
+            const SizedBox(height: 32),
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
               child: Column(
                 children: [
                   Align(
@@ -1072,7 +1431,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   Text(
                     hotelName,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -1081,7 +1440,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   Text(
                     'Add rooms to your hotel. You can add more later from the Calendar.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -1095,17 +1454,19 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
             Expanded(
               child: _roomsLoaded
                   ? (_setupRooms.isEmpty
-                        ? Center(
+                        ? SingleChildScrollView(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
                             child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.start,
                               children: [
                                 Icon(
                                   Icons.meeting_room_rounded,
-                                  size: 64,
+                                  size: 52,
                                   color: colorScheme.onSurfaceVariant
                                       .withOpacity(0.6),
                                 ),
-                                const SizedBox(height: 16),
+                                const SizedBox(height: 12),
                                 Text(
                                   'No rooms yet',
                                   style: Theme.of(context).textTheme.titleMedium
@@ -1130,7 +1491,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                                   ),
                                   child: const Text('Add room'),
                                 ),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 10),
                                 TextButton(
                                   onPressed: _loading
                                       ? null
@@ -1139,7 +1500,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                                     foregroundColor: colorScheme.onSurfaceVariant,
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 20,
-                                      vertical: 14,
+                                      vertical: 12,
                                     ),
                                   ),
                                   child: const Text('Quick add multiple rooms'),
@@ -1148,7 +1509,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                             ),
                           )
                         : ListView.builder(
-                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
                             itemCount: _setupRooms.length,
                             itemBuilder: (context, index) {
                               final room = _setupRooms[index];
@@ -1199,7 +1560,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
             ),
             if (_setupRooms.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
@@ -1270,12 +1631,12 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
               ),
             if (_setupRooms.isEmpty)
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
                 child: TextButton(
                   onPressed: _loading ? null : _nextFromRooms,
                   style: TextButton.styleFrom(
                     foregroundColor: colorScheme.onSurfaceVariant,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                   child: const Text('Skip — add rooms later'),
                 ),
@@ -1307,8 +1668,9 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const SizedBox(height: 32),
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
               child: Column(
                 children: [
                   Align(
@@ -1321,7 +1683,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   Text(
                     hotelName,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -1330,7 +1692,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   Text(
                     'Add team members (reception, housekeeping, etc.). You can add more later from the Team page.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -1344,17 +1706,19 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
             Expanded(
               child: _employeesLoaded
                   ? (_setupEmployees.isEmpty
-                      ? Center(
+                      ? SingleChildScrollView(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
                           child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.start,
                             children: [
                               Icon(
                                 Icons.people_rounded,
-                                size: 64,
+                                size: 52,
                                 color: colorScheme.onSurfaceVariant
                                     .withOpacity(0.6),
                               ),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 12),
                               Text(
                                 'No team members yet',
                                 style: Theme.of(context)
@@ -1387,7 +1751,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                         )
                       : ListView.builder(
                           padding:
-                              const EdgeInsets.symmetric(horizontal: 24),
+                              const EdgeInsets.symmetric(horizontal: 20),
                           itemCount: _setupEmployees.length,
                           itemBuilder: (context, index) {
                             final emp = _setupEmployees[index];
@@ -1457,7 +1821,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                     ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
               child: Row(
                 children: [
                   if (_setupEmployees.isNotEmpty) ...[
@@ -1467,7 +1831,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                         style: OutlinedButton.styleFrom(
                           foregroundColor: StayoraLogo.stayoraBlue,
                           side: BorderSide(color: StayoraLogo.stayoraBlue),
-                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -1475,7 +1839,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                         child: const Text('Add another'),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                   ],
                   Expanded(
                     child: FilledButton(
@@ -1484,7 +1848,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                         backgroundColor: StayoraLogo.stayoraBlue,
                         foregroundColor: Colors.white,
                         elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),

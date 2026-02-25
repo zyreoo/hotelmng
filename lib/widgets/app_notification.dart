@@ -234,6 +234,7 @@ class _AppNotificationScopeInherited extends InheritedWidget {
 }
 
 /// Overlay that paints the notification on top (used inside [AppNotificationScope]).
+/// On mobile: top-center, full-width with margin. On larger screens: top-right, compact.
 class AppNotificationOverlay extends StatelessWidget {
   const AppNotificationOverlay({
     super.key,
@@ -243,10 +244,20 @@ class AppNotificationOverlay extends StatelessWidget {
   final AppNotificationData data;
   final VoidCallback onDismiss;
 
+  static const double _horizontalPadding = 20;
+  static const double _verticalPadding = 14;
+  static const double _iconSize = 22;
+  static const double _radius = 12;
+  static const double _elevation = 8;
+  static const double _mobileBreakpoint = 600;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final width = MediaQuery.sizeOf(context).width;
+    final isMobile = width < _mobileBreakpoint;
+
     final (Color bg, Color fg, IconData icon) = _styleFor(context, data.type, isDark);
 
     return Positioned(
@@ -257,40 +268,48 @@ class AppNotificationOverlay extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.only(top: 12, left: 16, right: 16),
           child: Align(
-            alignment: Alignment.topRight,
+            alignment: isMobile ? Alignment.topCenter : Alignment.topRight,
             child: TweenAnimationBuilder<double>(
               tween: Tween(begin: 0, end: 1),
               duration: const Duration(milliseconds: 280),
               curve: Curves.easeOutCubic,
               builder: (context, value, child) {
                 return Transform.translate(
-                  offset: Offset(0, (value - 1) * 80),
+                  offset: Offset(0, (value - 1) * 60),
                   child: Opacity(opacity: value, child: child),
                 );
               },
               child: Material(
-                elevation: 8,
+                elevation: _elevation,
                 shadowColor: theme.colorScheme.shadow.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(_radius),
                 color: bg,
                 child: InkWell(
                   onTap: onDismiss,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  borderRadius: BorderRadius.circular(_radius),
+                  child: Container(
+                    width: isMobile ? double.infinity : null,
+                    constraints: BoxConstraints(
+                      maxWidth: isMobile ? width - 32 : 340,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: _horizontalPadding,
+                      vertical: _verticalPadding,
+                    ),
                     child: Row(
-                      mainAxisSize: MainAxisSize.min,
+                      mainAxisSize: isMobile ? MainAxisSize.max : MainAxisSize.min,
                       children: [
-                        Icon(icon, size: 20, color: fg),
+                        Icon(icon, size: _iconSize, color: fg),
                         const SizedBox(width: 12),
-                        Flexible(
+                        Expanded(
                           child: Text(
                             data.message,
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: fg,
                               fontWeight: FontWeight.w500,
+                              fontSize: isMobile ? 15 : null,
                             ),
-                            maxLines: 2,
+                            maxLines: 3,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),

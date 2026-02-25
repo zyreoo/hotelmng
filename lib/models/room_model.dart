@@ -3,7 +3,7 @@ class RoomModel {
   final String? id;
   final String name;
 
-  /// Housekeeping status: clean | cleaning | dirty | out_of_order
+  /// Housekeeping status: clean | occupied | cleaning | dirty | out_of_order
   final String housekeepingStatus;
 
   /// Freeform tags, e.g. ['Sea view', 'Ground floor', 'Accessible']
@@ -11,6 +11,7 @@ class RoomModel {
 
   static const List<String> housekeepingStatuses = [
     'clean',
+    'occupied',
     'cleaning',
     'dirty',
     'out_of_order',
@@ -18,6 +19,7 @@ class RoomModel {
 
   static const Map<String, String> housekeepingLabels = {
     'clean': 'Clean',
+    'occupied': 'Occupied',
     'cleaning': 'Cleaning',
     'dirty': 'Dirty',
     'out_of_order': 'Out of order',

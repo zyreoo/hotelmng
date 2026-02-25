@@ -81,6 +81,8 @@ abstract class StayoraColors {
     switch (status) {
       case 'clean':
         return teal;
+      case 'occupied':
+        return blue;
       case 'cleaning':
         return warning;
       case 'dirty':

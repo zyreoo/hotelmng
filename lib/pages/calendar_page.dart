@@ -46,7 +46,7 @@ class _CalendarPageState extends State<CalendarPage> {
   DateTime _earliestDate = DateTime.now();
   int _totalDaysLoaded = 30;
   static const int _loadMoreDays = 30;
-  static const int _maxDaysLoaded = 180;
+  static const int _maxDaysLoaded = 730;
   bool _isLoadingMore = false;
   final List<DateTime> _cachedDates = [];
   double _lastScrollOffset = 0.0;
@@ -55,7 +55,7 @@ class _CalendarPageState extends State<CalendarPage> {
   StreamSubscription<QuerySnapshot>? _bookingsSubscription;
   StreamSubscription<QuerySnapshot>? _waitingListSubscription;
   Timer? _debounceTimer;
-  static const Duration _debounceDuration = Duration(milliseconds: 100);
+  static const Duration _debounceDuration = Duration(milliseconds: 300);
 
   /// Bookings with status 'Waiting list' (over capacity / not on grid).
   final List<({String id, BookingModel booking})> _waitingListBookings = [];
@@ -95,6 +95,13 @@ class _CalendarPageState extends State<CalendarPage> {
   DateTime? _selectionStartDate;
   String? _selectionEndRoom;
   DateTime? _selectionEndDate;
+
+  // Pre-computed selection bounds — updated in _cacheSelectionBounds() to
+  // avoid O(rooms) indexOf on every cell rebuild during pointer-move events.
+  int _selMinRoomIdx = -1;
+  int _selMaxRoomIdx = -1;
+  DateTime? _selCachedMinDate;
+  DateTime? _selCachedMaxDate;
 
   /// Hover state — in a [ValueNotifier] so only the affected cell rebuilds on
   /// mouse enter/exit instead of the entire page.
@@ -146,6 +153,65 @@ class _CalendarPageState extends State<CalendarPage> {
     BookingModel booking,
   ) async {
     await _firebaseService.updateBooking(userId, hotelId, booking);
+  }
+
+  /// Saves a booking, updates linked room housekeeping status based on
+  /// check-in / check-out timestamps, reloads rooms, and shows a toast.
+  Future<void> _saveBookingAndUpdateRooms({
+    required BuildContext notificationContext,
+    required String userId,
+    required String hotelId,
+    required BookingModel updatedBooking,
+  }) async {
+    // Persist booking changes.
+    await _updateBooking(userId, hotelId, updatedBooking);
+
+    // Simple rule:
+    // - If the booking has a check-in timestamp, mark rooms as occupied.
+    // - If the booking has a check-out timestamp, mark rooms as dirty.
+    final roomIds = updatedBooking.selectedRoomIds ?? const <String>[];
+    if (roomIds.isNotEmpty) {
+      if (updatedBooking.checkedInAt != null) {
+        for (final roomId in roomIds) {
+          await _firebaseService.updateRoomHousekeeping(
+            userId,
+            hotelId,
+            roomId,
+            'occupied',
+          );
+        }
+      }
+      if (updatedBooking.checkedOutAt != null) {
+        for (final roomId in roomIds) {
+          await _firebaseService.updateRoomHousekeeping(
+            userId,
+            hotelId,
+            roomId,
+            'dirty',
+          );
+        }
+      }
+      if (mounted) {
+        await _loadRooms();
+      }
+    }
+
+    if (!mounted) return;
+
+    String msg;
+    if (updatedBooking.checkedOutAt != null) {
+      msg = '${updatedBooking.userName} checked out · rooms marked dirty';
+    } else if (updatedBooking.checkedInAt != null) {
+      msg = '${updatedBooking.userName} checked in · rooms marked occupied';
+    } else {
+      msg = 'Booking updated';
+    }
+
+    showAppNotification(
+      notificationContext,
+      msg,
+      type: AppNotificationType.success,
+    );
   }
 
   Future<void> _loadRooms() async {
@@ -901,13 +967,19 @@ class _CalendarPageState extends State<CalendarPage> {
 
   void _onVerticalScroll() {
     if (!_verticalScrollController.hasClients || _isLoadingMore) return;
-    final currentOffset = _verticalScrollController.offset;
+    final pos = _verticalScrollController.position;
+    final currentOffset = pos.pixels;
     final isScrollingUp = currentOffset < _lastScrollOffset;
     _lastScrollOffset = currentOffset;
-    // Only load more past dates when the user is actively scrolling UP
-    // and reaches near the top — not on downward scroll or initial render.
     if (isScrollingUp && currentOffset < 200) {
+      // Near the top while scrolling up → load more past dates
       _loadMoreDatesUp();
+    } else if (!isScrollingUp) {
+      final maxExtent = pos.maxScrollExtent;
+      if (maxExtent > 0 && currentOffset > maxExtent - 400) {
+        // Near the bottom while scrolling down → load more future dates
+        _loadMoreDatesDown();
+      }
     }
   }
 
@@ -942,6 +1014,19 @@ class _CalendarPageState extends State<CalendarPage> {
         // Sticky day labels will be updated automatically by the listener
       }
     });
+  }
+
+  /// Extends the loaded window forward (future dates) by [_loadMoreDays] when
+  /// the user scrolls near the bottom, enabling booking for next year etc.
+  void _loadMoreDatesDown() {
+    if (_isLoadingMore || !mounted) return;
+    if (_totalDaysLoaded >= _maxDaysLoaded) return;
+    setState(() {
+      _isLoadingMore = true;
+      _totalDaysLoaded = (_totalDaysLoaded + _loadMoreDays).clamp(0, _maxDaysLoaded);
+      _isLoadingMore = false;
+    });
+    _subscribeToBookings();
   }
 
   void _scrollToDate(DateTime targetDate) {
@@ -1193,6 +1278,47 @@ class _CalendarPageState extends State<CalendarPage> {
     return _bookings[nightDate]?[room];
   }
 
+  /// Removes every grid cell occupied by [docId] and prunes empty date entries.
+  /// Returns true when at least one cell was removed.
+  bool _clearBookingFromGrid(String docId) {
+    bool removed = false;
+    for (final roomMap in _bookings.values) {
+      for (final roomName in roomMap.keys.toList()) {
+        if (roomMap[roomName]?.bookingId == docId) {
+          roomMap.remove(roomName);
+          removed = true;
+        }
+      }
+    }
+    _bookings.removeWhere((_, v) => v.isEmpty);
+    return removed;
+  }
+
+  /// Pre-computes selection range so [_isCellInSelection] avoids repeated
+  /// O(n) indexOf calls on every cell during pointer-move rebuilds.
+  void _cacheSelectionBounds() {
+    if (!_isSelecting || _selectionStartRoom == null || _selectionStartDate == null) {
+      _selMinRoomIdx = _selMaxRoomIdx = -1;
+      _selCachedMinDate = _selCachedMaxDate = null;
+      return;
+    }
+    final rooms = _displayedRoomNames;
+    final startIdx = rooms.indexOf(_selectionStartRoom!);
+    if (startIdx == -1) {
+      _selMinRoomIdx = _selMaxRoomIdx = -1;
+      return;
+    }
+    final endIdx = _selectionEndRoom != null ? rooms.indexOf(_selectionEndRoom!) : startIdx;
+    _selMinRoomIdx = startIdx < endIdx ? startIdx : endIdx;
+    _selMaxRoomIdx = startIdx > endIdx ? startIdx : endIdx;
+    final s = _selectionStartDate!;
+    final e = _selectionEndDate ?? s;
+    final sn = DateTime(s.year, s.month, s.day);
+    final en = DateTime(e.year, e.month, e.day);
+    _selCachedMinDate = sn.isBefore(en) ? sn : en;
+    _selCachedMaxDate = sn.isAfter(en) ? sn : en;
+  }
+
   /// Rebuilds the per-cell data cache from the current [_bookings] map and
   /// [_displayedRoomNames]. Call this after every booking change (debounced).
   void _rebuildCellCache() {
@@ -1256,61 +1382,15 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   // Selection helper methods
-  bool _isCellInSelection(String room, DateTime date) {
-    if (!_isSelecting ||
-        _selectionStartRoom == null ||
-        _selectionStartDate == null) {
-      return false;
-    }
 
-    final startRoomIndex = _displayedRoomNames.indexOf(_selectionStartRoom!);
-    final endRoomIndex = _selectionEndRoom != null
-        ? _displayedRoomNames.indexOf(_selectionEndRoom!)
-        : startRoomIndex;
-    final currentRoomIndex = _displayedRoomNames.indexOf(room);
-
-    if (currentRoomIndex == -1 || startRoomIndex == -1) return false;
-
-    final startDate = _selectionStartDate!;
-    final endDate = _selectionEndDate ?? startDate;
-
-    final minRoomIndex = startRoomIndex < endRoomIndex
-        ? startRoomIndex
-        : endRoomIndex;
-    final maxRoomIndex = startRoomIndex > endRoomIndex
-        ? startRoomIndex
-        : endRoomIndex;
-    // Normalize dates to midnight for comparison
-    final startDateNormalized = DateTime(
-      startDate.year,
-      startDate.month,
-      startDate.day,
-    );
-    final endDateNormalized = DateTime(
-      endDate.year,
-      endDate.month,
-      endDate.day,
-    );
-    final currentDate = DateTime(date.year, date.month, date.day);
-
-    // Ensure minDate is before maxDate (handle upward selection)
-    final minDate = startDateNormalized.isBefore(endDateNormalized)
-        ? startDateNormalized
-        : endDateNormalized;
-    final maxDate = startDateNormalized.isAfter(endDateNormalized)
-        ? startDateNormalized
-        : endDateNormalized;
-
-    final roomInRange =
-        currentRoomIndex >= minRoomIndex && currentRoomIndex <= maxRoomIndex;
-
-    // Check if current date is within the selected date range (inclusive)
-    final dateInRange =
-        (currentDate.isAtSameMomentAs(minDate) ||
-            currentDate.isAtSameMomentAs(maxDate)) ||
-        (currentDate.isAfter(minDate) && currentDate.isBefore(maxDate));
-
-    return roomInRange && dateInRange;
+  /// O(1) check — uses pre-computed bounds from [_cacheSelectionBounds].
+  /// [roomIdx] is the index of [room] in [_displayedRoomNames], passed from
+  /// [_buildDayRow] so we never call indexOf here.
+  bool _isCellInSelection(int roomIdx, DateTime date) {
+    if (!_isSelecting || _selMinRoomIdx == -1) return false;
+    if (roomIdx < _selMinRoomIdx || roomIdx > _selMaxRoomIdx) return false;
+    final d = DateTime(date.year, date.month, date.day);
+    return !d.isBefore(_selCachedMinDate!) && !d.isAfter(_selCachedMaxDate!);
   }
 
   void _startSelection(String room, DateTime date) {
@@ -1322,6 +1402,7 @@ class _CalendarPageState extends State<CalendarPage> {
       _selectionEndRoom = room;
       _selectionEndDate = date;
     });
+    _cacheSelectionBounds();
   }
 
   void _updateSelection(String room, DateTime date) {
@@ -1330,6 +1411,7 @@ class _CalendarPageState extends State<CalendarPage> {
         _selectionEndRoom = room;
         _selectionEndDate = date;
       });
+      _cacheSelectionBounds();
     }
   }
 
@@ -1390,19 +1472,7 @@ class _CalendarPageState extends State<CalendarPage> {
     await _updateBooking(userId, hotelId, updated);
 
     // Remove from grid immediately so UI updates without waiting for Firestore snapshot
-    for (final entry in _bookings.entries.toList()) {
-      final roomMap = entry.value;
-      for (final roomName in roomMap.keys.toList()) {
-        if (roomMap[roomName]?.bookingId == bookingId) {
-          roomMap.remove(roomName);
-        }
-      }
-    }
-    for (final nightDate in _bookings.keys.toList()) {
-      if (_bookings[nightDate]!.isEmpty) {
-        _bookings.remove(nightDate);
-      }
-    }
+    _clearBookingFromGrid(bookingId);
     if (mounted) setState(() {});
 
     if (mounted) {
@@ -1551,6 +1621,7 @@ class _CalendarPageState extends State<CalendarPage> {
         _roomsNextToEachOther = false;
         _preselectedRoomsIndex = [];
       });
+      _cacheSelectionBounds();
     }
   }
 
@@ -1618,6 +1689,7 @@ class _CalendarPageState extends State<CalendarPage> {
 
   DateTime? _cachedEarliestDate;
   int? _cachedTotalDays;
+  int _cachedTodayIndex = -1;
 
   List<DateTime> get _dates {
     if (_cachedDates.isEmpty ||
@@ -1638,6 +1710,12 @@ class _CalendarPageState extends State<CalendarPage> {
             (index) => base.add(Duration(days: index)),
           ),
         );
+      // Cache today's index so the red-line overlay never scans the full list.
+      final now = DateTime.now();
+      final todayNorm = DateTime(now.year, now.month, now.day);
+      _cachedTodayIndex = _cachedDates.indexWhere(
+        (d) => d.isAtSameMomentAs(todayNorm),
+      );
     }
     return _cachedDates;
   }
@@ -1774,20 +1852,7 @@ class _CalendarPageState extends State<CalendarPage> {
       if (bookingModel.status == 'Waiting list') {
         final docId = change.doc.id;
         // Remove from grid so it doesn't stay visible when moved to waiting list
-        for (final entry in _bookings.entries.toList()) {
-          final roomMap = entry.value;
-          for (final roomName in roomMap.keys.toList()) {
-            if (roomMap[roomName]?.bookingId == docId) {
-              roomMap.remove(roomName);
-              needsUpdate = true;
-            }
-          }
-        }
-        for (final nightDate in _bookings.keys.toList()) {
-          if (_bookings[nightDate]!.isEmpty) {
-            _bookings.remove(nightDate);
-          }
-        }
+        if (_clearBookingFromGrid(docId)) needsUpdate = true;
         if (change.type == DocumentChangeType.removed) {
           _bookingModelsById.remove(docId);
         } else {
@@ -1803,39 +1868,13 @@ class _CalendarPageState extends State<CalendarPage> {
       final docId = change.doc.id;
 
       if (change.type == DocumentChangeType.removed) {
-        // Remove this booking from all cells
-        for (final entry in _bookings.entries.toList()) {
-          final nightDate = entry.key;
-          final roomMap = entry.value;
-          for (final roomName in roomMap.keys.toList()) {
-            if (roomMap[roomName]?.bookingId == docId) {
-              roomMap.remove(roomName);
-              needsUpdate = true;
-            }
-          }
-          if (roomMap.isEmpty) {
-            _bookings.remove(nightDate);
-          }
-        }
+        if (_clearBookingFromGrid(docId)) needsUpdate = true;
         _bookingModelsById.remove(docId);
         continue;
       }
 
-      // Added or modified: clear any previous placement of this booking (so moved bookings don't stay in old cells)
-      for (final entry in _bookings.entries.toList()) {
-        final roomMap = entry.value;
-        for (final roomName in roomMap.keys.toList()) {
-          if (roomMap[roomName]?.bookingId == docId) {
-            roomMap.remove(roomName);
-            needsUpdate = true;
-          }
-        }
-      }
-      for (final nightDate in _bookings.keys.toList()) {
-        if (_bookings[nightDate]!.isEmpty) {
-          _bookings.remove(nightDate);
-        }
-      }
+      // Added or modified: clear previous placement so moved bookings don't stay in old cells
+      if (_clearBookingFromGrid(docId)) needsUpdate = true;
 
       final totalNights = bookingModel.numberOfNights;
 
@@ -2358,43 +2397,41 @@ class _CalendarPageState extends State<CalendarPage> {
                                                 _selectionEndRoom = null;
                                                 _selectionEndDate = null;
                                               });
+                                              _cacheSelectionBounds();
                                             }
                                           },
+                                          // Horizontal scroll wraps the virtual
+                                          // vertical list so all day rows share
+                                          // one horizontal scroll position.
                                           child: SingleChildScrollView(
                                             controller:
-                                                _verticalScrollController,
-                                            scrollDirection: Axis.vertical,
+                                                _horizontalScrollController,
+                                            scrollDirection: Axis.horizontal,
                                             padding: EdgeInsets.zero,
-                                            child: SingleChildScrollView(
-                                              controller:
-                                                  _horizontalScrollController,
-                                              scrollDirection: Axis.horizontal,
-                                              padding: EdgeInsets.zero,
-                                              child: Builder(
-                                                builder: (context) {
-                                                  final dateList = _dates;
-                                                  return Container(
-                                                    color: Theme.of(context)
-                                                        .colorScheme
-                                                        .surfaceContainerLowest,
-                                                    child: Column(
-                                                      mainAxisSize:
-                                                          MainAxisSize.min,
-                                                      children: dateList.map((
+                                            child: SizedBox(
+                                              // Explicit width so ListView.builder
+                                              // knows its cross-axis size and
+                                              // horizontal scroll extent is correct.
+                                              width: _dayLabelWidth +
+                                                  _displayedRoomNames.length *
+                                                      _roomColumnWidth,
+                                              child: ListView.builder(
+                                                controller:
+                                                    _verticalScrollController,
+                                                itemCount: _totalDaysLoaded,
+                                                // Fixed row height enables O(1)
+                                                // virtualisation — only visible
+                                                // rows are built at any moment.
+                                                itemExtent: _dayRowHeight,
+                                                itemBuilder: (ctx, i) {
+                                                  final date = _dates[i];
+                                                  return RepaintBoundary(
+                                                    child: _buildDayRow(
+                                                      date,
+                                                      isSameDay(
                                                         date,
-                                                      ) {
-                                                        final isToday =
-                                                            isSameDay(
-                                                              date,
-                                                              DateTime.now(),
-                                                            );
-                                                        return RepaintBoundary(
-                                                          child: _buildDayRow(
-                                                            date,
-                                                            isToday,
-                                                          ),
-                                                        );
-                                                      }).toList(),
+                                                        DateTime.now(),
+                                                      ),
                                                     ),
                                                   );
                                                 },
@@ -2535,27 +2572,27 @@ class _CalendarPageState extends State<CalendarPage> {
                                                       ),
                                                     ),
                                                     child: Center(
-                                                      child: Column(
-                                                        mainAxisSize:
-                                                            MainAxisSize.min,
-                                                        children: [
-                                                          Text(
-                                                            'Room $room',
-                                                            style: TextStyle(
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold,
-                                                              fontSize: 12,
-                                                              color:
-                                                                  Theme.of(
-                                                                        context,
-                                                                      )
-                                                                      .colorScheme
-                                                                      .onSurface,
-                                                              letterSpacing:
-                                                                  0.2,
-                                                            ),
+                                                    child: Column(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        Text(
+                                                          room,
+                                                          style: TextStyle(
+                                                            fontWeight:
+                                                                FontWeight
+                                                                    .bold,
+                                                            fontSize: 12,
+                                                            color:
+                                                                Theme.of(
+                                                                      context,
+                                                                    )
+                                                                    .colorScheme
+                                                                    .onSurface,
+                                                            letterSpacing:
+                                                                0.2,
                                                           ),
+                                                        ),
                                                           const SizedBox(
                                                             height: 2,
                                                           ),
@@ -2625,24 +2662,23 @@ class _CalendarPageState extends State<CalendarPage> {
                                         behavior: ScrollConfiguration.of(
                                           context,
                                         ).copyWith(scrollbars: false),
-                                        child: SingleChildScrollView(
+                                        // Virtualized — mirrors itemCount and
+                                        // itemExtent of the main grid list so
+                                        // the jumpTo() sync stays pixel-perfect.
+                                        child: ListView.builder(
                                           controller:
                                               _stickyDayLabelsScrollController,
-                                          scrollDirection: Axis.vertical,
+                                          itemCount: _totalDaysLoaded,
+                                          itemExtent: _dayRowHeight,
                                           physics:
                                               const NeverScrollableScrollPhysics(),
-                                          child: Column(
-                                            children: _dates.map((date) {
-                                              final isToday = isSameDay(
-                                                date,
-                                                DateTime.now(),
-                                              );
-                                              return _buildStickyDayLabel(
-                                                date,
-                                                isToday,
-                                              );
-                                            }).toList(),
-                                          ),
+                                          itemBuilder: (ctx, i) {
+                                            final date = _dates[i];
+                                            return _buildStickyDayLabel(
+                                              date,
+                                              isSameDay(date, DateTime.now()),
+                                            );
+                                          },
                                         ),
                                       ),
                                     ),
@@ -2670,17 +2706,14 @@ class _CalendarPageState extends State<CalendarPage> {
                                     },
                                   ),
 
-                                  // Red line overlay for today's date
-                                  if (_dates.any(
-                                    (date) => isSameDay(date, DateTime.now()),
-                                  ))
+                                  // Red line overlay for today's date.
+                                  // Uses _cachedTodayIndex (computed once in
+                                  // _dates getter) — no O(n) scan per frame.
+                                  if (_cachedTodayIndex >= 0)
                                     AnimatedBuilder(
                                       animation: _verticalScrollController,
                                       builder: (context, _) {
-                                        final todayIndex = _dates.indexWhere(
-                                          (date) =>
-                                              isSameDay(date, DateTime.now()),
-                                        );
+                                        final todayIndex = _cachedTodayIndex;
                                         if (todayIndex == -1) {
                                           return const SizedBox.shrink();
                                         }
@@ -2778,6 +2811,9 @@ class _CalendarPageState extends State<CalendarPage> {
     final userId = AuthScopeData.of(context).uid;
     if (hotelId == null || userId == null) return;
     final nestedNavigator = Navigator.of(context, rootNavigator: false);
+    // Capture the calendar page context so notifications use the global
+    // AppNotificationScope instead of the inner dialog context.
+    final rootContext = context;
     showDialog(
       context: context,
       barrierDismissible: true,
@@ -2854,10 +2890,12 @@ class _CalendarPageState extends State<CalendarPage> {
                 buildStatusRowWithStatus: _buildStatusRowWithStatus,
                 roomIdToName: _roomIdToNameMap,
                 onSave: (updated) async {
-                  await _updateBooking(userId, hotelId, updated);
-                  if (dialogContext.mounted) {
-                    showAppNotification(dialogContext, 'Booking updated', type: AppNotificationType.success);
-                  }
+                  await _saveBookingAndUpdateRooms(
+                    notificationContext: rootContext,
+                    userId: userId,
+                    hotelId: hotelId,
+                    updatedBooking: updated,
+                  );
                 },
                 onDelete: () async {
                   final navigator = Navigator.of(dialogContext);
@@ -2874,7 +2912,11 @@ class _CalendarPageState extends State<CalendarPage> {
                     if (!mounted) return;
                     navigator.pop();
                     navigator.pop();
-                    showAppNotification(dialogContext, 'Failed to delete: $e', type: AppNotificationType.error);
+                    showAppNotification(
+                      rootContext,
+                      'Failed to delete: $e',
+                      type: AppNotificationType.error,
+                    );
                   }
                 },
                 onEditFull: () {
@@ -3001,6 +3043,10 @@ class _CalendarPageState extends State<CalendarPage> {
     } else if (isWeekend) {
       rowColor = scheme.surfaceContainerLowest.withOpacity(0.5);
     }
+    // Compute dateKey once per row (same for all room cells in this row).
+    final dateKey = DateTime(date.year, date.month, date.day);
+    final rowCache = _cellDataCache[dateKey];
+    final rooms = _displayedRoomNames;
     return Container(
       height: _dayRowHeight,
       decoration: BoxDecoration(color: rowColor),
@@ -3010,12 +3056,11 @@ class _CalendarPageState extends State<CalendarPage> {
           SizedBox(width: _dayLabelWidth),
           // Room cells — read pre-computed data from cache.
           Row(
-            children: _displayedRoomNames.map((room) {
-              final dateKey = DateTime(date.year, date.month, date.day);
-              final cellData =
-                  _cellDataCache[dateKey]?[room] ?? CalendarCellData.empty;
-              return _buildRoomCell(room, date, cellData);
-            }).toList(),
+            children: List.generate(rooms.length, (roomIdx) {
+              final room = rooms[roomIdx];
+              final cellData = rowCache?[room] ?? CalendarCellData.empty;
+              return _buildRoomCell(room, roomIdx, date, cellData);
+            }),
           ),
         ],
       ),
@@ -3093,9 +3138,11 @@ class _CalendarPageState extends State<CalendarPage> {
   /// Builds a single room × date cell using pre-computed [cellData] from the
   /// cache. Hover and skeleton state are read via [ValueListenableBuilder] so
   /// only the affected cell — not the whole page — rebuilds on mouse events.
-  Widget _buildRoomCell(String room, DateTime date, CalendarCellData cellData) {
+  /// [roomIdx] is the index of [room] in [_displayedRoomNames] — passed in
+  /// from [_buildDayRow] to avoid a redundant indexOf call here.
+  Widget _buildRoomCell(String room, int roomIdx, DateTime date, CalendarCellData cellData) {
     final booking = cellData.booking;
-    final isSelected = _isCellInSelection(room, date);
+    final isSelected = _isCellInSelection(roomIdx, date);
 
     final scheme = Theme.of(context).colorScheme;
     final outlineColor = scheme.outline.withOpacity(0.3);
@@ -3133,7 +3180,7 @@ class _CalendarPageState extends State<CalendarPage> {
           child: GestureDetector(
             onTap: () {
               if (booking != null) {
-                _showBookingDetails(context, room, date, booking);
+                _showBookingDetailsById(context, booking.bookingId);
               } else if (!_isSelecting) {
                 _showBookingDialog([room], [date], false);
               }
@@ -3635,145 +3682,6 @@ class _CalendarPageState extends State<CalendarPage> {
                 ],
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showBookingDetails(
-    BuildContext context,
-    String room,
-    DateTime date,
-    CalendarBooking booking,
-  ) {
-    final hotelId = HotelProvider.of(context).hotelId;
-    final userId = AuthScopeData.of(context).uid;
-    if (hotelId == null || userId == null) return;
-    final bookingId = booking.bookingId;
-    final nestedNavigator = Navigator.of(context, rootNavigator: false);
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (dialogContext) => Dialog(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 520),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: Theme.of(context).colorScheme.shadow.withOpacity(0.15),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: _firebaseService.bookingDocStream(
-              userId,
-              hotelId,
-              bookingId,
-            ),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const Padding(
-                  padding: EdgeInsets.all(48),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              final doc = snapshot.data!;
-              if (!doc.exists) {
-                return Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Booking removed',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: TextButton(
-                          onPressed: () => Navigator.pop(dialogContext),
-                          child: const Text('Close'),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }
-              final fullBooking = BookingModel.fromFirestore(
-                doc.data()!,
-                doc.id,
-              );
-              final currencyFormatter = CurrencyFormatter.fromHotel(
-                HotelProvider.of(context).currentHotel,
-              );
-              return BookingDetailsForm(
-                key: ValueKey(fullBooking.id),
-                fullBooking: fullBooking,
-                room: room,
-                date: date,
-                bookingId: bookingId,
-                statusOptions: statusOptions,
-                getStatusColor: _statusColor,
-                paymentMethods: paymentMethods,
-                currencyFormatter: currencyFormatter,
-                buildDetailRow: _buildDetailRow,
-                buildStatusRowWithStatus: _buildStatusRowWithStatus,
-                roomIdToName: _roomIdToNameMap,
-                onSave: (updated) async {
-                  await _updateBooking(userId, hotelId, updated);
-                  if (dialogContext.mounted) {
-                    showAppNotification(dialogContext, 'Booking updated', type: AppNotificationType.success);
-                  }
-                },
-                onDelete: () async {
-                  final navigator = Navigator.of(dialogContext);
-                  final confirm = await _showDeleteConfirmation(dialogContext);
-                  if (confirm != true) return;
-                  if (!mounted) return;
-                  try {
-                    _showLoadingDialog(dialogContext);
-                    await _deleteBooking(userId, hotelId, bookingId);
-                    if (!mounted) return;
-                    navigator.pop();
-                    navigator.pop();
-                  } catch (e) {
-                    if (!mounted) return;
-                    navigator.pop();
-                    navigator.pop();
-                    showAppNotification(dialogContext, 'Failed to delete: $e', type: AppNotificationType.error);
-                  }
-                },
-                onEditFull: () {
-                  Navigator.pop(dialogContext);
-                  nestedNavigator
-                      .push(
-                        MaterialPageRoute(
-                          builder: (context) => AddBookingPage(
-                            existingBooking: fullBooking,
-                            preselectedRoom: room,
-                            preselectedStartDate: fullBooking.checkIn,
-                            preselectedEndDate: fullBooking.checkOut,
-                            preselectedNumberOfRooms: fullBooking.numberOfRooms,
-                          ),
-                        ),
-                      )
-                      .then((bookingCreated) {
-                        if (bookingCreated == true) {
-                          _subscribeToBookings();
-                        }
-                      });
-                },
-                onClose: () => Navigator.pop(dialogContext),
-              );
-            },
           ),
         ),
       ),

@@ -70,9 +70,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   final List<GlobalKey<NavigatorState>> _navigatorKeys =
       List.generate(9, (_) => GlobalKey<NavigatorState>());
 
-  List<Widget> get _pages {
+  /// Titles for the five pages reachable from the More menu (indices 4–8).
+  static const List<String> _menuPageTitles = [
+    'Clients',
+    'Calendar',
+    'Employees',
+    'Shifts',
+    'Settings',
+  ];
+
+  List<Widget> _buildPageList(bool isDesktop) {
     final onMoreSelect = (int index) => setState(() => _selectedIndex = index);
-    return [
+    final raw = <Widget>[
       const DashboardPage(),
       const AddBookingPage(),
       const BookingsListPage(),
@@ -83,6 +92,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       const SchedulePage(),
       const SettingsPage(),
     ];
+    if (isDesktop) return raw;
+    // On mobile, wrap menu pages (4–8) with an AppBar that has a back arrow to More.
+    return List.generate(9, (i) {
+      if (i >= 4 && i <= 8) {
+        return _MobileBackToMenuWrapper(
+          title: _menuPageTitles[i - 4],
+          onBack: () => setState(() => _selectedIndex = 3),
+          child: raw[i],
+        );
+      }
+      return raw[i];
+    });
   }
 
   static const List<_NavItem> _navItems = [
@@ -117,6 +138,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final colorScheme = Theme.of(context).colorScheme;
 
+    final pageList = _buildPageList(isDesktop);
     final tabStack = IndexedStack(
       index: _selectedIndex,
       children: List.generate(9, (i) {
@@ -125,7 +147,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           initialRoute: '/',
           onGenerateRoute: (settings) {
             if (settings.name == '/') {
-              return MaterialPageRoute<void>(builder: (_) => _pages[i]);
+              return MaterialPageRoute<void>(builder: (_) => pageList[i]);
             }
             return null;
           },
@@ -152,17 +174,31 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       drawer: isDesktop ? null : const Drawer(child: _SignOutDrawer()),
       bottomNavigationBar: isDesktop
           ? null
-          : NavigationBar(
-              selectedIndex: _pageIndexToMobileBarIndex(_selectedIndex),
-              onDestinationSelected: (i) =>
-                  setState(() => _selectedIndex = _mobileBarIndexToPageIndex(i)),
-              labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-              destinations: _mobileNavItems
-                  .map((item) => NavigationDestination(
-                        icon: Icon(item.icon),
-                        label: item.label,
-                      ))
-                  .toList(),
+          // iOS-style: thin hairline top border, no shadow, no pill indicator.
+          : DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.12)
+                        : Colors.black.withOpacity(0.10),
+                    width: 0.5,
+                  ),
+                ),
+              ),
+              child: NavigationBar(
+                selectedIndex: _pageIndexToMobileBarIndex(_selectedIndex),
+                onDestinationSelected: (i) => setState(
+                  () => _selectedIndex = _mobileBarIndexToPageIndex(i),
+                ),
+                labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                destinations: _mobileNavItems
+                    .map((item) => NavigationDestination(
+                          icon: Icon(item.icon),
+                          label: item.label,
+                        ))
+                    .toList(),
+              ),
             ),
     );
   }
@@ -290,6 +326,13 @@ class _SidebarNavItem extends StatelessWidget {
   }
 }
 
+/// Apple Settings-style "More" screen.
+///
+/// Layout mirrors iOS Settings.app:
+///  • page background: #F2F2F7 (light) / pure black (dark)
+///  • groups: white (light) / #1C1C1E (dark) rounded-12 cards
+///  • each row: 32×32 colored rounded-square icon + label + chevron
+///  • inset hairline divider between rows (starts after the icon)
 class _MoreMenuPage extends StatelessWidget {
   const _MoreMenuPage({required this.onSelect});
   final ValueChanged<int> onSelect;
@@ -297,44 +340,223 @@ class _MoreMenuPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final items = [
-      const _NavItem(Icons.calendar_month_rounded, 'Calendar', 5),
-      const _NavItem(Icons.person_rounded, 'Clients', 4),
-      const _NavItem(Icons.people_rounded, 'Employees', 6),
-      const _NavItem(Icons.schedule_rounded, 'Shifts', 7),
-      const _NavItem(Icons.settings_rounded, 'Settings', 8),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final auth = AuthScopeData.of(context);
+
+    const navItems = <_MoreItem>[
+      _MoreItem(Icons.calendar_month_rounded, 'Calendar',  5, Color(0xFFFF3B30)),
+      _MoreItem(Icons.person_rounded,         'Clients',   4, Color(0xFF34C759)),
+      _MoreItem(Icons.people_rounded,         'Employees', 6, Color(0xFFFF9500)),
+      _MoreItem(Icons.schedule_rounded,       'Shifts',    7, Color(0xFFAF52DE)),
     ];
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('More'),
-        centerTitle: true,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
-      ),
+      backgroundColor: isDark ? Colors.black : const Color(0xFFF2F2F7),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          children: items
-              .map((item) => ListTile(
-                    leading: Icon(item.icon,
-                        color: StayoraLogo.stayoraBlue, size: 24),
-                    title: Text(
-                      item.label,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: colorScheme.onSurface,
-                      ),
+          padding: EdgeInsets.zero,
+          children: [
+            // ── Large iOS-style title ────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+              child: Text(
+                'More',
+                style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+            ),
+
+            // ── Navigation group ─────────────────────────────────────
+            _IosGroupCard(
+              isDark: isDark,
+              children: [
+                for (int i = 0; i < navItems.length; i++) ...[
+                  _IosMenuRow(
+                    item: navItems[i],
+                    colorScheme: colorScheme,
+                    onTap: () => onSelect(navItems[i].pageIndex),
+                  ),
+                  if (i < navItems.length - 1) _IosInsetDivider(isDark: isDark),
+                ],
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // ── Settings group ───────────────────────────────────────
+            _IosGroupCard(
+              isDark: isDark,
+              children: [
+                _IosMenuRow(
+                  item: const _MoreItem(
+                    Icons.settings_rounded,
+                    'Settings',
+                    8,
+                    Color(0xFF8E8E93),
+                  ),
+                  colorScheme: colorScheme,
+                  onTap: () => onSelect(8),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // ── Sign out group ───────────────────────────────────────
+            _IosGroupCard(
+              isDark: isDark,
+              children: [
+                InkWell(
+                  onTap: () async => auth.signOut(),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 13,
                     ),
-                    trailing: Icon(Icons.chevron_right_rounded,
-                        color: colorScheme.onSurfaceVariant, size: 24),
-                    onTap: () => onSelect(item.pageIndex),
-                  ))
-              .toList(),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF3B30),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.logout_rounded,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Text(
+                          'Sign Out',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w400,
+                            color: Color(0xFFFF3B30),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 32),
+          ],
         ),
       ),
+    );
+  }
+}
+
+// ── iOS grouped card ─────────────────────────────────────────────────────────
+
+/// Data class for a More-menu row.
+class _MoreItem {
+  final IconData icon;
+  final String label;
+  final int pageIndex;
+  final Color iconColor;
+  const _MoreItem(this.icon, this.label, this.pageIndex, this.iconColor);
+}
+
+/// White / dark rounded-12 card that wraps a list of rows (iOS grouped style).
+class _IosGroupCard extends StatelessWidget {
+  const _IosGroupCard({required this.isDark, required this.children});
+
+  final bool isDark;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: ColoredBox(
+          color: bg,
+          child: Column(mainAxisSize: MainAxisSize.min, children: children),
+        ),
+      ),
+    );
+  }
+}
+
+/// One row inside a [_IosGroupCard]: coloured icon badge · title · chevron.
+class _IosMenuRow extends StatelessWidget {
+  const _IosMenuRow({
+    required this.item,
+    required this.colorScheme,
+    required this.onTap,
+  });
+
+  final _MoreItem item;
+  final ColorScheme colorScheme;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        child: Row(
+          children: [
+            // Coloured rounded-square icon badge (like iOS Settings)
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: item.iconColor,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(item.icon, color: Colors.white, size: 18),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                item.label,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w400,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: colorScheme.onSurfaceVariant.withOpacity(0.45),
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Inset hairline separator that starts after the icon badge (iOS-style).
+class _IosInsetDivider extends StatelessWidget {
+  const _IosInsetDivider({required this.isDark});
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    return Divider(
+      height: 0.5,
+      thickness: 0.5,
+      // 16 (h-padding) + 32 (icon) + 14 (gap) = 62
+      indent: 62,
+      endIndent: 0,
+      color: isDark
+          ? Colors.white.withOpacity(0.12)
+          : Colors.black.withOpacity(0.10),
     );
   }
 }
@@ -342,8 +564,7 @@ class _MoreMenuPage extends StatelessWidget {
 class _NavItem {
   final IconData icon;
   final String label;
-  final int pageIndex;
-  const _NavItem(this.icon, this.label, [this.pageIndex = -1]);
+  const _NavItem(this.icon, this.label);
 }
 
 class _SignOutTile extends StatelessWidget {
@@ -392,6 +613,53 @@ class _SignOutDrawer extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// On mobile, wraps a page (opened from the More menu) in a [Scaffold] with an
+/// [AppBar] that has a back arrow returning to the More menu.
+class _MobileBackToMenuWrapper extends StatelessWidget {
+  const _MobileBackToMenuWrapper({
+    required this.title,
+    required this.onBack,
+    required this.child,
+  });
+
+  final String title;
+  final VoidCallback onBack;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          onPressed: onBack,
+          tooltip: 'Back to More',
+          style: IconButton.styleFrom(
+            foregroundColor: colorScheme.primary,
+          ),
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        centerTitle: true,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: colorScheme.surface,
+        foregroundColor: colorScheme.onSurface,
+      ),
+      body: child,
     );
   }
 }
