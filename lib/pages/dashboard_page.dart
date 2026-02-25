@@ -743,7 +743,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                     value: currencyFormatter.formatCompact(
                                       _revenueThisMonth,
                                     ),
-                                    icon: Icons.attach_money_rounded,
+                                    icon: currencyFormatter.currencyIcon,
                                     color: StayoraColors.purple,
                                     trend:
                                         'sum of amount paid (check-in this month)',
@@ -808,7 +808,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                           title: 'Revenue this month',
                                           value: currencyFormatter
                                               .formatCompact(_revenueThisMonth),
-                                          icon: Icons.attach_money_rounded,
+                                          icon: currencyFormatter.currencyIcon,
                                           color: StayoraColors.purple,
                                           trend:
                                               'sum of amount paid (check-in this month)',

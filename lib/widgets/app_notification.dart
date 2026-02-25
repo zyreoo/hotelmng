@@ -19,7 +19,7 @@ class AppNotificationData {
   final AppNotificationType type;
 }
 
-/// Clean Apple-style toast: top-right corner, rounded, soft shadow, auto-dismiss.
+/// Clean Apple-style toast: top-center, below safe area, rounded, soft shadow, auto-dismiss.
 class AppNotificationWidget extends StatelessWidget {
   const AppNotificationWidget({
     super.key,
@@ -46,7 +46,7 @@ class AppNotificationWidget extends StatelessWidget {
       color: Colors.transparent,
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.only(top: 12, right: 16),
+          padding: const EdgeInsets.only(top: 12, left: 16, right: 16),
           child: Align(
             alignment: Alignment.topRight,
             child: TweenAnimationBuilder<double>(
@@ -55,7 +55,7 @@ class AppNotificationWidget extends StatelessWidget {
               curve: Curves.easeOutCubic,
               builder: (context, value, child) {
                 return Transform.translate(
-                  offset: Offset((1 - value) * 120, 0),
+                  offset: Offset(0, (value - 1) * 80),
                   child: Opacity(
                     opacity: value,
                     child: child,
@@ -251,11 +251,11 @@ class AppNotificationOverlay extends StatelessWidget {
 
     return Positioned(
       top: 0,
-      right: 0,
       left: 0,
+      right: 0,
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.only(top: 12, right: 16),
+          padding: const EdgeInsets.only(top: 12, left: 16, right: 16),
           child: Align(
             alignment: Alignment.topRight,
             child: TweenAnimationBuilder<double>(
@@ -264,7 +264,7 @@ class AppNotificationOverlay extends StatelessWidget {
               curve: Curves.easeOutCubic,
               builder: (context, value, child) {
                 return Transform.translate(
-                  offset: Offset((1 - value) * 120, 0),
+                  offset: Offset(0, (value - 1) * 80),
                   child: Opacity(opacity: value, child: child),
                 );
               },

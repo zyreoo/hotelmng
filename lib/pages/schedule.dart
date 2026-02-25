@@ -372,14 +372,19 @@ class _SchedulePageState extends State<SchedulePage> {
         .collection('employers')
         .where('status', isEqualTo: 'Active')
         .snapshots()
-        .listen((snapshot) {
-      if (!mounted) return;
-      setState(() {
-        _employees = snapshot.docs
-            .map((doc) => EmployerModel.fromFirestore(doc.data(), doc.id))
-            .toList();
-      });
-    });
+        .listen(
+      (snapshot) {
+        if (!mounted) return;
+        setState(() {
+          _employees = snapshot.docs
+              .map((doc) => EmployerModel.fromFirestore(doc.data(), doc.id))
+              .toList();
+        });
+      },
+      onError: (Object e, StackTrace st) {
+        debugPrint('Schedule employers stream error: $e');
+      },
+    );
   }
 
   void _subscribeToShifts() {
@@ -396,10 +401,15 @@ class _SchedulePageState extends State<SchedulePage> {
         .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(weekStart))
         .where('date', isLessThan: Timestamp.fromDate(weekEnd))
         .snapshots()
-        .listen((snapshot) {
-      if (!mounted) return;
-      _processShiftChanges(snapshot.docs);
-    });
+        .listen(
+      (snapshot) {
+        if (!mounted) return;
+        _processShiftChanges(snapshot.docs);
+      },
+      onError: (Object e, StackTrace st) {
+        debugPrint('Schedule shifts stream error: $e');
+      },
+    );
   }
 
   void _processShiftChanges(List<QueryDocumentSnapshot> docs) {

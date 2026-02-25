@@ -851,7 +851,7 @@ class _BookingCard extends StatelessWidget {
                 if (booking.amountOfMoneyPaid > 0) ...[
                   const SizedBox(height: 8),
                   _InfoRow(
-                    icon: Icons.payments_rounded,
+                    icon: currencyFormatter.currencyIcon,
                     label: 'Paid',
                     value: currencyFormatter.formatCompact(
                       booking.amountOfMoneyPaid,

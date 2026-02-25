@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/auth_provider.dart';
 import '../services/hotel_provider.dart';
 import '../services/theme_provider.dart';
+import '../utils/currency_formatter.dart';
 import '../utils/stayora_colors.dart';
 import '../widgets/stayora_logo.dart';
 import '../widgets/app_notification.dart';
@@ -423,7 +424,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                       const Divider(height: 1),
                       _SettingsTile(
-                        icon: Icons.attach_money_rounded,
+                        icon: CurrencyFormatter.fromHotel(hotel).currencyIcon,
                         title: 'Currency',
                         subtitle:
                             '${hotel?.currencyCode ?? 'EUR'} (${hotel?.currencySymbol ?? '€'})',

@@ -70,6 +70,9 @@ class _EmployeesPageState extends State<EmployeesPage> {
         .doc(hotelId)
         .collection('employers')
         .snapshots()
+        .handleError((Object e, StackTrace st) {
+          debugPrint('Employers stream error: $e');
+        })
         .map(
           (snapshot) => snapshot.docs
               .map((doc) => EmployerModel.fromFirestore(doc.data(), doc.id))

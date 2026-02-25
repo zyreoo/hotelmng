@@ -118,6 +118,20 @@ class _HotelProviderState extends State<HotelProvider> {
     return list;
   }
 
+  Future<void> deleteHotel(String hotelId, {String? ownerId}) async {
+    final uid = ownerId ?? AuthScopeData.of(context).uid ?? defaultOwnerId;
+    if (hotelId.isEmpty) return;
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('hotels')
+        .doc(hotelId)
+        .delete();
+    if (_currentHotel?.id == hotelId && mounted) {
+      await setCurrentHotel(null);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -131,6 +145,7 @@ class _HotelProviderState extends State<HotelProvider> {
       setCurrentHotel: setCurrentHotel,
       createHotel: createHotel,
       getHotelsForOwner: getHotelsForOwner,
+      deleteHotel: deleteHotel,
       child: widget.child,
     );
   }
@@ -142,6 +157,7 @@ class HotelScopeData extends InheritedWidget {
   final Future<HotelModel> Function(String name,
       {String? ownerId, bool setAsCurrent}) createHotel;
   final Future<List<HotelModel>> Function({String? ownerId}) getHotelsForOwner;
+  final Future<void> Function(String hotelId, {String? ownerId}) deleteHotel;
 
   const HotelScopeData({
     super.key,
@@ -149,6 +165,7 @@ class HotelScopeData extends InheritedWidget {
     required this.setCurrentHotel,
     required this.createHotel,
     required this.getHotelsForOwner,
+    required this.deleteHotel,
     required super.child,
   });
 

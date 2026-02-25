@@ -557,7 +557,7 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
                 context,
                 'Advance paid',
                 '0.00',
-                icon: Icons.payments_rounded,
+                icon: widget.currencyFormatter.currencyIcon,
               ),
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
@@ -693,7 +693,7 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
             context,
             'Amount paid',
             '0.00',
-            icon: Icons.payments_rounded,
+            icon: widget.currencyFormatter.currencyIcon,
           ),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           onChanged: (_) => setState(() {}),

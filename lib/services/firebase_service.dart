@@ -500,6 +500,17 @@ class FirebaseService {
     await _employersRef(userId, hotelId).doc(employer.id!).update(data);
   }
 
+  Future<void> deleteEmployer(
+    String userId,
+    String hotelId,
+    String employerId,
+  ) async {
+    if (!isInitialized || employerId.isEmpty) {
+      throw Exception('Cannot delete employer: missing id.');
+    }
+    await _employersRef(userId, hotelId).doc(employerId).delete();
+  }
+
   // ─── Roles and departments (per hotel) ────────────────────────────────────
   Future<List<String>> getRoles(String userId, String hotelId) async {
     if (!isInitialized) return [];

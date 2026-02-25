@@ -1784,7 +1784,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   ),
                                   filled: true,
                                   fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                  prefixIcon: const Icon(Icons.euro_rounded),
+                                  prefixIcon: Icon(currencyFormatter.currencyIcon),
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16,
                                     vertical: 14,
@@ -2143,8 +2143,8 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         ),
                                         filled: true,
                                         fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                        prefixIcon: const Icon(
-                                            Icons.payments_rounded,
+                                        prefixIcon: Icon(
+                                            currencyFormatter.currencyIcon,
                                             size: 20),
                                         contentPadding:
                                             const EdgeInsets.symmetric(
@@ -2354,7 +2354,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   ),
                                   filled: true,
                                   fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                  prefixIcon: const Icon(Icons.payments_rounded),
+                                  prefixIcon: Icon(currencyFormatter.currencyIcon),
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16,
                                     vertical: 16,

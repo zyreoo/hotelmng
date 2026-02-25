@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/hotel_model.dart';
 
@@ -7,6 +8,19 @@ class CurrencyFormatter {
   final String currencySymbol;
 
   CurrencyFormatter({required this.currencyCode, required this.currencySymbol});
+
+  /// Icon to use for this currency everywhere in the app (inputs, list tiles, stats).
+  /// Matches the configured currency: EUR → euro, USD → dollar, others (e.g. RON) → generic payments.
+  IconData get currencyIcon {
+    switch (currencyCode.toUpperCase()) {
+      case 'EUR':
+        return Icons.euro_rounded;
+      case 'USD':
+        return Icons.attach_money_rounded;
+      default:
+        return Icons.payments_rounded;
+    }
+  }
 
   /// Create formatter from hotel model.
   factory CurrencyFormatter.fromHotel(HotelModel? hotel) {
