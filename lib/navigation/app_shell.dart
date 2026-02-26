@@ -16,6 +16,7 @@ import '../pages/room_management_page.dart';
 import '../pages/services_page.dart';
 import '../pages/housekeeping_page.dart';
 import '../pages/tasks_page.dart';
+import '../models/hotel_model.dart';
 
 /// Wraps [child] with [HotelProvider] only when the user is logged in.
 class WrapHotelWhenLoggedIn extends StatelessWidget {
@@ -71,8 +72,10 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _selectedIndex = 0;
 
-  final List<GlobalKey<NavigatorState>> _navigatorKeys =
-      List.generate(13, (_) => GlobalKey<NavigatorState>());
+  final List<GlobalKey<NavigatorState>> _navigatorKeys = List.generate(
+    13,
+    (_) => GlobalKey<NavigatorState>(),
+  );
 
   /// Titles for pages reachable from the More menu (indices 4–12).
   static const List<String> _menuPageTitles = [
@@ -120,20 +123,33 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   static const List<_NavItem> _navItems = [
     _NavItem(Icons.dashboard_rounded, 'Dashboard'),
+    _NavItem(Icons.calendar_month_rounded, 'Calendar'),
     _NavItem(Icons.add_circle_outline_rounded, 'Add Booking'),
     _NavItem(Icons.list_alt_rounded, 'Bookings'),
-    _NavItem(Icons.calendar_month_rounded, 'Calendar'),
     _NavItem(Icons.person_rounded, 'Clients'),
+    _NavItem(Icons.meeting_room_rounded, 'Rooms'),
+    _NavItem(Icons.room_service_rounded, 'Services'),
+    _NavItem(Icons.cleaning_services_rounded, 'Housekeeping'),
     _NavItem(Icons.people_rounded, 'Employees'),
     _NavItem(Icons.schedule_rounded, 'Shifts'),
     _NavItem(Icons.task_alt_rounded, 'Tasks'),
     _NavItem(Icons.settings_rounded, 'Settings'),
-    _NavItem(Icons.meeting_room_rounded, 'Rooms'),
-    _NavItem(Icons.room_service_rounded, 'Services'),
-    _NavItem(Icons.cleaning_services_rounded, 'Housekeeping'),
   ];
 
-  static const List<int> _navIndexToPageIndex = [0, 1, 2, 5, 4, 6, 7, 12, 8, 9, 10, 11];
+  static const List<int> _navIndexToPageIndex = [
+    0,
+    5,
+    1,
+    2,
+    4,
+    9,
+    10,
+    11,
+    6,
+    7,
+    12,
+    8,
+  ];
 
   static const List<_NavItem> _mobileNavItems = [
     _NavItem(Icons.dashboard_rounded, 'Dashboard'),
@@ -142,12 +158,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     _NavItem(Icons.menu_rounded, 'More'),
   ];
 
-  int _mobileBarIndexToPageIndex(int barIndex) =>
-      barIndex <= 2 ? barIndex : 3;
+  int _mobileBarIndexToPageIndex(int barIndex) => barIndex <= 2 ? barIndex : 3;
 
   int _pageIndexToMobileBarIndex(int pageIndex) =>
       pageIndex <= 2 ? pageIndex : 3;
-
 
   @override
   Widget build(BuildContext context) {
@@ -197,8 +211,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 border: Border(
                   top: BorderSide(
                     color: isDark
-                        ? Colors.white.withOpacity(0.12)
-                        : Colors.black.withOpacity(0.10),
+                        ? Colors.white.withValues(alpha: 0.12)
+                        : Colors.black.withValues(alpha: 0.10),
                     width: 0.5,
                   ),
                 ),
@@ -210,10 +224,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 ),
                 labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
                 destinations: _mobileNavItems
-                    .map((item) => NavigationDestination(
-                          icon: Icon(item.icon),
-                          label: item.label,
-                        ))
+                    .map(
+                      (item) => NavigationDestination(
+                        icon: Icon(item.icon),
+                        label: item.label,
+                      ),
+                    )
                     .toList(),
               ),
             ),
@@ -246,7 +262,7 @@ class _DesktopSidebar extends StatelessWidget {
         color: colorScheme.surface,
         boxShadow: [
           BoxShadow(
-            color: colorScheme.shadow.withOpacity(isDark ? 0.3 : 0.05),
+            color: colorScheme.shadow.withValues(alpha: isDark ? 0.3 : 0.05),
             blurRadius: 10,
             offset: const Offset(2, 0),
           ),
@@ -260,37 +276,18 @@ class _DesktopSidebar extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 4),
               child: StayoraLogo(fontSize: 22, fontWeight: FontWeight.bold),
             ),
-            Builder(builder: (context) {
-              final hotel = HotelProvider.of(context).currentHotel;
-              if (hotel == null) return const SizedBox(height: 12);
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(24, 2, 24, 12),
-                child: Row(
-                  children: [
-                    Icon(Icons.hotel_rounded,
-                        size: 13, color: colorScheme.onSurfaceVariant),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        hotel.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 2, 24, 12),
+              child: _HotelSelector(colorScheme: colorScheme),
+            ),
             const Divider(height: 1),
             const SizedBox(height: 8),
             Expanded(
               child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 itemCount: navItems.length,
                 itemBuilder: (context, index) {
                   final pageIndex = navIndexToPageIndex[index];
@@ -342,7 +339,7 @@ class _SidebarNavItem extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           color: isSelected
-              ? blue.withOpacity(isDark ? 0.2 : 0.1)
+              ? blue.withValues(alpha: isDark ? 0.2 : 0.1)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),
@@ -369,6 +366,262 @@ class _SidebarNavItem extends StatelessWidget {
   }
 }
 
+class _HotelSelector extends StatefulWidget {
+  const _HotelSelector({required this.colorScheme});
+
+  final ColorScheme colorScheme;
+
+  @override
+  State<_HotelSelector> createState() => _HotelSelectorState();
+}
+
+class _HotelSelectorState extends State<_HotelSelector> {
+  List<HotelModel> _hotels = [];
+  bool _loading = false;
+  bool _loadedOnce = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_loadedOnce) {
+      _loadedOnce = true;
+      _loadHotels();
+    }
+  }
+
+  Future<void> _loadHotels() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    try {
+      final scope = HotelProvider.of(context);
+      final list = await scope.getHotelsForOwner();
+      if (!mounted) return;
+      setState(() {
+        _hotels = list;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _showHotelPicker() async {
+    await _loadHotels();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final scope = HotelProvider.of(ctx);
+        final current = scope.currentHotel;
+        final colorScheme = Theme.of(ctx).colorScheme;
+        final textTheme = Theme.of(ctx).textTheme;
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).padding.bottom),
+          child: Container(
+            decoration: BoxDecoration(
+              color: colorScheme.surface,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 16,
+                  offset: const Offset(0, -2),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: colorScheme.onSurface.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Your hotels',
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 6),
+                  if (_hotels.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        'No hotels yet. Create a new one.',
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  if (_hotels.isNotEmpty)
+                    ..._hotels.map((hotel) {
+                      final isCurrent = current?.id == hotel.id;
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Material(
+                          color: colorScheme.surfaceContainerHighest.withValues(
+                            alpha: 0.6,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () async {
+                              await scope.setCurrentHotel(hotel);
+                              Navigator.of(ctx).pop();
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.hotel_rounded,
+                                    size: 20,
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      hotel.name,
+                                      style: textTheme.bodyMedium?.copyWith(
+                                        color: colorScheme.onSurface,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                  if (isCurrent)
+                                    Icon(
+                                      Icons.check_rounded,
+                                      size: 20,
+                                      color: StayoraLogo.stayoraBlue,
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  const SizedBox(height: 12),
+                  Material(
+                    color: colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.6,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                const HotelSetupPage(allowCancel: true),
+                          ),
+                        );
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.add_rounded,
+                              size: 20,
+                              color: StayoraLogo.stayoraBlue,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Add new hotel',
+                                style: textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: StayoraLogo.stayoraBlue,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = HotelProvider.of(context);
+    final hotel = scope.currentHotel;
+
+    if (hotel == null) {
+      return const SizedBox(height: 12);
+    }
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: _loading ? null : _showHotelPicker,
+      child: Row(
+        children: [
+          Icon(
+            Icons.hotel_rounded,
+            size: 13,
+            color: widget.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              hotel.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                color: widget.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Icon(
+            Icons.arrow_drop_down_rounded,
+            size: 18,
+            color: widget.colorScheme.onSurfaceVariant,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Apple Settings-style "More" screen.
 ///
 /// Layout mirrors iOS Settings.app:
@@ -387,18 +640,20 @@ class _MoreMenuPage extends StatelessWidget {
     final auth = AuthScopeData.of(context);
     final hotel = HotelProvider.of(context).currentHotel;
 
-    const bookingNavItems = <_MoreItem>[
-      _MoreItem(Icons.calendar_month_rounded, 'Calendar',          5, Color(0xFFFF3B30)),
-      _MoreItem(Icons.person_rounded,         'Clients',           4, Color(0xFF34C759)),
-      _MoreItem(Icons.people_rounded,         'Employees',         6, Color(0xFFFF9500)),
-      _MoreItem(Icons.schedule_rounded,       'Shifts',            7, Color(0xFFAF52DE)),
-      _MoreItem(Icons.task_alt_rounded,       'Tasks',            12, Color(0xFF5AC8FA)),
-    ];
-
-    const hotelNavItems = <_MoreItem>[
-      _MoreItem(Icons.meeting_room_rounded,        'Rooms',        9,  Color(0xFF007AFF)),
-      _MoreItem(Icons.room_service_rounded,        'Services',    10,  Color(0xFF30B0C7)),
-      _MoreItem(Icons.cleaning_services_rounded,   'Housekeeping',11,  Color(0xFF64D2FF)),
+    const moreNavItems = <_MoreItem>[
+      _MoreItem(Icons.calendar_month_rounded, 'Calendar', 5, Color(0xFFFF3B30)),
+      _MoreItem(Icons.person_rounded, 'Clients', 4, Color(0xFF34C759)),
+      _MoreItem(Icons.meeting_room_rounded, 'Rooms', 9, Color(0xFF007AFF)),
+      _MoreItem(Icons.room_service_rounded, 'Services', 10, Color(0xFF30B0C7)),
+      _MoreItem(
+        Icons.cleaning_services_rounded,
+        'Housekeeping',
+        11,
+        Color(0xFF64D2FF),
+      ),
+      _MoreItem(Icons.people_rounded, 'Employees', 6, Color(0xFFFF9500)),
+      _MoreItem(Icons.schedule_rounded, 'Shifts', 7, Color(0xFFAF52DE)),
+      _MoreItem(Icons.task_alt_rounded, 'Tasks', 12, Color(0xFF5AC8FA)),
     ];
 
     return Scaffold(
@@ -423,8 +678,11 @@ class _MoreMenuPage extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
                 child: Row(
                   children: [
-                    Icon(Icons.hotel_rounded,
-                        size: 14, color: colorScheme.onSurfaceVariant),
+                    Icon(
+                      Icons.hotel_rounded,
+                      size: 14,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
                     const SizedBox(width: 6),
                     Text(
                       hotel.name,
@@ -440,35 +698,17 @@ class _MoreMenuPage extends StatelessWidget {
             else
               const SizedBox(height: 16),
 
-            // ── Booking & People group ────────────────────────────────
+            // ── Menu items (same order as sidebar) ────────────────────
             _IosGroupCard(
               isDark: isDark,
               children: [
-                for (int i = 0; i < bookingNavItems.length; i++) ...[
+                for (int i = 0; i < moreNavItems.length; i++) ...[
                   _IosMenuRow(
-                    item: bookingNavItems[i],
+                    item: moreNavItems[i],
                     colorScheme: colorScheme,
-                    onTap: () => onSelect(bookingNavItems[i].pageIndex),
+                    onTap: () => onSelect(moreNavItems[i].pageIndex),
                   ),
-                  if (i < bookingNavItems.length - 1)
-                    _IosInsetDivider(isDark: isDark),
-                ],
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            // ── Hotel management group ────────────────────────────────
-            _IosGroupCard(
-              isDark: isDark,
-              children: [
-                for (int i = 0; i < hotelNavItems.length; i++) ...[
-                  _IosMenuRow(
-                    item: hotelNavItems[i],
-                    colorScheme: colorScheme,
-                    onTap: () => onSelect(hotelNavItems[i].pageIndex),
-                  ),
-                  if (i < hotelNavItems.length - 1)
+                  if (i < moreNavItems.length - 1)
                     _IosInsetDivider(isDark: isDark),
                 ],
               ],
@@ -622,7 +862,7 @@ class _IosMenuRow extends StatelessWidget {
             ),
             Icon(
               Icons.chevron_right_rounded,
-              color: colorScheme.onSurfaceVariant.withOpacity(0.45),
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.45),
               size: 20,
             ),
           ],
@@ -646,8 +886,8 @@ class _IosInsetDivider extends StatelessWidget {
       indent: 62,
       endIndent: 0,
       color: isDark
-          ? Colors.white.withOpacity(0.12)
-          : Colors.black.withOpacity(0.10),
+          ? Colors.white.withValues(alpha: 0.12)
+          : Colors.black.withValues(alpha: 0.10),
     );
   }
 }
@@ -664,8 +904,11 @@ class _SignOutTile extends StatelessWidget {
     final auth = AuthScopeData.of(context);
     final colorScheme = Theme.of(context).colorScheme;
     return ListTile(
-      leading: Icon(Icons.logout_rounded,
-          color: colorScheme.onSurfaceVariant, size: 24),
+      leading: Icon(
+        Icons.logout_rounded,
+        color: colorScheme.onSurfaceVariant,
+        size: 24,
+      ),
       title: Text(
         'Sign out',
         style: TextStyle(
@@ -732,9 +975,7 @@ class _MobileBackToMenuWrapper extends StatelessWidget {
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
           onPressed: onBack,
           tooltip: 'Back to More',
-          style: IconButton.styleFrom(
-            foregroundColor: colorScheme.primary,
-          ),
+          style: IconButton.styleFrom(foregroundColor: colorScheme.primary),
         ),
         title: Text(
           title,

@@ -106,7 +106,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha:0.5),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -231,7 +231,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha:0.5),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -435,7 +435,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: colorScheme.onSurfaceVariant.withOpacity(0.5),
+                    color: colorScheme.onSurfaceVariant.withValues(alpha:0.5),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -478,7 +478,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           height: 40,
                           decoration: BoxDecoration(
                             color: isSelected
-                                ? StayoraLogo.stayoraBlue.withOpacity(0.1)
+                                ? StayoraLogo.stayoraBlue.withValues(alpha:0.1)
                                 : colorScheme.surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(10),
                           ),
@@ -564,7 +564,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     color: Theme.of(context)
                         .colorScheme
                         .onSurfaceVariant
-                        .withOpacity(0.5),
+                        .withValues(alpha:0.5),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -878,7 +878,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: colorScheme.onSurfaceVariant.withOpacity(0.5),
+                    color: colorScheme.onSurfaceVariant.withValues(alpha:0.5),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -919,7 +919,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             color: isSelected
-                                ? StayoraLogo.stayoraBlue.withOpacity(0.1)
+                                ? StayoraLogo.stayoraBlue.withValues(alpha:0.1)
                                 : colorScheme.surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(10),
                           ),
@@ -1048,7 +1048,7 @@ class _SettingsCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: colorScheme.shadow.withOpacity(Theme.of(context).brightness == Brightness.dark ? 0.3 : 0.05),
+            color: colorScheme.shadow.withValues(alpha:Theme.of(context).brightness == Brightness.dark ? 0.3 : 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -1087,7 +1087,7 @@ class _SettingsTile extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: (titleColor ?? StayoraColors.blue).withOpacity(0.1),
+          color: (titleColor ?? StayoraColors.blue).withValues(alpha:0.1),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Icon(
@@ -1191,7 +1191,7 @@ class _ThemeSelector extends StatelessWidget {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: colorScheme.onSurfaceVariant.withOpacity(0.5),
+                    color: colorScheme.onSurfaceVariant.withValues(alpha:0.5),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -1278,7 +1278,7 @@ class _ThemeOption extends StatelessWidget {
         height: 40,
         decoration: BoxDecoration(
           color: isSelected
-              ? StayoraLogo.stayoraBlue.withOpacity(0.1)
+              ? StayoraLogo.stayoraBlue.withValues(alpha:0.1)
               : colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(10),
         ),

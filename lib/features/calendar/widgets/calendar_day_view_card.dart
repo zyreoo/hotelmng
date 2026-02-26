@@ -45,7 +45,7 @@ class CalendarDayViewCard extends StatelessWidget {
     final cardBg = isDark
         ? scheme.surfaceContainerHighest
         : scheme.surfaceContainerLowest;
-    final borderColor = scheme.outline.withOpacity(0.25);
+    final borderColor = scheme.outline.withValues(alpha:0.25);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -55,7 +55,7 @@ class CalendarDayViewCard extends StatelessWidget {
         border: Border.all(color: borderColor, width: 1),
         boxShadow: [
           BoxShadow(
-            color: scheme.shadow.withOpacity(isDark ? 0.15 : 0.06),
+            color: scheme.shadow.withValues(alpha:isDark ? 0.15 : 0.06),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -117,7 +117,7 @@ class CalendarDayViewCard extends StatelessWidget {
                                 vertical: 3,
                               ),
                               decoration: BoxDecoration(
-                                color: statusColor.withOpacity(0.15),
+                                color: statusColor.withValues(alpha:0.15),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(

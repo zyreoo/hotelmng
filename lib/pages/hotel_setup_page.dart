@@ -15,7 +15,11 @@ enum _SetupPhase { selectCreate, setupRooms, setupEmployees }
 
 /// Shown when no hotel is selected. User can create a hotel (then add rooms & employees) or select one.
 class HotelSetupPage extends StatefulWidget {
-  const HotelSetupPage({super.key});
+  const HotelSetupPage({super.key, this.allowCancel = false});
+
+  /// When true, shows a back arrow so the user can exit the setup flow
+  /// (used when opened from inside the main app).
+  final bool allowCancel;
 
   @override
   State<HotelSetupPage> createState() => _HotelSetupPageState();
@@ -109,10 +113,12 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
   Future<void> _loadSetupRooms() async {
     final hotelId = _setupHotelId;
     if (hotelId.isEmpty) {
-      if (mounted) setState(() {
-        _setupRooms = [];
-        _roomsLoaded = true;
-      });
+      if (mounted) {
+        setState(() {
+          _setupRooms = [];
+          _roomsLoaded = true;
+        });
+      }
       return;
     }
     final userId = _setupUserId;
@@ -132,10 +138,12 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
   Future<void> _loadSetupEmployees() async {
     final hotelId = _setupHotelId;
     if (hotelId.isEmpty) {
-      if (mounted) setState(() {
-        _setupEmployees = [];
-        _employeesLoaded = true;
-      });
+      if (mounted) {
+        setState(() {
+          _setupEmployees = [];
+          _employeesLoaded = true;
+        });
+      }
       return;
     }
     final userId = _setupUserId;
@@ -177,15 +185,14 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
     setState(() => _loading = true);
     try {
       await _firebaseService.createRoom(userId, hotelId, name);
-      if (mounted) {
-        await _loadSetupRooms();
-        setState(() => _loading = false);
-        showAppNotification(
-          context,
-          'Room "$name" added',
-          type: AppNotificationType.success,
-        );
-      }
+      if (!mounted) return;
+      await _loadSetupRooms();
+      setState(() => _loading = false);
+      showAppNotification(
+        context,
+        'Room "$name" added',
+        type: AppNotificationType.success,
+      );
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
@@ -227,15 +234,14 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
     setState(() => _loading = true);
     try {
       await _firebaseService.updateRoom(userId, hotelId, room.id!, name);
-      if (mounted) {
-        await _loadSetupRooms();
-        setState(() => _loading = false);
-        showAppNotification(
-          context,
-          'Room updated',
-          type: AppNotificationType.success,
-        );
-      }
+      if (!mounted) return;
+      await _loadSetupRooms();
+      setState(() => _loading = false);
+      showAppNotification(
+        context,
+        'Room updated',
+        type: AppNotificationType.success,
+      );
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
@@ -316,15 +322,14 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
     setState(() => _loading = true);
     try {
       await _firebaseService.deleteRoom(userId, hotelId, room.id!);
-      if (mounted) {
-        await _loadSetupRooms();
-        setState(() => _loading = false);
-        showAppNotification(
-          context,
-          'Room deleted',
-          type: AppNotificationType.success,
-        );
-      }
+      if (!mounted) return;
+      await _loadSetupRooms();
+      setState(() => _loading = false);
+      showAppNotification(
+        context,
+        'Room deleted',
+        type: AppNotificationType.success,
+      );
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
@@ -401,18 +406,17 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
           existingNames.add(roomName);
         }
       }
-      if (mounted) {
-        await _loadSetupRooms();
-        setState(() => _loading = false);
-        final message = skipped > 0
-            ? 'Added $created rooms ($skipped already existed)'
-            : 'Added $created rooms';
-        showAppNotification(
-          context,
-          message,
-          type: AppNotificationType.success,
-        );
-      }
+      if (!mounted) return;
+      await _loadSetupRooms();
+      setState(() => _loading = false);
+      final message = skipped > 0
+          ? 'Added $created rooms ($skipped already existed)'
+          : 'Added $created rooms';
+      showAppNotification(
+        context,
+        message,
+        type: AppNotificationType.success,
+      );
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
@@ -475,14 +479,14 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
             decoration: InputDecoration(
               hintText: 'e.g. 101, Suite A',
               filled: true,
-              fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.6),
+              fillColor: colorScheme.surfaceContainerHighest.withValues(alpha:0.6),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(
-                  color: colorScheme.outline.withOpacity(0.3),
+                  color: colorScheme.outline.withValues(alpha:0.3),
                 ),
               ),
               focusedBorder: OutlineInputBorder(
@@ -695,18 +699,18 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
     String selectedRole = 'Receptionist';
     String selectedDepartment = 'Reception';
 
-    final inputDecoration = (String label, String hint) => InputDecoration(
+    InputDecoration inputDecoration(String label, String hint) => InputDecoration(
           labelText: label,
           hintText: hint,
           filled: true,
-          fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.6),
+          fillColor: colorScheme.surfaceContainerHighest.withValues(alpha:0.6),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: colorScheme.outline.withOpacity(0.3),
+              color: colorScheme.outline.withValues(alpha:0.3),
             ),
           ),
           focusedBorder: OutlineInputBorder(
@@ -725,11 +729,11 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
     InputDecoration dropdownDecoration(String label) => InputDecoration(
           labelText: label,
           filled: true,
-          fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.6),
+          fillColor: colorScheme.surfaceContainerHighest.withValues(alpha:0.6),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.3)),
+            borderSide: BorderSide(color: colorScheme.outline.withValues(alpha:0.3)),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
@@ -758,7 +762,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
+                      color: Colors.black.withValues(alpha:0.06),
                       blurRadius: 16,
                       offset: const Offset(0, -2),
                     ),
@@ -780,7 +784,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                           width: 36,
                           height: 4,
                           decoration: BoxDecoration(
-                            color: colorScheme.onSurface.withOpacity(0.15),
+                            color: colorScheme.onSurface.withValues(alpha:0.15),
                             borderRadius: BorderRadius.circular(2),
                           ),
                         ),
@@ -820,7 +824,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: selectedRole,
+                        initialValue: selectedRole,
                         decoration: dropdownDecoration('Role'),
                         items: roleOptions
                             .map(
@@ -843,7 +847,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                       ],
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: selectedDepartment,
+                        initialValue: selectedDepartment,
                         decoration: dropdownDecoration('Department'),
                         items: departmentOptions
                             .map(
@@ -987,26 +991,26 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
     final otherRoleController = TextEditingController(text: _defaultRoleOptions.contains(employee.role) ? '' : employee.role);
     final otherDepartmentController = TextEditingController(text: _defaultDepartmentOptions.contains(employee.department) ? '' : employee.department);
 
-    final inputDecoration = (String label, String hint) => InputDecoration(
+    InputDecoration inputDecoration(String label, String hint) => InputDecoration(
           labelText: label,
           hintText: hint,
           filled: true,
-          fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.6),
+          fillColor: colorScheme.surfaceContainerHighest.withValues(alpha:0.6),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.3)),
+            borderSide: BorderSide(color: colorScheme.outline.withValues(alpha:0.3)),
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         );
     InputDecoration dropdownDecoration(String label) => InputDecoration(
           labelText: label,
           filled: true,
-          fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.6),
+          fillColor: colorScheme.surfaceContainerHighest.withValues(alpha:0.6),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.3)),
+            borderSide: BorderSide(color: colorScheme.outline.withValues(alpha:0.3)),
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         );
@@ -1027,7 +1031,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
+                      color: Colors.black.withValues(alpha:0.06),
                       blurRadius: 16,
                       offset: const Offset(0, -2),
                     ),
@@ -1044,7 +1048,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                           width: 36,
                           height: 4,
                           decoration: BoxDecoration(
-                            color: colorScheme.onSurface.withOpacity(0.15),
+                            color: colorScheme.onSurface.withValues(alpha:0.15),
                             borderRadius: BorderRadius.circular(2),
                           ),
                         ),
@@ -1077,7 +1081,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: selectedRole,
+                        initialValue: selectedRole,
                         decoration: dropdownDecoration('Role'),
                         items: _defaultRoleOptions
                             .map((e) => DropdownMenuItem<String>(value: e, child: Text(e, style: TextStyle(color: colorScheme.onSurface))))
@@ -1095,7 +1099,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                       ],
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: selectedDepartment,
+                        initialValue: selectedDepartment,
                         decoration: dropdownDecoration('Department'),
                         items: _defaultDepartmentOptions
                             .map((e) => DropdownMenuItem<String>(value: e, child: Text(e, style: TextStyle(color: colorScheme.onSurface))))
@@ -1247,6 +1251,10 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
           _roomsLoaded = false;
           _employeesLoaded = false;
         });
+        // When opened from inside the main app, close the setup flow after finishing.
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -1288,7 +1296,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.08),
+                color: Colors.black.withValues(alpha:0.08),
                 blurRadius: 20,
                 offset: const Offset(0, -4),
               ),
@@ -1304,7 +1312,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                   width: 36,
                   height: 5,
                   decoration: BoxDecoration(
-                    color: colorScheme.onSurface.withOpacity(0.2),
+                    color: colorScheme.onSurface.withValues(alpha:0.2),
                     borderRadius: BorderRadius.circular(2.5),
                   ),
                 ),
@@ -1361,6 +1369,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
     if (confirm != true || !mounted) return;
     setState(() => _loading = true);
     try {
+      if (!mounted) return;
       await HotelProvider.of(context).deleteHotel(hotel.id!, ownerId: hotel.ownerId);
       if (mounted) {
         await _loadMyHotels();
@@ -1464,7 +1473,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                                   Icons.meeting_room_rounded,
                                   size: 52,
                                   color: colorScheme.onSurfaceVariant
-                                      .withOpacity(0.6),
+                                      .withValues(alpha:0.6),
                                 ),
                                 const SizedBox(height: 12),
                                 Text(
@@ -1604,7 +1613,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                         Text(
                           '·',
                           style: TextStyle(
-                            color: colorScheme.onSurfaceVariant.withOpacity(0.6),
+                            color: colorScheme.onSurfaceVariant.withValues(alpha:0.6),
                             fontSize: 12,
                           ),
                         ),
@@ -1716,7 +1725,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                                 Icons.people_rounded,
                                 size: 52,
                                 color: colorScheme.onSurfaceVariant
-                                    .withOpacity(0.6),
+                                    .withValues(alpha:0.6),
                               ),
                               const SizedBox(height: 12),
                               Text(
@@ -1760,7 +1769,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                               child: ListTile(
                                 leading: CircleAvatar(
                                   backgroundColor: StayoraLogo.stayoraBlue
-                                      .withOpacity(0.2),
+                                      .withValues(alpha:0.2),
                                   child: Text(
                                     emp.name.isNotEmpty
                                         ? emp.name
@@ -1859,7 +1868,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                               height: 24,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: Colors.white.withOpacity(0.9),
+                                color: Colors.white.withValues(alpha:0.9),
                               ),
                             )
                           : const Text('Finish setup'),
@@ -1881,6 +1890,16 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
+        leading: widget.allowCancel
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_rounded),
+                onPressed: () {
+                  if (Navigator.of(context).canPop()) {
+                    Navigator.of(context).pop();
+                  }
+                },
+              )
+            : null,
         title: const SizedBox.shrink(),
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -1935,12 +1954,12 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(
-                          color: colorScheme.outline.withOpacity(0.4),
+                          color: colorScheme.outline.withValues(alpha:0.4),
                         ),
                       ),
                       filled: true,
                       fillColor: colorScheme.surfaceContainerHighest
-                          .withOpacity(0.6),
+                          .withValues(alpha:0.6),
                       prefixIcon: Icon(
                         Icons.business_rounded,
                         color: colorScheme.onSurfaceVariant,
@@ -1983,7 +2002,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                               width: 22,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: Colors.white.withOpacity(0.9),
+                                color: Colors.white.withValues(alpha:0.9),
                               ),
                             )
                           : const Text('Create hotel'),
@@ -2015,7 +2034,7 @@ class _HotelSetupPageState extends State<HotelSetupPage> {
                           padding: const EdgeInsets.only(bottom: 8),
                           child: Material(
                             color: colorScheme.surfaceContainerHighest
-                                .withOpacity(0.5),
+                                .withValues(alpha:0.5),
                             borderRadius: BorderRadius.circular(12),
                             child: InkWell(
                               onTap: _loading
@@ -2169,11 +2188,11 @@ class _QuickAddRoomsSheetContentState extends State<_QuickAddRoomsSheetContent> 
     return InputDecoration(
       hintText: hint,
       filled: true,
-      fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.6),
+      fillColor: colorScheme.surfaceContainerHighest.withValues(alpha:0.6),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.3)),
+        borderSide: BorderSide(color: colorScheme.outline.withValues(alpha:0.3)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -2220,7 +2239,7 @@ class _QuickAddRoomsSheetContentState extends State<_QuickAddRoomsSheetContent> 
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha:0.06),
               blurRadius: 16,
               offset: const Offset(0, -2),
             ),
@@ -2242,7 +2261,7 @@ class _QuickAddRoomsSheetContentState extends State<_QuickAddRoomsSheetContent> 
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: colorScheme.onSurface.withOpacity(0.15),
+                    color: colorScheme.onSurface.withValues(alpha:0.15),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),

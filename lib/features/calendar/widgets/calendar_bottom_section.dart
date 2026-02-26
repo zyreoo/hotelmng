@@ -39,7 +39,7 @@ class CalendarBottomSection extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: scheme.shadow.withOpacity(0.08),
+              color: scheme.shadow.withValues(alpha:0.08),
               blurRadius: 16,
               offset: const Offset(0, 4),
             ),
@@ -111,11 +111,11 @@ class _WaitingListCardState extends State<_WaitingListCard> {
         return Container(
           decoration: BoxDecoration(
             color: isHighlighted
-                ? StayoraColors.purple.withOpacity(0.15)
-                : scheme.surfaceContainerHighest.withOpacity(0.6),
+                ? StayoraColors.purple.withValues(alpha:0.15)
+                : scheme.surfaceContainerHighest.withValues(alpha:0.6),
             border: Border(
               bottom: BorderSide(
-                color: scheme.outline.withOpacity(0.15),
+                color: scheme.outline.withValues(alpha:0.15),
                 width: 1,
               ),
             ),
@@ -412,7 +412,7 @@ class _LegendChip extends StatelessWidget {
             color: color,
             borderRadius: BorderRadius.circular(3),
             border: Border.all(
-              color: scheme.outline.withOpacity(0.3),
+              color: scheme.outline.withValues(alpha:0.3),
               width: 1,
             ),
           ),

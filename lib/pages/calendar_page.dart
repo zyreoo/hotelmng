@@ -55,6 +55,9 @@ class _CalendarPageState extends State<CalendarPage> {
   // Real-time Firestore synchronization
   StreamSubscription<QuerySnapshot>? _bookingsSubscription;
   StreamSubscription<QuerySnapshot>? _waitingListSubscription;
+  StreamSubscription<List<RoomModel>>? _roomsSubscription;
+  String? _subscribedUserId;
+  String? _subscribedHotelId;
   Timer? _debounceTimer;
   static const Duration _debounceDuration = Duration(milliseconds: 300);
 
@@ -156,23 +159,28 @@ class _CalendarPageState extends State<CalendarPage> {
     await _firebaseService.updateBooking(userId, hotelId, booking);
   }
 
-  /// Saves a booking, updates linked room housekeeping status based on
-  /// check-in / check-out timestamps, reloads rooms, and shows a toast.
+  /// Saves a booking, updates linked room housekeeping status only when
+  /// check-in or check-out timestamps actually change (not on payment/advance/status edits).
   Future<void> _saveBookingAndUpdateRooms({
     required BuildContext notificationContext,
     required String userId,
     required String hotelId,
+    required BookingModel previousBooking,
     required BookingModel updatedBooking,
   }) async {
     // Persist booking changes.
     await _updateBooking(userId, hotelId, updatedBooking);
 
-    // Simple rule:
-    // - If the booking has a check-in timestamp, mark rooms as occupied.
-    // - If the booking has a check-out timestamp, mark rooms as dirty.
+    // Only update room housekeeping when check-in or check-out just happened
+    // (do not change room status when only payment, advance, or booking status is updated).
     final roomIds = updatedBooking.selectedRoomIds ?? const <String>[];
-    if (roomIds.isNotEmpty) {
-      if (updatedBooking.checkedInAt != null) {
+    final justCheckedIn =
+        previousBooking.checkedInAt == null && updatedBooking.checkedInAt != null;
+    final justCheckedOut =
+        previousBooking.checkedOutAt == null && updatedBooking.checkedOutAt != null;
+
+    if (roomIds.isNotEmpty && (justCheckedIn || justCheckedOut)) {
+      if (justCheckedIn) {
         for (final roomId in roomIds) {
           await _firebaseService.updateRoomHousekeeping(
             userId,
@@ -182,7 +190,7 @@ class _CalendarPageState extends State<CalendarPage> {
           );
         }
       }
-      if (updatedBooking.checkedOutAt != null) {
+      if (justCheckedOut) {
         for (final roomId in roomIds) {
           await _firebaseService.updateRoomHousekeeping(
             userId,
@@ -200,16 +208,16 @@ class _CalendarPageState extends State<CalendarPage> {
     if (!mounted) return;
 
     String msg;
-    if (updatedBooking.checkedOutAt != null) {
+    if (justCheckedOut) {
       msg = '${updatedBooking.userName} checked out · rooms marked dirty';
-    } else if (updatedBooking.checkedInAt != null) {
+    } else if (justCheckedIn) {
       msg = '${updatedBooking.userName} checked in · rooms marked occupied';
     } else {
       msg = 'Booking updated';
     }
 
     showAppNotification(
-      notificationContext,
+      context,
       msg,
       type: AppNotificationType.success,
     );
@@ -222,35 +230,75 @@ class _CalendarPageState extends State<CalendarPage> {
     try {
       final list = await _firebaseService.getRooms(userId, hotelId);
       if (mounted) {
-        setState(() {
-          _roomNames = list.map((r) => r.name).toList();
-          _roomModelsMap = {for (final r in list) r.name: r};
-          _roomIdToNameMap = {
-            for (final r in list)
-              if (r.id != null) r.id!: r.name,
-          };
+        _applyRoomsUpdate(list);
+        if (!_roomNamesLoaded) {
           _roomNamesLoaded = true;
-        });
-        _rebuildCellCache();
-        _subscribeToBookings();
+          _rebuildCellCache();
+          _subscribeToBookings();
+        }
       }
     } catch (_) {
       if (mounted) {
         setState(() {
           _roomNames = [];
           _roomModelsMap = {};
+          _roomIdToNameMap = {};
           _roomNamesLoaded = true;
         });
       }
     }
   }
 
+  /// Applies room list to state and rebuilds cell cache immediately (no debounce).
+  /// Use this when room data changes (e.g. housekeeping status) so the calendar updates right away.
+  void _applyRoomsUpdate(List<RoomModel> list) {
+    if (!mounted) return;
+    setState(() {
+      _roomNames = list.map((r) => r.name).toList();
+      _roomModelsMap = {for (final r in list) r.name: r};
+      _roomIdToNameMap = {
+        for (final r in list)
+          if (r.id != null) r.id!: r.name,
+      };
+    });
+    _rebuildCellCache();
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final userId = AuthScopeData.of(context).uid;
+    final hotelId = HotelProvider.of(context).hotelId;
+    if (userId == null || hotelId == null) return;
+    if (userId == _subscribedUserId && hotelId == _subscribedHotelId) return;
+    _subscribedUserId = userId;
+    _subscribedHotelId = hotelId;
+    _roomsSubscription?.cancel();
     if (!_roomNamesLoaded) {
-      _loadRooms();
+      setState(() {});
     }
+    _roomsSubscription = _firebaseService
+        .roomsSnapshot(userId, hotelId)
+        .listen(
+      (list) {
+        if (!mounted) return;
+        _applyRoomsUpdate(list);
+        if (!_roomNamesLoaded) {
+          _roomNamesLoaded = true;
+          _subscribeToBookings();
+        }
+      },
+      onError: (_) {
+        if (mounted && !_roomNamesLoaded) {
+          setState(() {
+            _roomNames = [];
+            _roomModelsMap = {};
+            _roomIdToNameMap = {};
+            _roomNamesLoaded = true;
+          });
+        }
+      },
+    );
   }
 
   /// Returns the current room names for a booking, resolving via document IDs
@@ -375,7 +423,7 @@ class _CalendarPageState extends State<CalendarPage> {
                   decoration: BoxDecoration(
                     color: Theme.of(
                       context,
-                    ).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                    ).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -419,7 +467,7 @@ class _CalendarPageState extends State<CalendarPage> {
                             side: BorderSide(
                               color: Theme.of(
                                 context,
-                              ).colorScheme.outline.withOpacity(0.2),
+                              ).colorScheme.outline.withValues(alpha: 0.2),
                             ),
                           ),
                           child: Padding(
@@ -472,7 +520,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                           color: Theme.of(context)
                                               .colorScheme
                                               .onSurfaceVariant
-                                              .withOpacity(0.9),
+                                              .withValues(alpha: 0.9),
                                         ),
                                       ),
                                     ),
@@ -785,10 +833,10 @@ class _CalendarPageState extends State<CalendarPage> {
       decoration: BoxDecoration(
         color: Theme.of(
           ctx,
-        ).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: Theme.of(ctx).colorScheme.outline.withOpacity(0.3),
+          color: Theme.of(ctx).colorScheme.outline.withValues(alpha: 0.3),
         ),
       ),
       child: Column(
@@ -1106,7 +1154,7 @@ class _CalendarPageState extends State<CalendarPage> {
                     BoxShadow(
                       color: Theme.of(
                         context,
-                      ).colorScheme.shadow.withOpacity(0.15),
+                      ).colorScheme.shadow.withValues(alpha: 0.15),
                       blurRadius: 20,
                       offset: const Offset(0, 10),
                     ),
@@ -1263,6 +1311,7 @@ class _CalendarPageState extends State<CalendarPage> {
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _roomsSubscription?.cancel();
     _bookingsSubscription?.cancel();
     _waitingListSubscription?.cancel();
     _hoverNotifier.dispose();
@@ -2004,7 +2053,7 @@ class _CalendarPageState extends State<CalendarPage> {
                   decoration: BoxDecoration(
                     color: Theme.of(
                       context,
-                    ).colorScheme.onSurfaceVariant.withOpacity(0.5),
+                    ).colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -2210,7 +2259,7 @@ class _CalendarPageState extends State<CalendarPage> {
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: [
                                 BoxShadow(
-                                  color: StayoraColors.blue.withOpacity(0.25),
+                                  color: StayoraColors.blue.withValues(alpha: 0.25),
                                   blurRadius: 8,
                                   offset: const Offset(0, 4),
                                 ),
@@ -2292,7 +2341,7 @@ class _CalendarPageState extends State<CalendarPage> {
                           BoxShadow(
                             color: Theme.of(
                               context,
-                            ).colorScheme.shadow.withOpacity(0.08),
+                            ).colorScheme.shadow.withValues(alpha: 0.08),
                             blurRadius: 16,
                             offset: const Offset(0, 4),
                           ),
@@ -2365,7 +2414,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                 BoxShadow(
                                   color: Theme.of(
                                     context,
-                                  ).colorScheme.shadow.withOpacity(0.08),
+                                  ).colorScheme.shadow.withValues(alpha: 0.08),
                                   blurRadius: 16,
                                   offset: const Offset(0, 4),
                                 ),
@@ -2497,7 +2546,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                             color: Theme.of(context)
                                                 .colorScheme
                                                 .outline
-                                                .withOpacity(0.3),
+                                                .withValues(alpha: 0.3),
                                             width: 1,
                                           ),
                                         ),
@@ -2506,7 +2555,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                             color: Theme.of(context)
                                                 .colorScheme
                                                 .shadow
-                                                .withOpacity(0.05),
+                                                .withValues(alpha: 0.05),
                                             blurRadius: 4,
                                             offset: const Offset(0, 2),
                                           ),
@@ -2527,7 +2576,7 @@ class _CalendarPageState extends State<CalendarPage> {
                                                   color: Theme.of(context)
                                                       .colorScheme
                                                       .outline
-                                                      .withOpacity(0.3),
+                                                      .withValues(alpha: 0.3),
                                                 ),
                                               ),
                                             ),
@@ -2602,8 +2651,8 @@ class _CalendarPageState extends State<CalendarPage> {
                                                               Theme.of(context)
                                                                   .colorScheme
                                                                   .outline
-                                                                  .withOpacity(
-                                                                    0.2,
+                                                                  .withValues(
+                                                                    alpha: 0.2,
                                                                   ),
                                                           width: 1,
                                                         ),
@@ -2808,7 +2857,7 @@ class _CalendarPageState extends State<CalendarPage> {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: StayoraColors.blue.withOpacity(0.3),
+              color: StayoraColors.blue.withValues(alpha: 0.3),
               blurRadius: 16,
               offset: const Offset(0, 6),
             ),
@@ -2865,7 +2914,7 @@ class _CalendarPageState extends State<CalendarPage> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Theme.of(context).colorScheme.shadow.withOpacity(0.15),
+                color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.15),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
@@ -2932,6 +2981,7 @@ class _CalendarPageState extends State<CalendarPage> {
                     notificationContext: rootContext,
                     userId: userId,
                     hotelId: hotelId,
+                    previousBooking: fullBooking,
                     updatedBooking: updated,
                   );
                 },
@@ -2941,7 +2991,7 @@ class _CalendarPageState extends State<CalendarPage> {
                   if (confirm != true) return;
                   if (!mounted) return;
                   try {
-                    _showLoadingDialog(dialogContext);
+                    _showLoadingDialog(this.context);
                     await _deleteBooking(userId, hotelId, bookingId);
                     if (!mounted) return;
                     navigator.pop();
@@ -2951,7 +3001,7 @@ class _CalendarPageState extends State<CalendarPage> {
                     navigator.pop();
                     navigator.pop();
                     showAppNotification(
-                      rootContext,
+                      this.context,
                       'Failed to delete: $e',
                       type: AppNotificationType.error,
                     );
@@ -3046,7 +3096,7 @@ class _CalendarPageState extends State<CalendarPage> {
           height: height,
           decoration: BoxDecoration(
             color: (isValid ? StayoraColors.purple : StayoraColors.error)
-                .withOpacity(0.35),
+                .withValues(alpha: 0.35),
             border: Border.all(
               color: isValid ? StayoraColors.purple : StayoraColors.error,
               width: 2,
@@ -3077,9 +3127,9 @@ class _CalendarPageState extends State<CalendarPage> {
         date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
     Color rowColor = scheme.surface;
     if (isToday) {
-      rowColor = StayoraColors.blue.withOpacity(0.08);
+      rowColor = StayoraColors.blue.withValues(alpha: 0.08);
     } else if (isWeekend) {
-      rowColor = scheme.surfaceContainerLowest.withOpacity(0.5);
+      rowColor = scheme.surfaceContainerLowest.withValues(alpha: 0.5);
     }
     // Compute dateKey once per row (same for all room cells in this row).
     final dateKey = DateTime(date.year, date.month, date.day);
@@ -3118,7 +3168,7 @@ class _CalendarPageState extends State<CalendarPage> {
             bottom: 0,
             width: 1,
             child: Container(
-              color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+              color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
             ),
           ),
 
@@ -3126,7 +3176,7 @@ class _CalendarPageState extends State<CalendarPage> {
           Positioned.fill(
             child: Container(
               color: isToday
-                  ? StayoraColors.blue.withOpacity(0.08)
+                  ? StayoraColors.blue.withValues(alpha: 0.08)
                   : Theme.of(context).colorScheme.surface,
             ),
           ),
@@ -3183,7 +3233,7 @@ class _CalendarPageState extends State<CalendarPage> {
     final isSelected = _isCellInSelection(roomIdx, date);
 
     final scheme = Theme.of(context).colorScheme;
-    final outlineColor = scheme.outline.withOpacity(0.3);
+    final outlineColor = scheme.outline.withValues(alpha: 0.3);
     final cellRightBorderColor = cellData.isConnectedRight
         ? Colors.transparent
         : outlineColor;
@@ -3237,26 +3287,26 @@ class _CalendarPageState extends State<CalendarPage> {
                   height: _dayRowHeight,
                   decoration: BoxDecoration(
                     color: isHighlighted
-                        ? StayoraColors.purple.withOpacity(0.25)
+                        ? StayoraColors.purple.withValues(alpha: 0.25)
                         : isSelected
-                        ? StayoraColors.blue.withOpacity(0.2)
+                        ? StayoraColors.blue.withValues(alpha: 0.2)
                         : scheme.surface,
                     border: Border(
                       top: isSelected
                           ? BorderSide(
-                              color: StayoraColors.blue.withOpacity(0.5),
+                              color: StayoraColors.blue.withValues(alpha: 0.5),
                               width: 2,
                             )
                           : BorderSide(color: cellTopBorderColor, width: 1),
                       bottom: isSelected
                           ? BorderSide(
-                              color: StayoraColors.blue.withOpacity(0.5),
+                              color: StayoraColors.blue.withValues(alpha: 0.5),
                               width: 2,
                             )
                           : BorderSide(color: cellBottomBorderColor, width: 1),
                       left: isSelected
                           ? BorderSide(
-                              color: StayoraColors.blue.withOpacity(0.5),
+                              color: StayoraColors.blue.withValues(alpha: 0.5),
                               width: 2,
                             )
                           : BorderSide.none,
@@ -3318,7 +3368,7 @@ class _CalendarPageState extends State<CalendarPage> {
                           width: double.infinity,
                           height: double.infinity,
                           decoration: BoxDecoration(
-                            color: StayoraColors.blue.withOpacity(0.15),
+                            color: StayoraColors.blue.withValues(alpha: 0.15),
                           ),
                         ),
                     ],
@@ -3494,7 +3544,7 @@ class _CalendarPageState extends State<CalendarPage> {
     final cardBg = isDark
         ? scheme.surfaceContainerHighest
         : scheme.surfaceContainerLowest;
-    final cardBgResolved = isDragging ? cardBg.withOpacity(0.6) : cardBg;
+    final cardBgResolved = isDragging ? cardBg.withValues(alpha: 0.6) : cardBg;
     // Status color from legend: border goes around the whole bubble
     final statusColor = _statusColor(booking.status);
     const radius = 10.0;
@@ -3538,13 +3588,13 @@ class _CalendarPageState extends State<CalendarPage> {
         boxShadow: [
           if (showInfo && !isDragging)
             BoxShadow(
-              color: scheme.shadow.withOpacity(isDark ? 0.2 : 0.08),
+              color: scheme.shadow.withValues(alpha: isDark ? 0.2 : 0.08),
               blurRadius: isHovered ? 8 : 4,
               offset: Offset(0, isHovered ? 3 : 2),
             ),
           if (isHovered && !isDragging)
             BoxShadow(
-              color: statusColor.withOpacity(0.35),
+              color: statusColor.withValues(alpha: 0.35),
               blurRadius: 8,
               spreadRadius: 0,
             ),
@@ -3676,7 +3726,7 @@ class _CalendarPageState extends State<CalendarPage> {
         decoration: BoxDecoration(
           color: scheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: scheme.outline.withOpacity(0.2), width: 1),
+          border: Border.all(color: scheme.outline.withValues(alpha: 0.2), width: 1),
         ),
         child: IntrinsicHeight(
           child: Row(
@@ -3738,7 +3788,7 @@ class _CalendarPageState extends State<CalendarPage> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: StayoraColors.blue.withOpacity(0.1),
+              color: StayoraColors.blue.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, size: 20, color: StayoraColors.blue),
@@ -3789,7 +3839,7 @@ class _CalendarPageState extends State<CalendarPage> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
+              color: color.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(Icons.info_outline_rounded, size: 20, color: color),
@@ -3813,9 +3863,9 @@ class _CalendarPageState extends State<CalendarPage> {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.12),
+                    color: color.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: color.withOpacity(0.4)),
+                    border: Border.all(color: color.withValues(alpha: 0.4)),
                   ),
                   child: Text(
                     status,
@@ -3848,7 +3898,7 @@ class _CalendarPageState extends State<CalendarPage> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Theme.of(context).colorScheme.shadow.withOpacity(0.15),
+                color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.15),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
@@ -3861,7 +3911,7 @@ class _CalendarPageState extends State<CalendarPage> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.1),
+                  color: Colors.red.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -3958,7 +4008,7 @@ class _CalendarPageState extends State<CalendarPage> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Theme.of(context).colorScheme.shadow.withOpacity(0.15),
+                color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.15),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
@@ -4101,8 +4151,8 @@ class _ChainPreviewCalendar extends StatelessWidget {
     }
 
     final colorScheme = Theme.of(context).colorScheme;
-    final barColor = StayoraColors.blue.withOpacity(0.85);
-    final emptyColor = colorScheme.surfaceContainerHighest.withOpacity(0.4);
+    final barColor = StayoraColors.blue.withValues(alpha: 0.85);
+    final emptyColor = colorScheme.surfaceContainerHighest.withValues(alpha: 0.4);
     final timelineWidth = totalDays * cellWidth;
 
     Widget buildPanel(
@@ -4114,10 +4164,10 @@ class _ChainPreviewCalendar extends StatelessWidget {
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: isAfter
-              ? colorScheme.primaryContainer.withOpacity(0.08)
-              : colorScheme.surfaceContainerHighest.withOpacity(0.25),
+              ? colorScheme.primaryContainer.withValues(alpha: 0.08)
+              : colorScheme.surfaceContainerHighest.withValues(alpha: 0.25),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: colorScheme.outline.withOpacity(0.2)),
+          border: Border.all(color: colorScheme.outline.withValues(alpha: 0.2)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -4233,7 +4283,7 @@ class _ChainPreviewCalendar extends StatelessWidget {
         Container(
           width: 2,
           margin: const EdgeInsets.symmetric(horizontal: 6),
-          color: colorScheme.outline.withOpacity(0.35),
+          color: colorScheme.outline.withValues(alpha: 0.35),
         ),
         Expanded(child: buildPanel('After', after, true)),
       ],
@@ -4261,7 +4311,7 @@ class _ChainPreviewCalendar extends StatelessWidget {
                 color: emptyColor,
                 border: Border(
                   right: BorderSide(
-                    color: colorScheme.outline.withOpacity(0.15),
+                    color: colorScheme.outline.withValues(alpha: 0.15),
                   ),
                 ),
               ),
@@ -4385,15 +4435,15 @@ class _MovePreviewTimeline extends StatelessWidget {
     final afterEndCol = aEnd.difference(rangeStart).inDays.clamp(1, totalDays);
 
     final colorScheme = Theme.of(context).colorScheme;
-    final barColor = StayoraColors.blue.withOpacity(0.85);
-    final emptyColor = colorScheme.surfaceContainerHighest.withOpacity(0.4);
+    final barColor = StayoraColors.blue.withValues(alpha: 0.85);
+    final emptyColor = colorScheme.surfaceContainerHighest.withValues(alpha: 0.4);
 
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withOpacity(0.3),
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colorScheme.outline.withOpacity(0.25)),
+        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.25)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -4544,7 +4594,7 @@ class _MovePreviewTimeline extends StatelessWidget {
                           color: emptyColor,
                           border: Border(
                             right: BorderSide(
-                              color: colorScheme.outline.withOpacity(0.2),
+                              color: colorScheme.outline.withValues(alpha: 0.2),
                             ),
                           ),
                         ),

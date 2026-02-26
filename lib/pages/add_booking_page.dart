@@ -78,6 +78,10 @@ class _AddBookingPageState extends State<AddBookingPage> {
   List<ServiceModel> _availableServices = [];
   List<BookingServiceItem> _selectedServices = [];
 
+  // Actual check-in / check-out timestamps (when the guest physically arrives/leaves)
+  DateTime? _checkedInAt;
+  DateTime? _checkedOutAt;
+
   // Rooms loaded from Firestore (hotel-specific)
   List<String> _roomNames = [];
   List<RoomModel> _roomModels = [];
@@ -100,6 +104,8 @@ class _AddBookingPageState extends State<AddBookingPage> {
       _clientEmailController.text = b.userEmail ?? '';
       _checkInDate = b.checkIn;
       _checkOutDate = b.checkOut;
+      _checkedInAt = b.checkedInAt;
+      _checkedOutAt = b.checkedOutAt;
       _numberOfRooms = b.numberOfRooms;
       _numberOfGuests = b.numberOfGuests;
       _bookingStatus = b.status;
@@ -108,30 +114,32 @@ class _AddBookingPageState extends State<AddBookingPage> {
           : '';
       _pricePerNightController.text =
           b.pricePerNight != null && b.pricePerNight! > 0
-              ? CurrencyFormatter.formatStoredAmountForInput(b.pricePerNight!)
-              : '';
+          ? CurrencyFormatter.formatStoredAmountForInput(b.pricePerNight!)
+          : '';
       _paymentMethod = b.paymentMethod.isNotEmpty
           ? b.paymentMethod
           : BookingModel.paymentMethods.first;
       _advancePercent = b.advancePercent;
-      _advancePercentController.text =
-          b.advancePercent != null ? b.advancePercent.toString() : '';
-      _advanceAmountPaidController.text =
-          b.advanceAmountPaid > 0
-              ? CurrencyFormatter.formatStoredAmountForInput(b.advanceAmountPaid)
-              : '';
-      _advancePaymentMethod = (b.advancePaymentMethod != null &&
-              b.advancePaymentMethod!.isNotEmpty)
+      _advancePercentController.text = b.advancePercent != null
+          ? b.advancePercent.toString()
+          : '';
+      _advanceAmountPaidController.text = b.advanceAmountPaid > 0
+          ? CurrencyFormatter.formatStoredAmountForInput(b.advanceAmountPaid)
+          : '';
+      _advancePaymentMethod =
+          (b.advancePaymentMethod != null && b.advancePaymentMethod!.isNotEmpty)
           ? b.advancePaymentMethod!
           : BookingModel.paymentMethods.first;
-      _advanceStatus = (b.advanceStatus != null &&
+      _advanceStatus =
+          (b.advanceStatus != null &&
               BookingModel.advanceStatusOptions.contains(b.advanceStatus))
           ? b.advanceStatus!
           : (b.advancePercent != null && b.advancePercent! > 0
-              ? (b.advanceAmountPaid >= (b.calculatedTotal * b.advancePercent! / 100).round()
-                  ? 'received'
-                  : 'pending')
-              : 'not_required');
+                ? (b.advanceAmountPaid >=
+                          (b.calculatedTotal * b.advancePercent! / 100).round()
+                      ? 'received'
+                      : 'pending')
+                : 'not_required');
       _notesController.text = b.notes ?? '';
       _wantsSpecificRoom =
           b.selectedRooms != null && b.selectedRooms!.isNotEmpty;
@@ -216,8 +224,10 @@ class _AddBookingPageState extends State<AddBookingPage> {
   }
 
   /// Build a map from room name to room ID for the current hotel's rooms.
-  Map<String, String> get _roomNameToId =>
-      {for (final r in _roomModels) if (r.id != null) r.name: r.id!};
+  Map<String, String> get _roomNameToId => {
+    for (final r in _roomModels)
+      if (r.id != null) r.name: r.id!,
+  };
 
   /// Fetches bookings that overlap [checkIn, checkOut), excluding Cancelled and Waiting list,
   /// and excluding the current booking when editing. Used for validation.
@@ -226,15 +236,29 @@ class _AddBookingPageState extends State<AddBookingPage> {
     String hotelId,
   ) async {
     if (_checkInDate == null || _checkOutDate == null) return [];
-    final checkIn = DateTime(_checkInDate!.year, _checkInDate!.month, _checkInDate!.day);
-    final checkOut = DateTime(_checkOutDate!.year, _checkOutDate!.month, _checkOutDate!.day);
+    final checkIn = DateTime(
+      _checkInDate!.year,
+      _checkInDate!.month,
+      _checkInDate!.day,
+    );
+    final checkOut = DateTime(
+      _checkOutDate!.year,
+      _checkOutDate!.month,
+      _checkOutDate!.day,
+    );
     if (!checkOut.isAfter(checkIn)) return [];
     final start = checkIn.subtract(const Duration(days: 60));
     final end = checkOut.add(const Duration(days: 60));
-    final all = await _firebaseService.getBookings(userId, hotelId, startDate: start, endDate: end);
+    final all = await _firebaseService.getBookings(
+      userId,
+      hotelId,
+      startDate: start,
+      endDate: end,
+    );
     return all.where((b) {
       if (b.status == 'Cancelled' || b.status == 'Waiting list') return false;
-      if (widget.existingBooking != null && b.id == widget.existingBooking!.id) return false;
+      if (widget.existingBooking != null && b.id == widget.existingBooking!.id)
+        return false;
       final bStart = DateTime(b.checkIn.year, b.checkIn.month, b.checkIn.day);
       final bEnd = DateTime(b.checkOut.year, b.checkOut.month, b.checkOut.day);
       return bStart.isBefore(checkOut) && bEnd.isAfter(checkIn);
@@ -248,7 +272,8 @@ class _AddBookingPageState extends State<AddBookingPage> {
   ) {
     final list = <BookingInput>[];
     for (final b in bookings) {
-      final roomIds = b.selectedRoomIds ??
+      final roomIds =
+          b.selectedRoomIds ??
           b.selectedRooms
               ?.map((n) => roomNameToId[n] ?? n)
               .whereType<String>()
@@ -256,12 +281,14 @@ class _AddBookingPageState extends State<AddBookingPage> {
           [];
       for (final roomId in roomIds) {
         if (roomId.isEmpty) continue;
-        list.add(BookingInput(
-          bookingId: b.id ?? '',
-          roomId: roomId,
-          checkInUtc: b.checkIn,
-          checkOutUtc: b.checkOut,
-        ));
+        list.add(
+          BookingInput(
+            bookingId: b.id ?? '',
+            roomId: roomId,
+            checkInUtc: b.checkIn,
+            checkOutUtc: b.checkOut,
+          ),
+        );
       }
     }
     return list;
@@ -269,19 +296,37 @@ class _AddBookingPageState extends State<AddBookingPage> {
 
   /// Finds N available rooms for [checkIn, checkOut). Returns room names to assign, or null if not enough space.
   /// When [roomsNextToEachOther] is true, returns the first contiguous block of N rooms in _roomNames order.
-  Future<List<String>?> _findAvailableRooms(String userId, String hotelId) async {
-    if (_checkInDate == null || _checkOutDate == null || _roomNames.isEmpty) return null;
-    final checkIn = DateTime(_checkInDate!.year, _checkInDate!.month, _checkInDate!.day);
-    final checkOut = DateTime(_checkOutDate!.year, _checkOutDate!.month, _checkOutDate!.day);
+  Future<List<String>?> _findAvailableRooms(
+    String userId,
+    String hotelId,
+  ) async {
+    if (_checkInDate == null || _checkOutDate == null || _roomNames.isEmpty)
+      return null;
+    final checkIn = DateTime(
+      _checkInDate!.year,
+      _checkInDate!.month,
+      _checkInDate!.day,
+    );
+    final checkOut = DateTime(
+      _checkOutDate!.year,
+      _checkOutDate!.month,
+      _checkOutDate!.day,
+    );
     if (!checkOut.isAfter(checkIn)) return null;
 
     // Fetch bookings that might overlap the range (wide window)
     final start = checkIn.subtract(const Duration(days: 60));
     final end = checkOut.add(const Duration(days: 60));
-    final all = await _firebaseService.getBookings(userId, hotelId, startDate: start, endDate: end);
+    final all = await _firebaseService.getBookings(
+      userId,
+      hotelId,
+      startDate: start,
+      endDate: end,
+    );
     final overlapping = all.where((b) {
       if (b.status == 'Cancelled' || b.status == 'Waiting list') return false;
-      if (widget.existingBooking != null && b.id == widget.existingBooking!.id) return false;
+      if (widget.existingBooking != null && b.id == widget.existingBooking!.id)
+        return false;
       final bStart = DateTime(b.checkIn.year, b.checkIn.month, b.checkIn.day);
       final bEnd = DateTime(b.checkOut.year, b.checkOut.month, b.checkOut.day);
       return bStart.isBefore(checkOut) && bEnd.isAfter(checkIn);
@@ -289,12 +334,20 @@ class _AddBookingPageState extends State<AddBookingPage> {
 
     // For each night in [checkIn, checkOut), which rooms are occupied?
     final occupiedByNight = <DateTime, Set<String>>{};
-    for (var d = checkIn; d.isBefore(checkOut); d = d.add(const Duration(days: 1))) {
+    for (
+      var d = checkIn;
+      d.isBefore(checkOut);
+      d = d.add(const Duration(days: 1))
+    ) {
       occupiedByNight[d] = {};
       for (final b in overlapping) {
         if (b.selectedRooms == null || b.selectedRooms!.isEmpty) continue;
         final bStart = DateTime(b.checkIn.year, b.checkIn.month, b.checkIn.day);
-        final bEnd = DateTime(b.checkOut.year, b.checkOut.month, b.checkOut.day);
+        final bEnd = DateTime(
+          b.checkOut.year,
+          b.checkOut.month,
+          b.checkOut.day,
+        );
         if (!d.isBefore(bStart) && d.isBefore(bEnd)) {
           for (final r in b.selectedRooms!) {
             occupiedByNight[d]!.add(r);
@@ -307,7 +360,11 @@ class _AddBookingPageState extends State<AddBookingPage> {
     final available = <String>[];
     for (final room in _roomNames) {
       var free = true;
-      for (var d = checkIn; d.isBefore(checkOut); d = d.add(const Duration(days: 1))) {
+      for (
+        var d = checkIn;
+        d.isBefore(checkOut);
+        d = d.add(const Duration(days: 1))
+      ) {
         if (occupiedByNight[d]!.contains(room)) {
           free = false;
           break;
@@ -335,31 +392,54 @@ class _AddBookingPageState extends State<AddBookingPage> {
   /// Returns true if the currently selected specific rooms are free for every night in [checkIn, checkOut).
   /// Excludes Cancelled and Waiting list from occupancy; excludes current booking when editing.
   Future<bool> _areSelectedRoomsAvailable(String userId, String hotelId) async {
-    if (_checkInDate == null || _checkOutDate == null || _roomNames.isEmpty) return false;
+    if (_checkInDate == null || _checkOutDate == null || _roomNames.isEmpty)
+      return false;
     final roomsToCheck = _selectedRooms.where((r) => r.isNotEmpty).toList();
     if (roomsToCheck.isEmpty) return false;
-    final checkIn = DateTime(_checkInDate!.year, _checkInDate!.month, _checkInDate!.day);
-    final checkOut = DateTime(_checkOutDate!.year, _checkOutDate!.month, _checkOutDate!.day);
+    final checkIn = DateTime(
+      _checkInDate!.year,
+      _checkInDate!.month,
+      _checkInDate!.day,
+    );
+    final checkOut = DateTime(
+      _checkOutDate!.year,
+      _checkOutDate!.month,
+      _checkOutDate!.day,
+    );
     if (!checkOut.isAfter(checkIn)) return false;
 
     final start = checkIn.subtract(const Duration(days: 60));
     final end = checkOut.add(const Duration(days: 60));
-    final all = await _firebaseService.getBookings(userId, hotelId, startDate: start, endDate: end);
+    final all = await _firebaseService.getBookings(
+      userId,
+      hotelId,
+      startDate: start,
+      endDate: end,
+    );
     final overlapping = all.where((b) {
       if (b.status == 'Cancelled' || b.status == 'Waiting list') return false;
-      if (widget.existingBooking != null && b.id == widget.existingBooking!.id) return false;
+      if (widget.existingBooking != null && b.id == widget.existingBooking!.id)
+        return false;
       final bStart = DateTime(b.checkIn.year, b.checkIn.month, b.checkIn.day);
       final bEnd = DateTime(b.checkOut.year, b.checkOut.month, b.checkOut.day);
       return bStart.isBefore(checkOut) && bEnd.isAfter(checkIn);
     }).toList();
 
     final occupiedByNight = <DateTime, Set<String>>{};
-    for (var d = checkIn; d.isBefore(checkOut); d = d.add(const Duration(days: 1))) {
+    for (
+      var d = checkIn;
+      d.isBefore(checkOut);
+      d = d.add(const Duration(days: 1))
+    ) {
       occupiedByNight[d] = {};
       for (final b in overlapping) {
         if (b.selectedRooms == null || b.selectedRooms!.isEmpty) continue;
         final bStart = DateTime(b.checkIn.year, b.checkIn.month, b.checkIn.day);
-        final bEnd = DateTime(b.checkOut.year, b.checkOut.month, b.checkOut.day);
+        final bEnd = DateTime(
+          b.checkOut.year,
+          b.checkOut.month,
+          b.checkOut.day,
+        );
         if (!d.isBefore(bStart) && d.isBefore(bEnd)) {
           for (final r in b.selectedRooms!) {
             occupiedByNight[d]!.add(r);
@@ -369,7 +449,11 @@ class _AddBookingPageState extends State<AddBookingPage> {
     }
 
     for (final room in roomsToCheck) {
-      for (var d = checkIn; d.isBefore(checkOut); d = d.add(const Duration(days: 1))) {
+      for (
+        var d = checkIn;
+        d.isBefore(checkOut);
+        d = d.add(const Duration(days: 1))
+      ) {
         if (occupiedByNight[d]!.contains(room)) return false;
       }
     }
@@ -379,21 +463,22 @@ class _AddBookingPageState extends State<AddBookingPage> {
   int get _servicesSubtotal =>
       _selectedServices.fold(0, (sum, s) => sum + s.lineTotal);
 
-  int get _pricePerNight =>
-      CurrencyFormatter.parseMoneyStringToCents(_pricePerNightController.text.trim());
+  int get _pricePerNight => CurrencyFormatter.parseMoneyStringToCents(
+    _pricePerNightController.text.trim(),
+  );
 
-  int get _roomSubtotal =>
-      _numberOfNights * _numberOfRooms * _pricePerNight;
+  int get _roomSubtotal => _numberOfNights * _numberOfRooms * _pricePerNight;
 
   int get _suggestedTotal => _roomSubtotal + _servicesSubtotal;
 
   int get _advanceAmountRequired =>
       _advancePercent != null && _advancePercent! > 0 && _suggestedTotal > 0
-          ? (_suggestedTotal * _advancePercent! / 100).round()
-          : 0;
+      ? (_suggestedTotal * _advancePercent! / 100).round()
+      : 0;
 
-  int get _advanceAmountPaid =>
-      CurrencyFormatter.parseMoneyStringToCents(_advanceAmountPaidController.text.trim());
+  int get _advanceAmountPaid => CurrencyFormatter.parseMoneyStringToCents(
+    _advanceAmountPaidController.text.trim(),
+  );
 
   /// Derived status for display (paid/waiting/not_required). Stored status is _advanceStatus (not_required/pending/received).
   String get _advanceDisplayStatus {
@@ -426,9 +511,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
           child: TextFormField(
             controller: controller,
             keyboardType: TextInputType.number,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-            ],
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
               hintText: 'Enter a number',
@@ -494,12 +577,14 @@ class _AddBookingPageState extends State<AddBookingPage> {
     setState(() {
       _selectedServices.removeWhere((s) => s.serviceId == service.id);
       if (quantity > 0 && service.id != null) {
-        _selectedServices.add(BookingServiceItem(
-          serviceId: service.id!,
-          name: service.name,
-          unitPrice: service.price,
-          quantity: quantity,
-        )        );
+        _selectedServices.add(
+          BookingServiceItem(
+            serviceId: service.id!,
+            name: service.name,
+            unitPrice: service.price,
+            quantity: quantity,
+          ),
+        );
       }
     });
   }
@@ -579,7 +664,10 @@ class _AddBookingPageState extends State<AddBookingPage> {
         // Validate new client form
         if (_clientNameController.text.isEmpty ||
             _clientPhoneController.text.isEmpty) {
-          showAppNotification(context, 'Please fill in client name and phone number');
+          showAppNotification(
+            context,
+            'Please fill in client name and phone number',
+          );
           return;
         }
         // Create client model from form
@@ -595,7 +683,10 @@ class _AddBookingPageState extends State<AddBookingPage> {
         if (_selectedClient == null ||
             _selectedClient!.name.isEmpty ||
             _selectedClient!.phone.isEmpty) {
-          showAppNotification(context, 'Please search and select a client, or create a new one');
+          showAppNotification(
+            context,
+            'Please search and select a client, or create a new one',
+          );
           return;
         }
         clientToUse = _selectedClient;
@@ -615,7 +706,10 @@ class _AddBookingPageState extends State<AddBookingPage> {
       }
 
       if (_checkInDate == null || _checkOutDate == null) {
-        showAppNotification(context, 'Please select check-in and check-out dates');
+        showAppNotification(
+          context,
+          'Please select check-in and check-out dates',
+        );
         return;
       }
 
@@ -633,7 +727,10 @@ class _AddBookingPageState extends State<AddBookingPage> {
         if (hotelId == null || authUserId == null) {
           if (mounted) {
             Navigator.pop(context);
-            showAppNotification(context, 'No hotel selected or not authenticated');
+            showAppNotification(
+              context,
+              'No hotel selected or not authenticated',
+            );
           }
           return;
         }
@@ -666,7 +763,11 @@ class _AddBookingPageState extends State<AddBookingPage> {
             });
           } else {
             // User doesn't exist, create new user in Firebase
-            userId = await _firebaseService.createUser(authUserId, hotelId, clientToUse);
+            userId = await _firebaseService.createUser(
+              authUserId,
+              hotelId,
+              clientToUse,
+            );
             // Create user object with the new ID
             userToUse = clientToUse.copyWith(id: userId);
             // Update selected client for future use
@@ -691,7 +792,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
             selectedRoomNumbers = assigned;
           }
         } else if (_wantsSpecificRoom) {
-          final rooms = _selectedRooms.where((room) => room.isNotEmpty).toList();
+          final rooms = _selectedRooms
+              .where((room) => room.isNotEmpty)
+              .toList();
           if (rooms.length != _numberOfRooms) {
             if (mounted) {
               Navigator.pop(context);
@@ -702,7 +805,10 @@ class _AddBookingPageState extends State<AddBookingPage> {
             }
             return;
           }
-          final available = await _areSelectedRoomsAvailable(authUserId, hotelId);
+          final available = await _areSelectedRoomsAvailable(
+            authUserId,
+            hotelId,
+          );
           if (!available) {
             overCapacity = true;
             selectedRoomNumbers = rooms;
@@ -721,7 +827,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
 
         // Step 3: Build booking with user information (use 'Waiting list' when over capacity)
         final statusToSave = overCapacity ? 'Waiting list' : _bookingStatus;
-        final amountPaid = CurrencyFormatter.parseMoneyStringToCents(_amountPaidController.text.trim());
+        final amountPaid = CurrencyFormatter.parseMoneyStringToCents(
+          _amountPaidController.text.trim(),
+        );
         final nameToId = _roomNameToId;
         final selectedRoomIds = selectedRoomNumbers
             ?.map((name) => nameToId[name])
@@ -738,7 +846,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
           numberOfRooms: _numberOfRooms,
           nextToEachOther: _numberOfRooms >= 2 ? _roomsNextToEachOther : false,
           selectedRooms: selectedRoomNumbers,
-          selectedRoomIds: selectedRoomIds?.isNotEmpty == true ? selectedRoomIds : null,
+          selectedRoomIds: selectedRoomIds?.isNotEmpty == true
+              ? selectedRoomIds
+              : null,
           numberOfGuests: _numberOfGuests,
           status: statusToSave,
           notes: _notesController.text.isEmpty ? null : _notesController.text,
@@ -750,20 +860,28 @@ class _AddBookingPageState extends State<AddBookingPage> {
               ? null
               : List<BookingServiceItem>.from(_selectedServices),
           advancePercent: () {
-            final p =
-                int.tryParse(_advancePercentController.text.trim());
+            final p = int.tryParse(_advancePercentController.text.trim());
             return p != null && p > 0 ? p : null;
           }(),
-          advanceAmountPaid:
-              CurrencyFormatter.parseMoneyStringToCents(_advanceAmountPaidController.text.trim()),
+          advanceAmountPaid: CurrencyFormatter.parseMoneyStringToCents(
+            _advanceAmountPaidController.text.trim(),
+          ),
           advancePaymentMethod: _advancePaymentMethod,
           advanceStatus: _advanceStatus,
+          checkedInAt: _checkedInAt,
+          checkedOutAt: _checkedOutAt,
         );
 
         // Step 3b: Strict validation before save (when rooms are assigned)
         if (selectedRoomNumbers != null && selectedRoomNumbers.isNotEmpty) {
-          final overlapping = await _getOverlappingBookingsForValidation(authUserId, hotelId);
-          final existingInputs = _bookingModelsToBookingInputs(overlapping, nameToId);
+          final overlapping = await _getOverlappingBookingsForValidation(
+            authUserId,
+            hotelId,
+          );
+          final existingInputs = _bookingModelsToBookingInputs(
+            overlapping,
+            nameToId,
+          );
           for (final roomName in selectedRoomNumbers) {
             final roomId = nameToId[roomName] ?? roomName;
             final newInput = BookingInput(
@@ -779,8 +897,15 @@ class _AddBookingPageState extends State<AddBookingPage> {
             if (validationError != null) {
               if (mounted) Navigator.pop(context);
               if (mounted) {
-                showAppNotification(context, validationError.message, type: AppNotificationType.error);
-                final writer = FirestoreAuditLogWriter(userId: authUserId, hotelId: hotelId);
+                showAppNotification(
+                  context,
+                  validationError.message,
+                  type: AppNotificationType.error,
+                );
+                final writer = FirestoreAuditLogWriter(
+                  userId: authUserId,
+                  hotelId: hotelId,
+                );
                 final action = validationError.code == 'BOOKING_OVERLAP'
                     ? AuditAction.overlapBlocked
                     : AuditAction.validationFailed;
@@ -789,7 +914,8 @@ class _AddBookingPageState extends State<AddBookingPage> {
                   'field': validationError.field,
                 };
                 if (validationError.conflictingBookingId != null) {
-                  metadata['conflictingBookingId'] = validationError.conflictingBookingId!;
+                  metadata['conflictingBookingId'] =
+                      validationError.conflictingBookingId!;
                 }
                 logBookingAction(
                   action,
@@ -813,19 +939,27 @@ class _AddBookingPageState extends State<AddBookingPage> {
         if (widget.existingBooking != null) {
           await _firebaseService.updateBooking(authUserId, hotelId, booking);
         } else {
-          savedBookingId = await _firebaseService.createBooking(authUserId, hotelId, booking);
+          savedBookingId = await _firebaseService.createBooking(
+            authUserId,
+            hotelId,
+            booking,
+          );
         }
 
         // Audit log after successful save (non-blocking)
-        final auditWriter = FirestoreAuditLogWriter(userId: authUserId, hotelId: hotelId);
+        final auditWriter = FirestoreAuditLogWriter(
+          userId: authUserId,
+          hotelId: hotelId,
+        );
         final auditAction = widget.existingBooking != null
             ? AuditAction.bookingUpdated
             : AuditAction.bookingCreated;
         final firstRoomId = selectedRoomIds?.isNotEmpty == true
             ? selectedRoomIds!.first
             : (selectedRoomNumbers != null && selectedRoomNumbers.isNotEmpty
-                ? (nameToId[selectedRoomNumbers.first] ?? selectedRoomNumbers.first)
-                : '');
+                  ? (nameToId[selectedRoomNumbers.first] ??
+                        selectedRoomNumbers.first)
+                  : '');
         logBookingAction(
           auditAction,
           AuditLogData(
@@ -848,7 +982,8 @@ class _AddBookingPageState extends State<AddBookingPage> {
               'No capacity for these dates — added to waiting list. You can move it to confirmed when a room becomes available.',
             );
           } else {
-            final roomInfo = selectedRoomNumbers != null && selectedRoomNumbers.isNotEmpty
+            final roomInfo =
+                selectedRoomNumbers != null && selectedRoomNumbers.isNotEmpty
                 ? ' (${selectedRoomNumbers.join(', ')})'
                 : '';
             showAppNotification(
@@ -871,7 +1006,11 @@ class _AddBookingPageState extends State<AddBookingPage> {
 
         // Show error
         if (mounted) {
-          showAppNotification(context, 'Error creating booking: $e', type: AppNotificationType.error);
+          showAppNotification(
+            context,
+            'Error creating booking: $e',
+            type: AppNotificationType.error,
+          );
         }
       }
     }
@@ -927,7 +1066,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
       if (!mounted) return;
       final firstRoomId = booking.selectedRoomIds?.isNotEmpty == true
           ? booking.selectedRoomIds!.first
-          : (booking.selectedRooms?.isNotEmpty == true ? booking.selectedRooms!.first : '');
+          : (booking.selectedRooms?.isNotEmpty == true
+                ? booking.selectedRooms!.first
+                : '');
       logBookingAction(
         AuditAction.bookingDeleted,
         AuditLogData(
@@ -938,22 +1079,32 @@ class _AddBookingPageState extends State<AddBookingPage> {
         ),
         FirestoreAuditLogWriter(userId: userId, hotelId: hotelId),
       );
-      showAppNotification(context, 'Booking for ${booking.userName} deleted', type: AppNotificationType.success);
+      showAppNotification(
+        context,
+        'Booking for ${booking.userName} deleted',
+        type: AppNotificationType.success,
+      );
       if (Navigator.canPop(context)) {
         Navigator.pop(context, true);
       }
     } catch (e) {
       if (!mounted) return;
-      showAppNotification(context, 'Failed to delete: $e', type: AppNotificationType.error);
+      showAppNotification(
+        context,
+        'Failed to delete: $e',
+        type: AppNotificationType.error,
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final horizontalPadding = MediaQuery.of(context).size.width >= 768 ? 24.0 : 16.0;
+    final horizontalPadding = MediaQuery.of(context).size.width >= 768
+        ? 24.0
+        : 16.0;
     final hotel = HotelProvider.of(context).currentHotel;
     final currencyFormatter = CurrencyFormatter.fromHotel(hotel);
-    
+
     return Scaffold(
       body: SafeArea(
         child: Form(
@@ -1001,18 +1152,15 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       ? 'Update reservation'
                                       : 'Create a new reservation',
                                   style: Theme.of(context).textTheme.bodyLarge
-                                      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
                                 ),
                               ],
                             ),
                           ),
-                          if (widget.existingBooking != null)
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline_rounded),
-                              onPressed: _confirmDeleteBooking,
-                              color: Theme.of(context).colorScheme.error,
-                              tooltip: 'Delete booking',
-                            ),
                         ],
                       ),
                     ],
@@ -1060,20 +1208,29 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               });
                                             },
                                             child: Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                vertical: 10,
-                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 10,
+                                                  ),
                                               decoration: BoxDecoration(
                                                 color: !_showCreateClientForm
                                                     ? cs.surface
                                                     : Colors.transparent,
-                                                borderRadius: BorderRadius.circular(8),
-                                                boxShadow: !_showCreateClientForm
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                boxShadow:
+                                                    !_showCreateClientForm
                                                     ? [
                                                         BoxShadow(
-                                                          color: cs.shadow.withOpacity(0.05),
+                                                          color: cs.shadow
+                                                              .withValues(
+                                                                alpha: 0.05,
+                                                              ),
                                                           blurRadius: 8,
-                                                          offset: const Offset(0, 2),
+                                                          offset: const Offset(
+                                                            0,
+                                                            2,
+                                                          ),
                                                         ),
                                                       ]
                                                     : null,
@@ -1082,7 +1239,8 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                                 child: Text(
                                                   'Search Client',
                                                   style: TextStyle(
-                                                    color: !_showCreateClientForm
+                                                    color:
+                                                        !_showCreateClientForm
                                                         ? cs.onSurface
                                                         : cs.onSurfaceVariant,
                                                     fontWeight: FontWeight.w600,
@@ -1103,20 +1261,28 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               });
                                             },
                                             child: Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                vertical: 10,
-                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 10,
+                                                  ),
                                               decoration: BoxDecoration(
                                                 color: _showCreateClientForm
                                                     ? cs.surface
                                                     : Colors.transparent,
-                                                borderRadius: BorderRadius.circular(8),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
                                                 boxShadow: _showCreateClientForm
                                                     ? [
                                                         BoxShadow(
-                                                          color: cs.shadow.withOpacity(0.05),
+                                                          color: cs.shadow
+                                                              .withValues(
+                                                                alpha: 0.05,
+                                                              ),
                                                           blurRadius: 8,
-                                                          offset: const Offset(0, 2),
+                                                          offset: const Offset(
+                                                            0,
+                                                            2,
+                                                          ),
                                                         ),
                                                       ]
                                                     : null,
@@ -1234,11 +1400,12 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       ),
                                       GestureDetector(
                                         onTap: () async {
-                                          final value = await _showNumberInputDialog(
-                                            title: 'Number of guests',
-                                            initialValue: _numberOfGuests,
-                                            minValue: 1,
-                                          );
+                                          final value =
+                                              await _showNumberInputDialog(
+                                                title: 'Number of guests',
+                                                initialValue: _numberOfGuests,
+                                                minValue: 1,
+                                              );
                                           if (value != null) {
                                             setState(() {
                                               _numberOfGuests = value;
@@ -1299,10 +1466,15 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 onTap: _selectCheckInDate,
                                 child: Container(
                                   decoration: BoxDecoration(
-                                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.surfaceContainerHighest,
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
-                                      color: Theme.of(context).colorScheme.outline.withOpacity(0.5),
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .outline
+                                          .withValues(alpha: 0.5),
                                     ),
                                   ),
                                   padding: const EdgeInsets.all(16),
@@ -1310,7 +1482,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     children: [
                                       Icon(
                                         Icons.calendar_today_rounded,
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
                                         size: 20,
                                       ),
                                       const SizedBox(width: 12),
@@ -1323,7 +1497,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               'Check-in Date',
                                               style: TextStyle(
                                                 fontSize: 12,
-                                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
                                               ),
                                             ),
                                             const SizedBox(height: 4),
@@ -1336,8 +1512,12 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               style: TextStyle(
                                                 fontSize: 16,
                                                 color: _checkInDate != null
-                                                    ? Theme.of(context).colorScheme.onSurface
-                                                    : Theme.of(context).colorScheme.onSurfaceVariant,
+                                                    ? Theme.of(
+                                                        context,
+                                                      ).colorScheme.onSurface
+                                                    : Theme.of(context)
+                                                          .colorScheme
+                                                          .onSurfaceVariant,
                                                 fontWeight: FontWeight.w500,
                                               ),
                                             ),
@@ -1346,7 +1526,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       ),
                                       Icon(
                                         Icons.chevron_right_rounded,
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
                                       ),
                                     ],
                                   ),
@@ -1359,10 +1541,15 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 onTap: _selectCheckOutDate,
                                 child: Container(
                                   decoration: BoxDecoration(
-                                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.surfaceContainerHighest,
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
-                                      color: Theme.of(context).colorScheme.outline.withOpacity(0.5),
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .outline
+                                          .withValues(alpha: 0.5),
                                     ),
                                   ),
                                   padding: const EdgeInsets.all(16),
@@ -1370,7 +1557,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     children: [
                                       Icon(
                                         Icons.event_rounded,
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
                                         size: 20,
                                       ),
                                       const SizedBox(width: 12),
@@ -1383,7 +1572,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               'Check-out Date',
                                               style: TextStyle(
                                                 fontSize: 12,
-                                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
                                               ),
                                             ),
                                             const SizedBox(height: 4),
@@ -1396,8 +1587,12 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               style: TextStyle(
                                                 fontSize: 16,
                                                 color: _checkOutDate != null
-                                                    ? Theme.of(context).colorScheme.onSurface
-                                                    : Theme.of(context).colorScheme.onSurfaceVariant,
+                                                    ? Theme.of(
+                                                        context,
+                                                      ).colorScheme.onSurface
+                                                    : Theme.of(context)
+                                                          .colorScheme
+                                                          .onSurfaceVariant,
                                                 fontWeight: FontWeight.w500,
                                               ),
                                             ),
@@ -1406,13 +1601,41 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       ),
                                       Icon(
                                         Icons.chevron_right_rounded,
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
                                       ),
                                     ],
                                   ),
                                 ),
                               ),
                               const SizedBox(height: 16),
+
+                              if (widget.existingBooking != null) ...[
+                                Text(
+                                  'Check-in / Check-out',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _buildCheckInButton(context),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: _buildCheckOutButton(context),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                              ],
 
                               const Divider(),
                               const SizedBox(height: 16),
@@ -1437,7 +1660,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                           'How many rooms do you need?',
                                           style: TextStyle(
                                             fontSize: 13,
-                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
                                           ),
                                         ),
                                       ],
@@ -1460,12 +1685,13 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       ),
                                       GestureDetector(
                                         onTap: () async {
-                                          final value = await _showNumberInputDialog(
-                                            title: 'Number of rooms',
-                                            initialValue: _numberOfRooms,
-                                            minValue: 1,
-                                            maxValue: _maxRooms,
-                                          );
+                                          final value =
+                                              await _showNumberInputDialog(
+                                                title: 'Number of rooms',
+                                                initialValue: _numberOfRooms,
+                                                minValue: 1,
+                                                maxValue: _maxRooms,
+                                              );
                                           if (value != null) {
                                             _updateNumberOfRooms(value);
                                           }
@@ -1530,7 +1756,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                             'Check in rooms together',
                                             style: TextStyle(
                                               fontSize: 13,
-                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
                                             ),
                                           ),
                                         ],
@@ -1581,7 +1809,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                           'Assign specific rooms to this booking',
                                           style: TextStyle(
                                             fontSize: 13,
-                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
                                           ),
                                         ),
                                       ],
@@ -1604,27 +1834,32 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       final availableOptions = _roomNames
                                           .where(
                                             (room) =>
-                                                !_selectedRooms.contains(room) ||
+                                                !_selectedRooms.contains(
+                                                  room,
+                                                ) ||
                                                 _selectedRooms[index] == room,
                                           )
                                           .toList();
-                                      final currentValue = index <
-                                                  _selectedRooms.length &&
+                                      final currentValue =
+                                          index < _selectedRooms.length &&
                                               _selectedRooms[index].isNotEmpty
                                           ? _selectedRooms[index]
                                           : null;
-                                      final valueNotInList = currentValue !=
-                                          null &&
-                                          !availableOptions
-                                              .contains(currentValue);
+                                      final valueNotInList =
+                                          currentValue != null &&
+                                          !availableOptions.contains(
+                                            currentValue,
+                                          );
                                       final items = [
                                         ...availableOptions.map(
                                           (room) => DropdownMenuItem(
                                             value: room,
                                             child: Text(
-                                              'Room $room',
+                                              '$room',
                                               style: TextStyle(
-                                                color: Theme.of(context).colorScheme.onSurface,
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurface,
                                                 fontSize: 16,
                                               ),
                                             ),
@@ -1636,16 +1871,19 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                             child: Text(
                                               'Room $currentValue (no longer available)',
                                               style: TextStyle(
-                                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
                                                 fontSize: 16,
                                               ),
                                             ),
                                           ),
                                       ];
-                                      final dropdownValue = (currentValue !=
-                                                  null &&
+                                      final dropdownValue =
+                                          (currentValue != null &&
                                               (availableOptions.contains(
-                                                    currentValue) ||
+                                                    currentValue,
+                                                  ) ||
                                                   valueNotInList))
                                           ? currentValue
                                           : null;
@@ -1656,7 +1894,7 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               : 0,
                                         ),
                                         child: DropdownButtonFormField<String>(
-                                          value: dropdownValue,
+                                          initialValue: dropdownValue,
                                           decoration: InputDecoration(
                                             labelText: _numberOfRooms == 1
                                                 ? 'Select Room'
@@ -1667,7 +1905,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                                   BorderRadius.circular(12),
                                             ),
                                             filled: true,
-                                            fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                            fillColor: Theme.of(context)
+                                                .colorScheme
+                                                .surfaceContainerHighest,
                                             prefixIcon: const Icon(
                                               Icons.hotel_rounded,
                                             ),
@@ -1679,9 +1919,13 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                           ),
                                           style: TextStyle(
                                             fontSize: 16,
-                                            color: Theme.of(context).colorScheme.onSurface,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurface,
                                           ),
-                                          dropdownColor: Theme.of(context).colorScheme.surface,
+                                          dropdownColor: Theme.of(
+                                            context,
+                                          ).colorScheme.surface,
                                           items: items,
                                           onChanged: (value) {
                                             setState(() {
@@ -1723,7 +1967,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 Container(
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
-                                    color: StayoraColors.blue.withOpacity(0.1),
+                                    color: StayoraColors.blue.withValues(
+                                      alpha: 0.1,
+                                    ),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Row(
@@ -1771,7 +2017,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 'Price per night (per room)',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                               const SizedBox(height: 8),
@@ -1783,38 +2031,50 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   filled: true,
-                                  fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                  prefixIcon: Icon(currencyFormatter.currencyIcon),
+                                  fillColor: Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHighest,
+                                  prefixIcon: Icon(
+                                    currencyFormatter.currencyIcon,
+                                  ),
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16,
                                     vertical: 14,
                                   ),
                                 ),
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                inputFormatters: [
-                                  MoneyInputFormatter(),
-                                ],
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                inputFormatters: [MoneyInputFormatter()],
                                 onChanged: (_) {
                                   setState(() {});
                                 },
                                 onEditingComplete: () {
-                                  final cents = CurrencyFormatter.parseMoneyStringToCents(
-                                      _pricePerNightController.text.trim());
+                                  final cents =
+                                      CurrencyFormatter.parseMoneyStringToCents(
+                                        _pricePerNightController.text.trim(),
+                                      );
                                   if (cents > 0) {
                                     _pricePerNightController.text =
-                                        CurrencyFormatter.formatCentsForInput(cents);
+                                        CurrencyFormatter.formatCentsForInput(
+                                          cents,
+                                        );
                                   }
                                   setState(() {});
                                 },
                               ),
-                              if (_numberOfNights > 0 && _pricePerNight > 0) ...[
+                              if (_numberOfNights > 0 &&
+                                  _pricePerNight > 0) ...[
                                 const SizedBox(height: 12),
                                 Row(
                                   children: [
                                     Icon(
                                       Icons.nights_stay_rounded,
                                       size: 18,
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
                                     ),
                                     const SizedBox(width: 8),
                                     Expanded(
@@ -1822,7 +2082,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         '$_numberOfNights night${_numberOfNights == 1 ? '' : 's'} × $_numberOfRooms room${_numberOfRooms == 1 ? '' : 's'} × ${currencyFormatter.formatCompact(_pricePerNight)}',
                                         style: TextStyle(
                                           fontSize: 14,
-                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
                                         ),
                                         overflow: TextOverflow.ellipsis,
                                         maxLines: 1,
@@ -1831,7 +2093,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     const SizedBox(width: 8),
                                     Flexible(
                                       child: Text(
-                                        currencyFormatter.formatCompact(_roomSubtotal),
+                                        currencyFormatter.formatCompact(
+                                          _roomSubtotal,
+                                        ),
                                         style: const TextStyle(
                                           fontWeight: FontWeight.w600,
                                           color: StayoraColors.blue,
@@ -1853,26 +2117,35 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     style: Theme.of(context)
                                         .textTheme
                                         .titleMedium
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                                        ?.copyWith(fontWeight: FontWeight.w600),
                                   ),
                                   const SizedBox(width: 8),
                                   Flexible(
                                     child: TextButton.icon(
                                       onPressed: () async {
-                                        await Navigator.of(context, rootNavigator: false).push(
+                                        await Navigator.of(
+                                          context,
+                                          rootNavigator: false,
+                                        ).push(
                                           MaterialPageRoute(
                                             builder: (context) =>
                                                 const ServicesPage(),
                                           ),
                                         );
-                                        final hid = HotelProvider.of(context).hotelId;
-                                        final uid = AuthScopeData.of(context).uid;
-                                        if (hid != null && uid != null) _loadServices(uid, hid);
+                                        if (!mounted) return;
+                                        final hid = HotelProvider.of(
+                                          context,
+                                        ).hotelId;
+                                        final uid = AuthScopeData.of(
+                                          context,
+                                        ).uid;
+                                        if (hid != null && uid != null)
+                                          _loadServices(uid, hid);
                                       },
-                                      icon: const Icon(Icons.add_circle_outline,
-                                          size: 18),
+                                      icon: const Icon(
+                                        Icons.add_circle_outline,
+                                        size: 18,
+                                      ),
                                       label: Text(
                                         'Add more services',
                                         overflow: TextOverflow.ellipsis,
@@ -1893,7 +2166,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     'No services yet. Tap "Add more services" to add breakfast, spa, sauna, etc.',
                                     style: TextStyle(
                                       fontSize: 14,
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
                                     ),
                                   ),
                                 )
@@ -1920,7 +2195,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                                 '${currencyFormatter.formatCompact(service.price)} per unit',
                                                 style: TextStyle(
                                                   fontSize: 12,
-                                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
                                                 ),
                                               ),
                                             ],
@@ -1931,12 +2208,13 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                           children: [
                                             IconButton(
                                               icon: const Icon(
-                                                  Icons.remove_circle_outline),
+                                                Icons.remove_circle_outline,
+                                              ),
                                               onPressed: qty > 0
                                                   ? () => _setServiceQuantity(
-                                                        service,
-                                                        qty - 1,
-                                                      )
+                                                      service,
+                                                      qty - 1,
+                                                    )
                                                   : null,
                                               color: StayoraColors.blue,
                                             ),
@@ -1944,11 +2222,11 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                               onTap: () async {
                                                 final value =
                                                     await _showNumberInputDialog(
-                                                  title:
-                                                      'Quantity for ${service.name}',
-                                                  initialValue: qty,
-                                                  minValue: 0,
-                                                );
+                                                      title:
+                                                          'Quantity for ${service.name}',
+                                                      initialValue: qty,
+                                                      minValue: 0,
+                                                    );
                                                 if (value != null) {
                                                   _setServiceQuantity(
                                                     service,
@@ -1970,12 +2248,13 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                             ),
                                             IconButton(
                                               icon: const Icon(
-                                                  Icons.add_circle_outline),
+                                                Icons.add_circle_outline,
+                                              ),
                                               onPressed: () =>
                                                   _setServiceQuantity(
-                                                service,
-                                                qty + 1,
-                                              ),
+                                                    service,
+                                                    qty + 1,
+                                                  ),
                                               color: StayoraColors.blue,
                                             ),
                                           ],
@@ -1986,30 +2265,38 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 }),
                               if (_selectedServices.isNotEmpty) ...[
                                 const SizedBox(height: 8),
-                                ..._selectedServices.map((s) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 4),
-                                      child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            '${s.name} — ${s.quantity} × ${currencyFormatter.formatCompact(s.unitPrice)}',
-                                            style: TextStyle(
-                                              fontSize: 13,
-                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                            ),
+                                ..._selectedServices.map(
+                                  (s) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 4),
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          '${s.name} — ${s.quantity} × ${currencyFormatter.formatCompact(s.unitPrice)}',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
                                           ),
-                                          Text(
-                                            currencyFormatter.formatCompact(s.lineTotal),
-                                            style: TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w500,
-                                              color: Theme.of(context).colorScheme.onSurface,
-                                            ),
+                                        ),
+                                        Text(
+                                          currencyFormatter.formatCompact(
+                                            s.lineTotal,
                                           ),
-                                        ],
-                                      ),
-                                    )),
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w500,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurface,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                                 Row(
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceBetween,
@@ -2026,7 +2313,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     ),
                                     const SizedBox(width: 8),
                                     Text(
-                                      currencyFormatter.formatCompact(_servicesSubtotal),
+                                      currencyFormatter.formatCompact(
+                                        _servicesSubtotal,
+                                      ),
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w600,
                                         fontSize: 15,
@@ -2050,14 +2339,18 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                       style: TextStyle(
                                         fontWeight: FontWeight.w600,
                                         fontSize: 15,
-                                        color: Theme.of(context).colorScheme.onSurface,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
                                       ),
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
-                                    currencyFormatter.formatCompact(_suggestedTotal),
+                                    currencyFormatter.formatCompact(
+                                      _suggestedTotal,
+                                    ),
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 17,
@@ -2072,12 +2365,8 @@ class _AddBookingPageState extends State<AddBookingPage> {
                               // Advance payment
                               Text(
                                 'Advance payment',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleMedium
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w600),
                               ),
                               const SizedBox(height: 8),
                               Row(
@@ -2090,16 +2379,19 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         labelText: 'Advance %',
                                         hintText: 'e.g. 30',
                                         border: OutlineInputBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                         ),
                                         filled: true,
-                                        fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                        fillColor: Theme.of(
+                                          context,
+                                        ).colorScheme.surfaceContainerHighest,
                                         contentPadding:
                                             const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 14,
-                                        ),
+                                              horizontal: 16,
+                                              vertical: 14,
+                                            ),
                                       ),
                                       keyboardType: TextInputType.number,
                                       inputFormatters: [
@@ -2109,20 +2401,27 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         setState(() {
                                           final p =
                                               int.tryParse(
-                                                      _advancePercentController
-                                                          .text.trim()) ??
-                                                  0;
-                                          _advancePercent =
-                                              p > 0 ? p : null;
+                                                _advancePercentController.text
+                                                    .trim(),
+                                              ) ??
+                                              0;
+                                          _advancePercent = p > 0 ? p : null;
                                           if (p > 0 &&
-                                              _advanceStatus == 'not_required') {
+                                              _advanceStatus ==
+                                                  'not_required') {
                                             _advanceStatus = 'pending';
                                           }
                                           if (p > 0 && _suggestedTotal > 0) {
-                                            final amount = (_suggestedTotal * p / 100).round();
-                                            _advanceAmountPaidController.text = CurrencyFormatter.formatCentsForInput(amount);
+                                            final amount =
+                                                (_suggestedTotal * p / 100)
+                                                    .round();
+                                            _advanceAmountPaidController.text =
+                                                CurrencyFormatter.formatCentsForInput(
+                                                  amount,
+                                                );
                                           } else {
-                                            _advanceAmountPaidController.text = '';
+                                            _advanceAmountPaidController.text =
+                                                '';
                                           }
                                         });
                                       },
@@ -2132,47 +2431,64 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   Expanded(
                                     flex: 2,
                                     child: TextFormField(
-                                      controller:
-                                          _advanceAmountPaidController,
+                                      controller: _advanceAmountPaidController,
                                       decoration: InputDecoration(
                                         labelText: 'Advance paid',
                                         hintText: 'e.g. 0 or 20.00',
                                         border: OutlineInputBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                         ),
                                         filled: true,
-                                        fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                        fillColor: Theme.of(
+                                          context,
+                                        ).colorScheme.surfaceContainerHighest,
                                         prefixIcon: Icon(
-                                            currencyFormatter.currencyIcon,
-                                            size: 20),
+                                          currencyFormatter.currencyIcon,
+                                          size: 20,
+                                        ),
                                         contentPadding:
                                             const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 14,
-                                        ),
+                                              horizontal: 16,
+                                              vertical: 14,
+                                            ),
                                       ),
-                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                      inputFormatters: [
-                                        MoneyInputFormatter(),
-                                      ],
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                            decimal: true,
+                                          ),
+                                      inputFormatters: [MoneyInputFormatter()],
                                       onChanged: (_) {
                                         setState(() {
-                                          final paid = CurrencyFormatter.parseMoneyStringToCents(
-                                              _advanceAmountPaidController.text.trim());
-                                          if (_suggestedTotal > 0 && paid >= 0) {
-                                            final p = (paid * 100 / _suggestedTotal).round();
+                                          final paid =
+                                              CurrencyFormatter.parseMoneyStringToCents(
+                                                _advanceAmountPaidController
+                                                    .text
+                                                    .trim(),
+                                              );
+                                          if (_suggestedTotal > 0 &&
+                                              paid >= 0) {
+                                            final p =
+                                                (paid * 100 / _suggestedTotal)
+                                                    .round();
                                             _advancePercent = p > 0 ? p : null;
-                                            _advancePercentController.text = p > 0 ? p.toString() : '';
+                                            _advancePercentController.text =
+                                                p > 0 ? p.toString() : '';
                                           }
                                         });
                                       },
                                       onEditingComplete: () {
-                                        final cents = CurrencyFormatter.parseMoneyStringToCents(
-                                            _advanceAmountPaidController.text.trim());
+                                        final cents =
+                                            CurrencyFormatter.parseMoneyStringToCents(
+                                              _advanceAmountPaidController.text
+                                                  .trim(),
+                                            );
                                         if (cents > 0) {
                                           _advanceAmountPaidController.text =
-                                              CurrencyFormatter.formatCentsForInput(cents);
+                                              CurrencyFormatter.formatCentsForInput(
+                                                cents,
+                                              );
                                         }
                                         setState(() {});
                                       },
@@ -2188,14 +2504,18 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   'Required: ${currencyFormatter.formatCompact(_advanceAmountRequired)} ($_advancePercent% of total ${currencyFormatter.formatCompact(_suggestedTotal)})',
                                   style: TextStyle(
                                     fontSize: 13,
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
                                   ),
                                 ),
                               ],
                               const SizedBox(height: 12),
                               DropdownButtonFormField<String>(
-                                initialValue: BookingModel.paymentMethods
-                                        .contains(_advancePaymentMethod)
+                                initialValue:
+                                    BookingModel.paymentMethods.contains(
+                                      _advancePaymentMethod,
+                                    )
                                     ? _advancePaymentMethod
                                     : BookingModel.paymentMethods.first,
                                 decoration: InputDecoration(
@@ -2204,22 +2524,26 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   filled: true,
-                                  fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                  fillColor: Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHighest,
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16,
                                     vertical: 14,
                                   ),
                                 ),
                                 items: BookingModel.paymentMethods
-                                    .map((m) => DropdownMenuItem(
-                                          value: m,
-                                          child: Text(m),
-                                        ))
+                                    .map(
+                                      (m) => DropdownMenuItem(
+                                        value: m,
+                                        child: Text(m),
+                                      ),
+                                    )
                                     .toList(),
                                 onChanged: (v) => setState(() {
-                                      _advancePaymentMethod =
-                                          v ?? BookingModel.paymentMethods.first;
-                                    }),
+                                  _advancePaymentMethod =
+                                      v ?? BookingModel.paymentMethods.first;
+                                }),
                               ),
                               const SizedBox(height: 12),
                               // Advance status: received or pending (when advance is used)
@@ -2230,7 +2554,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w500,
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
                                   ),
                                 ),
                                 const SizedBox(height: 6),
@@ -2243,21 +2569,21 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                         label: const Text('Pending'),
                                         selected: _advanceStatus == 'pending',
                                         onSelected: (v) => setState(() {
-                                              _advanceStatus = 'pending';
-                                              _amountPaidController.clear();
-                                            }),
+                                          _advanceStatus = 'pending';
+                                          _amountPaidController.clear();
+                                        }),
                                         selectedColor: StayoraColors.warning
-                                            .withOpacity(0.3),
+                                            .withValues(alpha: 0.3),
                                       ),
                                       const SizedBox(width: 8),
                                       ChoiceChip(
                                         label: const Text('Received'),
                                         selected: _advanceStatus == 'received',
                                         onSelected: (v) => setState(() {
-                                              _advanceStatus = 'received';
-                                            }),
+                                          _advanceStatus = 'received';
+                                        }),
                                         selectedColor: StayoraColors.success
-                                            .withOpacity(0.3),
+                                            .withValues(alpha: 0.3),
                                       ),
                                     ],
                                   ),
@@ -2270,9 +2596,13 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Icon(Icons.account_balance_wallet_rounded,
-                                        size: 18,
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                    Icon(
+                                      Icons.account_balance_wallet_rounded,
+                                      size: 18,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
@@ -2282,7 +2612,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                           fontWeight: FontWeight.w600,
                                           color: _remainingBalance > 0
                                               ? StayoraColors.warning
-                                              : Theme.of(context).colorScheme.onSurface,
+                                              : Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurface,
                                         ),
                                         overflow: TextOverflow.ellipsis,
                                         maxLines: 2,
@@ -2293,16 +2625,20 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 const SizedBox(height: 12),
                                 Row(
                                   children: [
-                                    Icon(Icons.check_circle_rounded,
-                                        size: 18,
-                                        color: StayoraColors.success),
+                                    Icon(
+                                      Icons.check_circle_rounded,
+                                      size: 18,
+                                      color: StayoraColors.success,
+                                    ),
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
                                         'Advance paid (${currencyFormatter.formatCompact(_advanceAmountPaid)}) — $_advancePaymentMethod',
                                         style: TextStyle(
                                           fontSize: 14,
-                                          color: Theme.of(context).colorScheme.onSurface,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurface,
                                           fontWeight: FontWeight.w500,
                                         ),
                                         overflow: TextOverflow.ellipsis,
@@ -2319,16 +2655,22 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                   if (_advanceDisplayStatus == 'not_required') {
                                     return Row(
                                       children: [
-                                        Icon(Icons.info_outline_rounded,
-                                            size: 18,
-                                            color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                        Icon(
+                                          Icons.info_outline_rounded,
+                                          size: 18,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
                                         const SizedBox(width: 8),
                                         Expanded(
                                           child: Text(
                                             'No advance required',
                                             style: TextStyle(
                                               fontSize: 14,
-                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
                                             ),
                                             overflow: TextOverflow.ellipsis,
                                           ),
@@ -2353,24 +2695,33 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   filled: true,
-                                  fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                  prefixIcon: Icon(currencyFormatter.currencyIcon),
+                                  fillColor: Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHighest,
+                                  prefixIcon: Icon(
+                                    currencyFormatter.currencyIcon,
+                                  ),
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16,
                                     vertical: 16,
                                   ),
                                 ),
                                 style: const TextStyle(fontSize: 16),
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                inputFormatters: [
-                                  MoneyInputFormatter(),
-                                ],
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                inputFormatters: [MoneyInputFormatter()],
                                 onEditingComplete: () {
-                                  final cents = CurrencyFormatter.parseMoneyStringToCents(
-                                      _amountPaidController.text.trim());
+                                  final cents =
+                                      CurrencyFormatter.parseMoneyStringToCents(
+                                        _amountPaidController.text.trim(),
+                                      );
                                   if (cents > 0) {
                                     _amountPaidController.text =
-                                        CurrencyFormatter.formatCentsForInput(cents);
+                                        CurrencyFormatter.formatCentsForInput(
+                                          cents,
+                                        );
                                   }
                                   setState(() {});
                                 },
@@ -2378,8 +2729,10 @@ class _AddBookingPageState extends State<AddBookingPage> {
                               const SizedBox(height: 16),
                               // Payment method
                               DropdownButtonFormField<String>(
-                                initialValue: BookingModel.paymentMethods
-                                        .contains(_paymentMethod)
+                                initialValue:
+                                    BookingModel.paymentMethods.contains(
+                                      _paymentMethod,
+                                    )
                                     ? _paymentMethod
                                     : BookingModel.paymentMethods.first,
                                 decoration: InputDecoration(
@@ -2388,7 +2741,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   filled: true,
-                                  fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                  fillColor: Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHighest,
                                   prefixIcon: const Icon(
                                     Icons.credit_card_rounded,
                                   ),
@@ -2399,17 +2754,24 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 ),
                                 style: TextStyle(
                                   fontSize: 16,
-                                  color: Theme.of(context).colorScheme.onSurface,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
                                 ),
-                                dropdownColor: Theme.of(context).colorScheme.surface,
-                                items: BookingModel.paymentMethods
-                                    .map((method) {
+                                dropdownColor: Theme.of(
+                                  context,
+                                ).colorScheme.surface,
+                                items: BookingModel.paymentMethods.map((
+                                  method,
+                                ) {
                                   return DropdownMenuItem(
                                     value: method,
                                     child: Text(
                                       method,
                                       style: TextStyle(
-                                        color: Theme.of(context).colorScheme.onSurface,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
                                         fontSize: 16,
                                       ),
                                     ),
@@ -2439,7 +2801,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               filled: true,
-                              fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                              fillColor: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHighest,
                               prefixIcon: const Icon(Icons.info_rounded),
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 16,
@@ -2450,15 +2814,18 @@ class _AddBookingPageState extends State<AddBookingPage> {
                               fontSize: 16,
                               color: Theme.of(context).colorScheme.onSurface,
                             ),
-                            dropdownColor: Theme.of(context).colorScheme.surface,
-                            items: BookingModel.statusOptions
-                                .map((status) {
+                            dropdownColor: Theme.of(
+                              context,
+                            ).colorScheme.surface,
+                            items: BookingModel.statusOptions.map((status) {
                               return DropdownMenuItem(
                                 value: status,
                                 child: Text(
                                   status,
                                   style: TextStyle(
-                                    color: Theme.of(context).colorScheme.onSurface,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface,
                                     fontSize: 16,
                                   ),
                                 ),
@@ -2495,7 +2862,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               filled: true,
-                              fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                              fillColor: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHighest,
                               alignLabelWithHint: true,
                               contentPadding: const EdgeInsets.all(16),
                             ),
@@ -2515,7 +2884,9 @@ class _AddBookingPageState extends State<AddBookingPage> {
                           onPressed: _submitBooking,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: StayoraColors.blue,
-                            foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                            foregroundColor: Theme.of(
+                              context,
+                            ).colorScheme.onPrimary,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -2531,6 +2902,33 @@ class _AddBookingPageState extends State<AddBookingPage> {
                           ),
                         ),
                       ),
+                      const SizedBox(height: 12),
+                      if (widget.existingBooking != null)
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: _confirmDeleteBooking,
+                            style: FilledButton.styleFrom(
+                              backgroundColor:
+                                  Theme.of(context).colorScheme.error,
+                              foregroundColor:
+                                  Theme.of(context).colorScheme.onError,
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            label: const Text(
+                              'Delete booking',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
                       const SizedBox(height: 24),
                     ],
                   ),
@@ -2539,6 +2937,96 @@ class _AddBookingPageState extends State<AddBookingPage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCheckInButton(BuildContext context) {
+    if (_checkedInAt == null) {
+      return OutlinedButton.icon(
+        onPressed: () {
+          setState(() {
+            _checkedInAt = DateTime.now();
+          });
+        },
+        icon: const Icon(Icons.login_rounded, size: 16),
+        label: const Text('Check In'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: StayoraColors.teal,
+          side: const BorderSide(color: StayoraColors.teal),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+        ),
+      );
+    }
+    return _timestampBadge(
+      context,
+      icon: Icons.check_circle_rounded,
+      color: StayoraColors.teal,
+      text: 'In: ${DateFormat('MMM d, HH:mm').format(_checkedInAt!)}',
+    );
+  }
+
+  Widget _buildCheckOutButton(BuildContext context) {
+    if (_checkedOutAt == null) {
+      return OutlinedButton.icon(
+        onPressed: _checkedInAt == null
+            ? null
+            : () {
+                setState(() {
+                  _checkedOutAt = DateTime.now();
+                });
+              },
+        icon: const Icon(Icons.logout_rounded, size: 16),
+        label: const Text('Check Out'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: StayoraColors.warning,
+          side: BorderSide(
+            color: _checkedInAt == null
+                ? Theme.of(context).colorScheme.outline.withValues(alpha: 0.4)
+                : StayoraColors.warning,
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+        ),
+      );
+    }
+    return _timestampBadge(
+      context,
+      icon: Icons.check_circle_rounded,
+      color: StayoraColors.warning,
+      text: 'Out: ${DateFormat('MMM d, HH:mm').format(_checkedOutAt!)}',
+    );
+  }
+
+  Widget _timestampBadge(
+    BuildContext context, {
+    required IconData icon,
+    required Color color,
+    required String text,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: color,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2560,11 +3048,15 @@ class _AddBookingPageState extends State<AddBookingPage> {
         hintText: hint,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.5)),
+          borderSide: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
+          ),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Theme.of(context).colorScheme.outline.withOpacity(0.5)),
+          borderSide: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
+          ),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -2572,7 +3064,10 @@ class _AddBookingPageState extends State<AddBookingPage> {
         ),
         filled: true,
         fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-        prefixIcon: Icon(icon, color: Theme.of(context).colorScheme.onSurfaceVariant),
+        prefixIcon: Icon(
+          icon,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 16,

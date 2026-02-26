@@ -104,7 +104,7 @@ class _SchedulePageState extends State<SchedulePage> {
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
+                      color: Colors.black.withValues(alpha: 0.2),
                       blurRadius: 20,
                       offset: const Offset(0, 10),
                     ),
@@ -288,21 +288,6 @@ class _SchedulePageState extends State<SchedulePage> {
         .collection('shifts')
         .doc(shiftId)
         .delete();
-  }
-
-  Future<void> _updateShift(ShiftModel shift) async {
-    if (_userId == null || _hotelId == null ||
-        shift.id == null || shift.id!.isEmpty) {
-      return;
-    }
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(_userId)
-        .collection('hotels')
-        .doc(_hotelId)
-        .collection('shifts')
-        .doc(shift.id)
-        .update(shift.toFirestore());
   }
 
   @override
@@ -752,7 +737,7 @@ class _SchedulePageState extends State<SchedulePage> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.15),
+                color: Colors.black.withValues(alpha: 0.15),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
@@ -812,9 +797,9 @@ class _SchedulePageState extends State<SchedulePage> {
                         onPressed: () async {
                           final confirm = await _showDeleteConfirmation(dialogContext);
                           if (confirm != true) return;
-                          Navigator.pop(dialogContext);
                           await _deleteShift(shift.shiftId);
                           if (!mounted) return;
+                          Navigator.pop(context);
                           showAppNotification(context, 'Shift deleted', type: AppNotificationType.success);
                         },
                         icon: const Icon(Icons.delete_outline_rounded, size: 18),
@@ -867,7 +852,7 @@ class _SchedulePageState extends State<SchedulePage> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xFF007AFF).withOpacity(0.1),
+              color: const Color(0xFF007AFF).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, size: 20, color: const Color(0xFF007AFF)),
@@ -915,7 +900,7 @@ class _SchedulePageState extends State<SchedulePage> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.15),
+                color: Colors.black.withValues(alpha: 0.15),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
@@ -928,7 +913,7 @@ class _SchedulePageState extends State<SchedulePage> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.1),
+                  color: Colors.red.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -1021,9 +1006,9 @@ class _SchedulePageState extends State<SchedulePage> {
               height: _employeeRowHeight,
               decoration: BoxDecoration(
                 color: isSelected
-                    ? scheme.primary.withOpacity(0.2)
+                    ? scheme.primary.withValues(alpha: 0.2)
                     : shift != null
-                        ? StayoraColors.success.withOpacity(0.15)
+                        ? StayoraColors.success.withValues(alpha: 0.15)
                         : scheme.surface,
                 border: Border.all(
                   color: scheme.outlineVariant,
@@ -1180,7 +1165,7 @@ class _SchedulePageState extends State<SchedulePage> {
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF007AFF).withOpacity(0.25),
+                          color: const Color(0xFF007AFF).withValues(alpha: 0.25),
                           blurRadius: 8,
                           offset: const Offset(0, 4),
                         ),
@@ -1217,7 +1202,7 @@ class _SchedulePageState extends State<SchedulePage> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
+                      color: Colors.black.withValues(alpha: 0.08),
                       blurRadius: 16,
                       offset: const Offset(0, 4),
                     ),
@@ -1322,7 +1307,7 @@ class _SchedulePageState extends State<SchedulePage> {
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
+                                color: Colors.black.withValues(alpha: 0.05),
                                 blurRadius: 4,
                                 offset: const Offset(0, 2),
                               ),
@@ -1560,7 +1545,7 @@ class _PresetNameDialogState extends State<_PresetNameDialog> {
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.2),
+              color: Colors.black.withValues(alpha: 0.2),
               blurRadius: 20,
               offset: const Offset(0, 10),
             ),
@@ -1739,7 +1724,7 @@ class _EditPresetDialogState extends State<_EditPresetDialog> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.2),
+                color: Colors.black.withValues(alpha: 0.2),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
@@ -1849,7 +1834,7 @@ class _EditPresetDialogState extends State<_EditPresetDialog> {
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.2),
+              color: Colors.black.withValues(alpha: 0.2),
               blurRadius: 20,
               offset: const Offset(0, 10),
             ),
@@ -2187,12 +2172,13 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
         onDelete: () async {
           await widget.deletePreset(preset.id!);
           if (!mounted) return;
-          Navigator.pop(ctx, null);
+          Navigator.pop(context, null);
         },
       ),
     );
     if (result != null && mounted) {
       await widget.updatePreset(result);
+      if (!mounted) return;
       showAppNotification(context, 'Preset updated', type: AppNotificationType.success);
       _loadPresets();
       _applyPreset(result);
@@ -2222,7 +2208,7 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.15),
+              color: Colors.black.withValues(alpha: 0.15),
               blurRadius: 20,
               offset: const Offset(0, 10),
             ),
@@ -2381,7 +2367,7 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                         scrollDirection: Axis.horizontal,
                         padding: const EdgeInsets.symmetric(horizontal: 20),
                         itemCount: _presets.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        separatorBuilder: (_, _) => const SizedBox(width: 8),
                         itemBuilder: (context, index) {
                           final p = _presets[index];
                           final isSelected = _selectedPreset != null &&
@@ -2401,7 +2387,7 @@ class _AddShiftDialogState extends State<_AddShiftDialog> {
                                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                                     decoration: BoxDecoration(
                                       color: isSelected
-                                          ? scheme.primary.withOpacity(0.15)
+                                          ? scheme.primary.withValues(alpha: 0.15)
                                           : scheme.surfaceContainerHighest,
                                       borderRadius: BorderRadius.circular(10),
                                       border: Border.all(

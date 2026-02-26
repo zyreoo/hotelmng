@@ -64,7 +64,7 @@ class AppNotificationWidget extends StatelessWidget {
               },
               child: Material(
                 elevation: _elevation,
-                shadowColor: theme.colorScheme.shadow.withOpacity(0.2),
+                shadowColor: theme.colorScheme.shadow.withValues(alpha:0.2),
                 borderRadius: BorderRadius.circular(_radius),
                 color: bg,
                 child: InkWell(
@@ -112,13 +112,13 @@ class AppNotificationWidget extends StatelessWidget {
     switch (type) {
       case AppNotificationType.success:
         return (
-          isDark ? StayoraColors.success.withOpacity(0.25) : StayoraColors.success.withOpacity(0.12),
+          isDark ? StayoraColors.success.withValues(alpha:0.25) : StayoraColors.success.withValues(alpha:0.12),
           isDark ? const Color(0xFF30D158) : const Color(0xFF248A3D),
           Icons.check_circle_rounded,
         );
       case AppNotificationType.error:
         return (
-          isDark ? StayoraColors.error.withOpacity(0.25) : StayoraColors.error.withOpacity(0.12),
+          isDark ? StayoraColors.error.withValues(alpha:0.25) : StayoraColors.error.withValues(alpha:0.12),
           isDark ? const Color(0xFFFF453A) : const Color(0xFFD70015),
           Icons.error_outline_rounded,
         );
@@ -233,8 +233,7 @@ class _AppNotificationScopeInherited extends InheritedWidget {
       show != oldWidget.show;
 }
 
-/// Overlay that paints the notification on top (used inside [AppNotificationScope]).
-/// On mobile: top-center, full-width with margin. On larger screens: top-right, compact.
+
 class AppNotificationOverlay extends StatelessWidget {
   const AppNotificationOverlay({
     super.key,
@@ -281,7 +280,7 @@ class AppNotificationOverlay extends StatelessWidget {
               },
               child: Material(
                 elevation: _elevation,
-                shadowColor: theme.colorScheme.shadow.withOpacity(0.2),
+                shadowColor: theme.colorScheme.shadow.withValues(alpha:0.2),
                 borderRadius: BorderRadius.circular(_radius),
                 color: bg,
                 child: InkWell(
@@ -330,13 +329,13 @@ class AppNotificationOverlay extends StatelessWidget {
     switch (type) {
       case AppNotificationType.success:
         return (
-          isDark ? StayoraColors.success.withOpacity(0.25) : StayoraColors.success.withOpacity(0.12),
+          isDark ? StayoraColors.success.withValues(alpha:0.25) : StayoraColors.success.withValues(alpha:0.12),
           isDark ? const Color(0xFF30D158) : const Color(0xFF248A3D),
           Icons.check_circle_rounded,
         );
       case AppNotificationType.error:
         return (
-          isDark ? StayoraColors.error.withOpacity(0.25) : StayoraColors.error.withOpacity(0.12),
+          isDark ? StayoraColors.error.withValues(alpha:0.25) : StayoraColors.error.withValues(alpha:0.12),
           isDark ? const Color(0xFFFF453A) : const Color(0xFFD70015),
           Icons.error_outline_rounded,
         );

@@ -2,6 +2,7 @@
 ///
 /// Pure, framework-agnostic, no side effects.
 /// All dates are UTC; checkOutDate is exclusive.
+library;
 
 /// One detected gap between two consecutive bookings in the same room.
 class BookingGap {

@@ -51,6 +51,15 @@ class _HousekeepingPageState extends State<HousekeepingPage> {
     'cleaning',
   ];
 
+  /// Section order: dirty first (most visible), then cleaning, then available (clean), then occupied, out_of_order.
+  static const List<String> _statusDisplayOrder = [
+    'dirty',
+    'cleaning',
+    'clean',
+    'occupied',
+    'out_of_order',
+  ];
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -145,6 +154,12 @@ class _HousekeepingPageState extends State<HousekeepingPage> {
       if (rooms.isNotEmpty) map[status] = rooms;
     }
     return map;
+  }
+
+  /// Status keys in display order (dirty → cleaning → clean → occupied → out_of_order).
+  List<String> get _statusKeysInOrder {
+    final groups = _roomsByStatus;
+    return _statusDisplayOrder.where((s) => groups.containsKey(s)).toList();
   }
 
   @override
@@ -292,9 +307,9 @@ class _HousekeepingPageState extends State<HousekeepingPage> {
                   sliver: SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (context, i) {
-                        // Build grouped list: section header + items
+                        // Build grouped list: section header + items (order: dirty → cleaning → clean → …)
                         final statusGroups = _roomsByStatus;
-                        final statusKeys = statusGroups.keys.toList();
+                        final statusKeys = _statusKeysInOrder;
                         // Flatten into sections
                         final items = <_HkItem>[];
                         for (final status in statusKeys) {
@@ -389,7 +404,7 @@ class _StatusSectionHeader extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
+              color: color.withValues(alpha:0.12),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
@@ -444,7 +459,7 @@ class _RoomHousekeepingCard extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.12),
+                  color: statusColor.withValues(alpha:0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(statusIcon, color: statusColor, size: 22),
@@ -492,10 +507,10 @@ class _RoomHousekeepingCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.12),
+                    color: statusColor.withValues(alpha:0.12),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: statusColor.withOpacity(0.3),
+                      color: statusColor.withValues(alpha:0.3),
                     ),
                   ),
                   child: Row(
@@ -542,7 +557,7 @@ class _RoomHousekeepingCard extends StatelessWidget {
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: colorScheme.onSurfaceVariant.withOpacity(0.4),
+                  color: colorScheme.onSurfaceVariant.withValues(alpha:0.4),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -572,7 +587,7 @@ class _RoomHousekeepingCard extends StatelessWidget {
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.12),
+                      color: color.withValues(alpha:0.12),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(icon, color: color, size: 18),
@@ -622,10 +637,10 @@ class _FilterChip extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          color: isSelected ? color.withOpacity(0.15) : colorScheme.surfaceContainerHighest,
+          color: isSelected ? color.withValues(alpha:0.15) : colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? color : colorScheme.outline.withOpacity(0.3),
+            color: isSelected ? color : colorScheme.outline.withValues(alpha:0.3),
           ),
         ),
         child: Text(

@@ -310,7 +310,7 @@ class _ClientsPageState extends State<ClientsPage> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha:0.5),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -327,7 +327,7 @@ class _ClientsPageState extends State<ClientsPage> {
                           width: 56,
                           height: 56,
                           decoration: BoxDecoration(
-                            color: StayoraColors.blue.withOpacity(0.1),
+                            color: StayoraColors.blue.withValues(alpha:0.1),
                             borderRadius: BorderRadius.circular(28),
                           ),
                           child: Center(
@@ -496,7 +496,7 @@ class _ClientCard extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: StayoraColors.blue.withOpacity(0.1),
+                  color: StayoraColors.blue.withValues(alpha:0.1),
                   borderRadius: BorderRadius.circular(24),
                 ),
                 child: Center(
@@ -650,7 +650,7 @@ class _ClientBookingStatusChip extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
-            color: statusColor.withOpacity(0.15),
+            color: statusColor.withValues(alpha:0.15),
             borderRadius: BorderRadius.circular(6),
           ),
           child: Row(
@@ -728,7 +728,7 @@ class _BookingListItem extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: _getStatusColor(context, booking.status).withOpacity(0.15),
+                        color: _getStatusColor(context, booking.status).withValues(alpha:0.15),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(

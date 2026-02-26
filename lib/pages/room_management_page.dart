@@ -230,7 +230,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
                         icon: const Icon(Icons.add_rounded),
                         style: IconButton.styleFrom(
                           backgroundColor: StayoraLogo.stayoraBlue
-                              .withOpacity(0.1),
+                              .withValues(alpha:0.1),
                           foregroundColor: StayoraLogo.stayoraBlue,
                         ),
                       ),
@@ -341,7 +341,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
             decoration: InputDecoration(
               hintText: 'e.g. 101, Suite A',
               hintStyle: TextStyle(
-                color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+                color: colorScheme.onSurfaceVariant.withValues(alpha:0.7),
                 fontSize: 17,
               ),
               filled: true,
@@ -496,7 +496,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
                         Icon(
                           Icons.door_front_door_rounded,
                           size: 64,
-                          color: colorScheme.onSurfaceVariant.withOpacity(0.6),
+                          color: colorScheme.onSurfaceVariant.withValues(alpha:0.6),
                         ),
                         const SizedBox(height: 20),
                         Text(
@@ -563,7 +563,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: [
                             BoxShadow(
-                              color: colorScheme.shadow.withOpacity(
+                              color: colorScheme.shadow.withValues(alpha:
                                 theme.brightness == Brightness.dark ? 0.3 : 0.06,
                               ),
                               blurRadius: 10,
@@ -580,7 +580,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
                                 thickness: 1,
                                 indent: 56,
                                 endIndent: 16,
-                                color: colorScheme.outline.withOpacity(0.2),
+                                color: colorScheme.outline.withValues(alpha:0.2),
                               );
                             }
                             final index = i ~/ 2;
@@ -608,7 +608,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
                                           height: 40,
                                           decoration: BoxDecoration(
                                             color: StayoraLogo.stayoraBlue
-                                                .withOpacity(0.12),
+                                                .withValues(alpha:0.12),
                                             borderRadius:
                                                 BorderRadius.circular(10),
                                           ),
@@ -649,12 +649,12 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
                                                 vertical: 5,
                                               ),
                                               decoration: BoxDecoration(
-                                                color: hkColor.withOpacity(0.1),
+                                                color: hkColor.withValues(alpha:0.1),
                                                 borderRadius:
                                                     BorderRadius.circular(20),
                                                 border: Border.all(
                                                   color:
-                                                      hkColor.withOpacity(0.5),
+                                                      hkColor.withValues(alpha:0.5),
                                                 ),
                                               ),
                                               child: Row(
@@ -720,7 +720,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
                                                           20),
                                                   border: Border.all(
                                                     color: colorScheme.outline
-                                                        .withOpacity(0.3),
+                                                        .withValues(alpha:0.3),
                                                   ),
                                                 ),
                                                 child: Text(
@@ -744,12 +744,12 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
                                               ),
                                               decoration: BoxDecoration(
                                                 color: StayoraLogo.stayoraBlue
-                                                    .withOpacity(0.06),
+                                                    .withValues(alpha:0.06),
                                                 borderRadius:
                                                     BorderRadius.circular(20),
                                                 border: Border.all(
                                                   color: StayoraLogo.stayoraBlue
-                                                      .withOpacity(0.3),
+                                                      .withValues(alpha:0.3),
                                                 ),
                                               ),
                                               child: Row(

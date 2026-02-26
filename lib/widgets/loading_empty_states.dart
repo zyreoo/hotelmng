@@ -66,11 +66,11 @@ class _SkeletonCard extends StatelessWidget {
             : height;
         final innerHeight = effectiveHeight - 32; // minus padding
         final useCompactLayout = innerHeight < 85; // full column needs ~83px
-        final _placeholder = (double h, [double? w]) => Container(
+        Widget placeholder(double h, [double? w]) => Container(
           height: h,
           width: w,
           decoration: BoxDecoration(
-            color: highlightColor.withOpacity(0.5),
+            color: highlightColor.withValues(alpha:0.5),
             borderRadius: BorderRadius.circular(4),
           ),
         );
@@ -91,9 +91,9 @@ class _SkeletonCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        _placeholder((innerHeight * 0.35).clamp(8.0, 20.0), 120),
+                        placeholder((innerHeight * 0.35).clamp(8.0, 20.0), 120),
                         SizedBox(height: (innerHeight * 0.2).clamp(4.0, 10.0)),
-                        _placeholder((innerHeight * 0.35).clamp(8.0, 20.0), 80),
+                        placeholder((innerHeight * 0.35).clamp(8.0, 20.0), 80),
                       ],
                     )
                   : Column(
@@ -101,20 +101,20 @@ class _SkeletonCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        _placeholder(18, 160),
+                        placeholder(18, 160),
                         const SizedBox(height: 8),
-                        _placeholder(14, 120),
+                        placeholder(14, 120),
                         const SizedBox(height: 16),
                         Container(
                           height: 1,
-                          color: highlightColor.withOpacity(0.5),
+                          color: highlightColor.withValues(alpha:0.5),
                         ),
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            Expanded(child: _placeholder(14)),
+                            Expanded(child: placeholder(14)),
                             const SizedBox(width: 16),
-                            Expanded(child: _placeholder(14)),
+                            Expanded(child: placeholder(14)),
                           ],
                         ),
                       ],
@@ -157,7 +157,7 @@ class EmptyStateWidget extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: iconSize, color: colorScheme.onSurfaceVariant.withOpacity(0.6)),
+            Icon(icon, size: iconSize, color: colorScheme.onSurfaceVariant.withValues(alpha:0.6)),
             const SizedBox(height: 16),
             Text(
               title,
@@ -216,7 +216,7 @@ class ErrorStateWidget extends StatelessWidget {
             Icon(
               Icons.error_outline_rounded,
               size: 56,
-              color: StayoraColors.error.withOpacity(0.7),
+              color: StayoraColors.error.withValues(alpha:0.7),
             ),
             const SizedBox(height: 16),
             Text(

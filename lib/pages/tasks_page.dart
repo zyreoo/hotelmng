@@ -207,6 +207,7 @@ class _TasksPageState extends State<TasksPage> {
             dueDate: result['dueDate'] as DateTime,
           ),
         );
+        if (!mounted) return;
         showAppNotification(context, 'Task updated', type: AppNotificationType.success);
       } else {
         await _firebaseService.createTask(
@@ -220,6 +221,7 @@ class _TasksPageState extends State<TasksPage> {
             dueDate: result['dueDate'] as DateTime,
           ),
         );
+        if (!mounted) return;
         showAppNotification(context, 'Task added', type: AppNotificationType.success);
       }
     } catch (e) {
@@ -410,10 +412,10 @@ class _FilterChip extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          color: isSelected ? color.withOpacity(0.15) : colorScheme.surfaceContainerHighest,
+          color: isSelected ? color.withValues(alpha:0.15) : colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? color : colorScheme.outline.withOpacity(0.3),
+            color: isSelected ? color : colorScheme.outline.withValues(alpha:0.3),
           ),
         ),
         child: Text(
@@ -603,7 +605,7 @@ class _TaskEditSheetState extends State<_TaskEditSheet> {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: colorScheme.onSurfaceVariant.withOpacity(0.4),
+                    color: colorScheme.onSurfaceVariant.withValues(alpha:0.4),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -640,9 +642,9 @@ class _TaskEditSheetState extends State<_TaskEditSheet> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: StayoraColors.warning.withOpacity(0.1),
+                    color: StayoraColors.warning.withValues(alpha:0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: StayoraColors.warning.withOpacity(0.3)),
+                    border: Border.all(color: StayoraColors.warning.withValues(alpha:0.3)),
                   ),
                   child: Row(
                     children: [
@@ -659,7 +661,7 @@ class _TaskEditSheetState extends State<_TaskEditSheet> {
                 )
               else
                 DropdownButtonFormField<String>(
-                  value: _assigneeId.isNotEmpty ? _assigneeId : _firstEmployeeId,
+                  initialValue: _assigneeId.isNotEmpty ? _assigneeId : _firstEmployeeId,
                   decoration: InputDecoration(
                     labelText: 'Assign to',
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -673,7 +675,7 @@ class _TaskEditSheetState extends State<_TaskEditSheet> {
                 ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: _recurrence,
+                initialValue: _recurrence,
                 decoration: InputDecoration(
                   labelText: 'Repeat',
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),

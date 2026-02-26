@@ -204,7 +204,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha:0.5),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -342,7 +342,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: [
                         BoxShadow(
-                          color: Theme.of(context).colorScheme.shadow.withOpacity(0.05),
+                          color: Theme.of(context).colorScheme.shadow.withValues(alpha:0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 2),
                         ),
@@ -501,7 +501,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha:0.5),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -546,7 +546,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
                       Navigator.pop(context);
                     },
                   );
-                }).toList(),
+                }),
                 const SizedBox(height: 16),
               ],
             ),
@@ -562,7 +562,7 @@ class _BookingsListPageState extends State<BookingsListPage> {
         builder: (context) => AddBookingPage(existingBooking: booking),
       ),
     );
-    // Reload bookings after editing
+    if (!mounted) return;
     final hotelId = HotelProvider.of(context).hotelId;
     final userId = AuthScopeData.of(context).uid;
     if (hotelId != null && userId != null) {
@@ -595,12 +595,12 @@ class _FilterChip extends StatelessWidget {
           color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+            color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha:0.5),
             width: 1,
           ),
           boxShadow: [
             BoxShadow(
-              color: Theme.of(context).colorScheme.shadow.withOpacity(0.03),
+              color: Theme.of(context).colorScheme.shadow.withValues(alpha:0.03),
               blurRadius: 4,
               offset: const Offset(0, 1),
             ),
@@ -659,7 +659,7 @@ class _StatusChipWithMenu extends StatelessWidget {
     if (overlay == null || !context.mounted) return;
     final RenderBox overlayBox = overlay.context.findRenderObject() as RenderBox;
     final position = box.localToGlobal(Offset.zero, ancestor: overlayBox);
-    final size = MediaQuery.of(context).size;
+    final size = MediaQuery.sizeOf(context);
     final top = position.dy + box.size.height;
     final relativeRect = RelativeRect.fromLTRB(
       position.dx,
@@ -677,7 +677,9 @@ class _StatusChipWithMenu extends StatelessWidget {
               ))
           .toList(),
     );
-    if (value != null && context.mounted) onSelected(value);
+    if (value != null && context.mounted) {
+      onSelected(value);
+    }
   }
 
   @override
@@ -690,7 +692,7 @@ class _StatusChipWithMenu extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: statusColor.withOpacity(0.1),
+            color: statusColor.withValues(alpha:0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
@@ -741,7 +743,7 @@ class _BookingCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: colorScheme.shadow.withOpacity(isDark ? 0.2 : 0.05),
+            color: colorScheme.shadow.withValues(alpha:isDark ? 0.2 : 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -794,7 +796,7 @@ class _BookingCard extends StatelessWidget {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: statusColor.withOpacity(0.1),
+                          color: statusColor.withValues(alpha:0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(

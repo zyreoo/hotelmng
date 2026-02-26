@@ -3,6 +3,7 @@
 /// Pure, deterministic, no AI/ML, no side effects.
 /// Emits concrete moves (booking + fromRoom + toRoom) with before/after scoring.
 /// Suggestions are sorted by score descending.
+library;
 
 import 'gap_detector.dart';
 
@@ -172,8 +173,9 @@ class OptimizationSuggestion {
     if (score != null) map['score'] = score!;
     if (reason != null) map['reason'] = reason!;
     if (action != null) map['action'] = action!.toJson();
-    if (actionChain != null)
+    if (actionChain != null) {
       map['actionChain'] = actionChain!.map((a) => a.toJson()).toList();
+    }
     return map;
   }
 }
@@ -223,8 +225,9 @@ List<OptimizationSuggestion> generateOptimizationSuggestions(
       '  [$i] id=${b.bookingId} room=${b.roomId} ${_debugDate(b.checkInUtc)} → ${_debugDate(b.checkOutUtc)}',
     );
   }
-  if (windowBookings.length > 15)
+  if (windowBookings.length > 15) {
     _debugLog('  ... and ${windowBookings.length - 15} more');
+  }
 
   final allGaps = detectGaps(windowBookings);
   final allGapsUnfiltered = detectAllGaps(windowBookings);
@@ -294,8 +297,9 @@ List<OptimizationSuggestion> generateOptimizationSuggestions(
           '     ${b.bookingId} room=${b.roomId} ${_debugDate(b.checkInUtc)}→${_debugDate(b.checkOutUtc)}: $why',
         );
       }
-      if (others.length > 10)
+      if (others.length > 10) {
         _debugLog('     ... and ${others.length - 10} more');
+      }
       continue;
     }
 
@@ -409,23 +413,25 @@ List<OptimizationSuggestion> generateOptimizationSuggestions(
     return b.impactScore.compareTo(a.impactScore);
   });
 
-  final Set<String> _usedBookingIds = {};
-  final Set<String> _roomsWithActionableGap = {};
+  final Set<String> usedBookingIds = {};
+  final Set<String> roomsWithActionableGap = {};
 
   _debugLog(
     'Continuity candidates before dedup: ${continuityCandidates.length}',
   );
   for (final c in continuityCandidates) {
     final ids = c.actions.map((a) => a.bookingId).toSet().toList();
-    final overlap = ids.any((id) => _usedBookingIds.contains(id));
+    final overlap = ids.any((id) => usedBookingIds.contains(id));
     if (overlap) {
       _debugLog('  Skip duplicate bookingId in: $ids');
       continue;
     }
     for (final id in ids) {
-      _usedBookingIds.add(id);
+      usedBookingIds.add(id);
     }
-    if (c.roomId != null) _roomsWithActionableGap.add(c.roomId!);
+    if (c.roomId != null) {
+      roomsWithActionableGap.add(c.roomId!);
+    }
     suggestions.add(c);
   }
   _debugLog(
@@ -435,7 +441,7 @@ List<OptimizationSuggestion> generateOptimizationSuggestions(
   // ── 2) SHORT_GAP only for rooms that have NO actionable continuity ─────────
   final gapsByRoom = <String, List<BookingGap>>{};
   for (final g in shortGaps) {
-    if (_roomsWithActionableGap.contains(g.roomId)) continue;
+    if (roomsWithActionableGap.contains(g.roomId)) continue;
     gapsByRoom.putIfAbsent(g.roomId, () => []).add(g);
   }
   for (final entry in gapsByRoom.entries) {
@@ -779,12 +785,14 @@ double _scoreMove(
     final toMeta = roomMetadata[gap.roomId];
     if (fromMeta?.type != null &&
         toMeta?.type != null &&
-        fromMeta!.type == toMeta!.type)
+        fromMeta!.type == toMeta!.type) {
       compatibility += 2;
+    }
     if (fromMeta?.floor != null &&
         toMeta?.floor != null &&
-        fromMeta!.floor == toMeta!.floor)
+        fromMeta!.floor == toMeta!.floor) {
       compatibility += 1;
+    }
   }
 
   return targetImprovement - sourceDamage + compatibility;
@@ -827,13 +835,22 @@ OptimizationSuggestion? _findTwoStepChain(
       if (b2.roomId == r1 || b2.roomId == gapRoomId) continue;
       if (b2.bookingId == b1.bookingId) continue;
       if (redlineMidnight != null &&
-          !_midnightUtc(b2.checkInUtc).isAfter(redlineMidnight)) continue;
-      if (checkedInBookingIds != null &&
-          checkedInBookingIds.contains(b2.bookingId)) continue;
-      if (!_sameDates(b1, b2)) continue;
-      if (!_isMoveSafe(windowBookings, b2)) continue;
-      if (!_fitsInTargetWithDates(withoutB1, r1, b2.checkInUtc, b2.checkOutUtc))
+          !_midnightUtc(b2.checkInUtc).isAfter(redlineMidnight)) {
         continue;
+      }
+      if (checkedInBookingIds != null &&
+          checkedInBookingIds.contains(b2.bookingId)) {
+        continue;
+      }
+      if (!_sameDates(b1, b2)) {
+        continue;
+      }
+      if (!_isMoveSafe(windowBookings, b2)) {
+        continue;
+      }
+      if (!_fitsInTargetWithDates(withoutB1, r1, b2.checkInUtc, b2.checkOutUtc)) {
+        continue;
+      }
 
       final action1 = MoveBookingAction(
         bookingId: b1.bookingId,

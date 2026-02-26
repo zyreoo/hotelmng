@@ -209,7 +209,7 @@ class _UserPageState extends State<UserPage> {
                               width: 48,
                               height: 48,
                               decoration: BoxDecoration(
-                                color: StayoraLogo.stayoraBlue.withOpacity(0.1),
+                                color: StayoraLogo.stayoraBlue.withValues(alpha:0.1),
                                 shape: BoxShape.circle,
                               ),
                               child: Center(
@@ -450,7 +450,7 @@ class _UserPageState extends State<UserPage> {
                           startingDayOfWeek: StartingDayOfWeek.monday,
                           calendarStyle: CalendarStyle(
                             todayDecoration: BoxDecoration(
-                              color: StayoraLogo.stayoraBlue.withOpacity(0.3),
+                              color: StayoraLogo.stayoraBlue.withValues(alpha:0.3),
                               shape: BoxShape.circle,
                             ),
                             selectedDecoration: BoxDecoration(
@@ -607,7 +607,7 @@ class _InfoRow extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: StayoraLogo.stayoraBlue.withOpacity(0.1),
+            color: StayoraLogo.stayoraBlue.withValues(alpha:0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(icon, size: 20, color: StayoraLogo.stayoraBlue),
@@ -662,7 +662,7 @@ class _StatCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha:0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(icon, color: color, size: 20),
@@ -708,7 +708,7 @@ class _ShiftCard extends StatelessWidget {
               height: 60,
               decoration: BoxDecoration(
                 color: isToday
-                    ? StayoraLogo.stayoraBlue.withOpacity(0.1)
+                    ? StayoraLogo.stayoraBlue.withValues(alpha:0.1)
                     : colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(12),
               ),

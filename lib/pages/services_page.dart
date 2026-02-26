@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../models/booking_model.dart';
 import '../models/service_model.dart';
 import '../services/firebase_service.dart';
 import '../services/hotel_provider.dart';
@@ -172,6 +174,14 @@ class ServicesPage extends StatelessWidget {
                             ),
                           ),
                         ),
+                        const SizedBox(height: 24),
+                        _ServiceUsageSection(
+                          userId: userId,
+                          hotelId: hotelId,
+                          firebaseService: firebaseService,
+                          services: services,
+                        ),
+                        const SizedBox(height: 24),
                       ],
                     );
                   },
@@ -183,14 +193,15 @@ class ServicesPage extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'services_fab',
-        onPressed: () => _showServiceDialog(context, userId, hotelId, firebaseService),
+        onPressed: () =>
+            _showServiceDialog(context, userId, hotelId, firebaseService),
         backgroundColor: StayoraLogo.stayoraBlue,
-        foregroundColor: colorScheme.onPrimary,
-        icon: const Icon(Icons.add),
-        label: Text(
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: const Text(
           'Add service',
           style: TextStyle(
-            color: colorScheme.onPrimary,
+            color: Colors.white,
             fontWeight: FontWeight.w600,
             fontSize: 16,
           ),
@@ -228,7 +239,7 @@ class ServicesPage extends StatelessWidget {
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           boxShadow: [
             BoxShadow(
-              color: colorScheme.shadow.withOpacity(Theme.of(context).brightness == Brightness.dark ? 0.4 : 0.1),
+              color: colorScheme.shadow.withValues(alpha:Theme.of(context).brightness == Brightness.dark ? 0.4 : 0.1),
               blurRadius: 20,
               offset: const Offset(0, -4),
             ),
@@ -251,7 +262,7 @@ class ServicesPage extends StatelessWidget {
                       width: 36,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: colorScheme.onSurfaceVariant.withOpacity(0.5),
+                        color: colorScheme.onSurfaceVariant.withValues(alpha:0.5),
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -286,7 +297,7 @@ class ServicesPage extends StatelessWidget {
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide(
-                                color: colorScheme.outline.withOpacity(0.5),
+                                color: colorScheme.outline.withValues(alpha:0.5),
                               ),
                             ),
                             contentPadding: const EdgeInsets.symmetric(
@@ -310,7 +321,7 @@ class ServicesPage extends StatelessWidget {
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide(
-                                color: colorScheme.outline.withOpacity(0.5),
+                                color: colorScheme.outline.withValues(alpha:0.5),
                               ),
                             ),
                             contentPadding: const EdgeInsets.symmetric(
@@ -345,7 +356,7 @@ class ServicesPage extends StatelessWidget {
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide(
-                                color: colorScheme.outline.withOpacity(0.5),
+                                color: colorScheme.outline.withValues(alpha:0.5),
                               ),
                             ),
                             contentPadding: const EdgeInsets.symmetric(
@@ -369,7 +380,7 @@ class ServicesPage extends StatelessWidget {
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide(
-                                color: colorScheme.outline.withOpacity(0.5),
+                                color: colorScheme.outline.withValues(alpha:0.5),
                               ),
                             ),
                             contentPadding: const EdgeInsets.symmetric(
@@ -516,6 +527,373 @@ class ServicesPage extends StatelessWidget {
   }
 }
 
+/// Section showing which bookings and rooms have each service.
+class _ServiceUsageSection extends StatelessWidget {
+  final String userId;
+  final String hotelId;
+  final FirebaseService firebaseService;
+  final List<ServiceModel> services;
+
+  const _ServiceUsageSection({
+    required this.userId,
+    required this.hotelId,
+    required this.firebaseService,
+    required this.services,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<dynamic>>(
+      future: Future.wait([
+        firebaseService.getBookings(userId, hotelId),
+        firebaseService.getRooms(userId, hotelId),
+      ]),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: StayoraColors.blue,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Loading bookings & rooms…',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        final data = snapshot.data;
+        if (data == null || data.length < 2) {
+          return const SizedBox.shrink();
+        }
+        final bookings = (data[0] as List).cast<BookingModel>();
+        final rooms = (data[1] as List);
+        final roomIdToName = <String, String>{
+          for (final r in rooms)
+            if ((r as dynamic).id != null)
+              (r as dynamic).id as String: (r as dynamic).name as String,
+        };
+
+        final activeBookings = bookings
+            .where((b) =>
+                b.status != 'Cancelled' &&
+                b.selectedServices != null &&
+                b.selectedServices!.isNotEmpty)
+            .toList();
+
+        if (activeBookings.isEmpty) {
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.assignment_outlined,
+                        size: 20,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Where services are used',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'No bookings with add-on services yet.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final dateFormat = DateFormat('MMM d');
+
+        // Map serviceId -> ServiceModel for quick lookup.
+        final serviceById = <String, ServiceModel>{
+          for (final s in services)
+            if (s.id != null) s.id!: s,
+        };
+
+        // Today section: rooms that have services today.
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        bool overlapsToday(BookingModel b) {
+          final ci = DateTime(b.checkIn.year, b.checkIn.month, b.checkIn.day);
+          final co = DateTime(b.checkOut.year, b.checkOut.month, b.checkOut.day);
+          return !ci.isAfter(today) && co.isAfter(today);
+        }
+
+        final todayBookings =
+            activeBookings.where((b) => overlapsToday(b)).toList();
+        final Map<String, Set<String>> todayRoomsToServices = {};
+        for (final b in todayBookings) {
+          final roomNames = b.resolvedSelectedRooms(roomIdToName);
+          final selected = b.selectedServices ?? const <BookingServiceItem>[];
+          for (final item in selected) {
+            final svc = serviceById[item.serviceId];
+            if (svc == null) continue;
+            for (final room in roomNames) {
+              todayRoomsToServices
+                  .putIfAbsent(room, () => <String>{})
+                  .add(svc.name);
+            }
+          }
+        }
+        final todayRoomsSorted = todayRoomsToServices.keys.toList()..sort();
+
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.assignment_outlined,
+                      size: 20,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Where services are used',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Rooms and bookings that have each service.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (todayRoomsSorted.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.today_outlined,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Today – rooms with services',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: todayRoomsSorted.map((room) {
+                      final svcs =
+                          (todayRoomsToServices[room] ?? const <String>{})
+                              .toList()
+                            ..sort();
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          '$room: ${svcs.join(', ')}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                ] else
+                  const SizedBox(height: 20),
+                ...services.map((service) {
+                  final serviceBookings = activeBookings.where((b) {
+                    final sel = b.selectedServices;
+                    if (sel == null) return false;
+                    return sel.any((s) => s.serviceId == service.id);
+                  }).toList();
+
+                  if (serviceBookings.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+
+                  final roomNames = <String>{};
+                  for (final b in serviceBookings) {
+                    roomNames.addAll(b.resolvedSelectedRooms(roomIdToName));
+                  }
+                  final roomsList = roomNames.toList()..sort();
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .outline
+                              .withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            service.name,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(
+                                Icons.meeting_room_outlined,
+                                size: 16,
+                                color: StayoraColors.blue,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Wrap(
+                                  spacing: 4,
+                                  runSpacing: 4,
+                                  children: [
+                                    Text(
+                                      'Rooms: ',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                      ),
+                                    ),
+                                    ...roomsList.map(
+                                      (r) => Chip(
+                                        label: Text(
+                                          r,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        padding: EdgeInsets.zero,
+                                        materialTapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                        visualDensity: VisualDensity.compact,
+                                        backgroundColor:
+                                            StayoraColors.blue.withValues(
+                                          alpha: 0.12,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.person_outline_rounded,
+                                size: 16,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Wrap(
+                                  spacing: 4,
+                                  runSpacing: 4,
+                                  children: [
+                                    Text(
+                                      'Bookings: ',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                      ),
+                                    ),
+                                    ...serviceBookings.map(
+                                      (b) => Text(
+                                        '${b.userName} (${dateFormat.format(b.checkIn)} – ${dateFormat.format(b.checkOut)})',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _ServiceCard extends StatelessWidget {
   final ServiceModel service;
   final CurrencyFormatter currencyFormatter;
@@ -539,7 +917,7 @@ class _ServiceCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: StayoraColors.blue.withOpacity(0.1),
+                color: StayoraColors.blue.withValues(alpha:0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(

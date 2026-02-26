@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 import '../models/employer_model.dart';
 import '../services/firebase_service.dart';
 import '../services/auth_provider.dart';
-import '../utils/stayora_colors.dart';
-import 'app_notification.dart';
-
 class EmployeeSearchWidget extends StatefulWidget {
   final String? hotelId;
   final Function(EmployerModel) onEmployeeSelected;
@@ -102,142 +99,6 @@ class _EmployeeSearchWidgetState extends State<EmployeeSearchWidget> {
     );
   }
 
-  Future<void> _showCreateEmployeeDialog() async {
-    final nameController = TextEditingController();
-    final phoneController = TextEditingController();
-    final emailController = TextEditingController();
-    final roleController = TextEditingController();
-    final departmentController = TextEditingController(text: 'Reception');
-    final statusController = TextEditingController(text: 'Active');
-    final formKey = GlobalKey<FormState>();
-
-    final result = await showDialog<EmployerModel>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        title: const Text('Create New Employee'),
-        content: Form(
-          key: formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Name *',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (value) =>
-                      (value == null || value.trim().isEmpty)
-                          ? 'Name is required'
-                          : null,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: phoneController,
-                  decoration: const InputDecoration(
-                    labelText: 'Phone *',
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.phone,
-                  validator: (value) =>
-                      (value == null || value.trim().isEmpty)
-                          ? 'Phone is required'
-                          : null,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: emailController,
-                  decoration: const InputDecoration(
-                    labelText: 'Email (optional)',
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: roleController,
-                  decoration: const InputDecoration(
-                    labelText: 'Role *',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (value) =>
-                      (value == null || value.trim().isEmpty)
-                          ? 'Role is required'
-                          : null,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: departmentController,
-                  decoration: const InputDecoration(
-                    labelText: 'Department',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: statusController,
-                  decoration: const InputDecoration(
-                    labelText: 'Status',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                final newEmployee = EmployerModel(
-                  name: nameController.text.trim(),
-                  phone: phoneController.text.trim(),
-                  email: emailController.text.trim().isEmpty
-                      ? ''
-                      : emailController.text.trim(),
-                  role: roleController.text.trim(),
-                  department: departmentController.text.trim().isEmpty
-                      ? 'Reception'
-                      : departmentController.text.trim(),
-                  status: statusController.text.trim().isEmpty
-                      ? 'Active'
-                      : statusController.text.trim(),
-                );
-                Navigator.pop(context, newEmployee);
-              }
-            },
-            child: const Text('Create'),
-          ),
-        ],
-      ),
-    );
-
-    if (result != null && widget.hotelId != null && mounted) {
-      final userId = AuthScopeData.of(context).uid;
-      if (userId == null) return;
-
-      try {
-        final employerId = await _firebaseService.createEmployer(
-            userId, widget.hotelId!, result);
-        final created = result.copyWith(id: employerId);
-        _selectEmployee(created);
-        if (!mounted) return;
-        showAppNotification(context, 'Employee created', type: AppNotificationType.success);
-      } catch (e) {
-        if (!mounted) return;
-        showAppNotification(context, 'Error creating employee: $e', type: AppNotificationType.error);
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -295,7 +156,7 @@ class _EmployeeSearchWidgetState extends State<EmployeeSearchWidget> {
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
+                    color: Colors.black.withValues(alpha: 0.1),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -312,7 +173,7 @@ class _EmployeeSearchWidgetState extends State<EmployeeSearchWidget> {
                 final employee = _searchResults[index];
                 return ListTile(
                   leading: CircleAvatar(
-                    backgroundColor: const Color(0xFF007AFF).withOpacity(0.1),
+                    backgroundColor: const Color(0xFF007AFF).withValues(alpha: 0.1),
                     child: Text(
                       employee.name.isNotEmpty
                           ? employee.name[0].toUpperCase()

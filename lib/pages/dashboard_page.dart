@@ -328,7 +328,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   decoration: BoxDecoration(
                     color: Theme.of(
                       context,
-                    ).colorScheme.onSurfaceVariant.withOpacity(0.5),
+                    ).colorScheme.onSurfaceVariant.withValues(alpha:0.5),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -369,7 +369,7 @@ class _DashboardPageState extends State<DashboardPage> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: paymentMethod,
+                initialValue: paymentMethod,
                 decoration: InputDecoration(
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -435,10 +435,9 @@ class _DashboardPageState extends State<DashboardPage> {
       );
       try {
         await _firebaseService.updateBooking(userId, hotelId, updated);
-        if (mounted) {
-          await _loadBookings(userId, hotelId);
-          showAppNotification(context, 'Advance marked as received', type: AppNotificationType.success);
-        }
+        if (!mounted) return;
+        await _loadBookings(userId, hotelId);
+        showAppNotification(context, 'Advance marked as received', type: AppNotificationType.success);
       } catch (e) {
         if (mounted) {
           showAppNotification(context, 'Failed to update: $e', type: AppNotificationType.error);
@@ -490,7 +489,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     getDrawingHorizontalLine: (value) => FlLine(
                       color: Theme.of(
                         context,
-                      ).colorScheme.outline.withOpacity(0.3),
+                      ).colorScheme.outline.withValues(alpha:0.3),
                       strokeWidth: 1,
                     ),
                   ),
@@ -536,8 +535,9 @@ class _DashboardPageState extends State<DashboardPage> {
                         interval: maxY > 10 ? (maxY / 5).ceilToDouble() : 1,
                         getTitlesWidget: (value, meta) {
                           final v = value.toInt();
-                          if (v != value || v < 0)
+                          if (v != value || v < 0) {
                             return const SizedBox.shrink();
+                          }
                           return Text(
                             v.toString(),
                             style: TextStyle(
@@ -707,6 +707,7 @@ class _DashboardPageState extends State<DashboardPage> {
                                             ),
                                           )
                                           .then((_) {
+                                            if (!mounted) return;
                                             final hotelId = HotelProvider.of(
                                               context,
                                             ).hotelId;
@@ -911,7 +912,7 @@ class _StatCard extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.1),
+                      color: color.withValues(alpha:0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(icon, color: color, size: 20),
@@ -988,7 +989,7 @@ class _RemindersCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: StayoraColors.warning.withOpacity(0.1),
+                    color: StayoraColors.warning.withValues(alpha:0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(
@@ -1222,7 +1223,7 @@ class _RemindersCard extends StatelessWidget {
                     width: 4,
                     height: 20,
                     decoration: BoxDecoration(
-                      color: StayoraColors.success.withOpacity(0.6),
+                      color: StayoraColors.success.withValues(alpha:0.6),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -1269,7 +1270,7 @@ class _RemindersCard extends StatelessWidget {
               const SizedBox(height: 16),
               Divider(
                 height: 1,
-                color: Theme.of(context).dividerColor.withOpacity(0.5),
+                color: Theme.of(context).dividerColor.withValues(alpha:0.5),
               ),
               const SizedBox(height: 16),
             ],
@@ -1282,7 +1283,7 @@ class _RemindersCard extends StatelessWidget {
                     width: 4,
                     height: 20,
                     decoration: BoxDecoration(
-                      color: StayoraColors.blue.withOpacity(0.6),
+                      color: StayoraColors.blue.withValues(alpha:0.6),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -1355,13 +1356,13 @@ class _ReminderItem extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: showWarning
-            ? StayoraColors.warning.withOpacity(0.05)
+            ? StayoraColors.warning.withValues(alpha:0.05)
             : colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: showWarning
-              ? StayoraColors.warning.withOpacity(0.2)
-              : colorScheme.outline.withOpacity(0.3),
+              ? StayoraColors.warning.withValues(alpha:0.2)
+              : colorScheme.outline.withValues(alpha:0.3),
           width: 1,
         ),
       ),
@@ -1375,14 +1376,15 @@ class _ReminderItem extends StatelessWidget {
                 child: InkWell(
                   onTap: onTap,
                   borderRadius: BorderRadius.circular(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
                               booking.userName,
                               style: TextStyle(
                                 fontSize: 15,
@@ -1391,75 +1393,74 @@ class _ReminderItem extends StatelessWidget {
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
+                            const SizedBox(height: 4),
+                            Text(
+                              subtitle,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      if (booking.checkedInAt != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
                           ),
-                          if (booking.checkedInAt != null)
-                            Container(
-                              margin: const EdgeInsets.only(left: 6),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 7,
-                                vertical: 3,
+                          decoration: BoxDecoration(
+                            color: StayoraColors.teal.withValues(alpha:0.12),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: StayoraColors.teal.withValues(alpha:0.4),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.check_circle_rounded,
+                                size: 10,
+                                color: StayoraColors.teal,
                               ),
-                              decoration: BoxDecoration(
-                                color: StayoraColors.teal.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: StayoraColors.teal.withOpacity(0.4),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.check_circle_rounded,
-                                    size: 10,
-                                    color: StayoraColors.teal,
-                                  ),
-                                  const SizedBox(width: 3),
-                                  const Text(
-                                    'Checked in',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      color: StayoraColors.teal,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          else if (booking.checkedOutAt == null)
-                            Container(
-                              margin: const EdgeInsets.only(left: 6),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 7,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: colorScheme.surfaceContainerHighest,
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: colorScheme.outline.withOpacity(0.3),
-                                ),
-                              ),
-                              child: Text(
-                                'Not yet',
+                              const SizedBox(width: 3),
+                              const Text(
+                                'Checked in',
                                 style: TextStyle(
                                   fontSize: 10,
-                                  fontWeight: FontWeight.w500,
-                                  color: colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
+                                  color: StayoraColors.teal,
                                 ),
                               ),
+                            ],
+                          ),
+                        )
+                      else if (booking.checkedOutAt == null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: colorScheme.outline.withValues(alpha:0.3),
                             ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: colorScheme.onSurfaceVariant,
+                          ),
+                          child: Text(
+                            'Not yet',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
                         ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
                     ],
                   ),
                 ),
@@ -1529,7 +1530,7 @@ class _OptimizationSuggestionsCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: colorScheme.outline.withOpacity(0.2)),
+        side: BorderSide(color: colorScheme.outline.withValues(alpha:0.2)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),

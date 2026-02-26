@@ -149,7 +149,7 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
               BoxShadow(
-                color: Theme.of(context).colorScheme.shadow.withOpacity(0.2),
+                color: Theme.of(context).colorScheme.shadow.withValues(alpha:0.2),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
@@ -278,7 +278,7 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
                   ? Border.all(
                       color: Theme.of(
                         context,
-                      ).colorScheme.outline.withOpacity(0.5),
+                      ).colorScheme.outline.withValues(alpha:0.5),
                     )
                   : null,
             ),
@@ -482,7 +482,7 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
           foregroundColor: StayoraColors.warning,
           side: BorderSide(
             color: b.checkedInAt == null
-                ? Theme.of(context).colorScheme.outline.withOpacity(0.4)
+                ? Theme.of(context).colorScheme.outline.withValues(alpha:0.4)
                 : StayoraColors.warning,
           ),
           padding: const EdgeInsets.symmetric(vertical: 10),
@@ -506,9 +506,9 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha:0.1),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.4)),
+        border: Border.all(color: color.withValues(alpha:0.4)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -566,7 +566,7 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
             ),
             const SizedBox(height: 10),
             DropdownButtonFormField<String>(
-              value: widget.paymentMethods.contains(_advancePaymentMethod)
+              initialValue: widget.paymentMethods.contains(_advancePaymentMethod)
                   ? _advancePaymentMethod
                   : widget.paymentMethods.first,
               decoration: _fieldDecoration(
@@ -577,9 +577,12 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
               items: widget.paymentMethods
                   .map((m) => DropdownMenuItem(value: m, child: Text(m)))
                   .toList(),
-              onChanged: (v) => setState(
-                () => _advancePaymentMethod = v ?? widget.paymentMethods.first,
-              ),
+              onChanged: (v) {
+                setState(
+                  () => _advancePaymentMethod = v ?? widget.paymentMethods.first,
+                );
+                _persistFormFields(widget.fullBooking);
+              },
             ),
             const SizedBox(height: 10),
             Text(
@@ -598,24 +601,31 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
                 ChoiceChip(
                   label: const Text('Not required'),
                   selected: _advanceStatus == 'not_required',
-                  onSelected: (_) =>
-                      setState(() => _advanceStatus = 'not_required'),
+                  onSelected: (_) {
+                    setState(() => _advanceStatus = 'not_required');
+                    _persistFormFields(widget.fullBooking);
+                  },
                   selectedColor: Theme.of(
                     context,
-                  ).colorScheme.surfaceContainerHighest.withOpacity(0.8),
+                  ).colorScheme.surfaceContainerHighest.withValues(alpha:0.8),
                 ),
                 ChoiceChip(
                   label: const Text('Pending'),
                   selected: _advanceStatus == 'pending',
-                  onSelected: (_) => setState(() => _advanceStatus = 'pending'),
-                  selectedColor: StayoraColors.warning.withOpacity(0.3),
+                  onSelected: (_) {
+                    setState(() => _advanceStatus = 'pending');
+                    _persistFormFields(widget.fullBooking);
+                  },
+                  selectedColor: StayoraColors.warning.withValues(alpha:0.3),
                 ),
                 ChoiceChip(
                   label: const Text('Received'),
                   selected: _advanceStatus == 'received',
-                  onSelected: (_) =>
-                      setState(() => _advanceStatus = 'received'),
-                  selectedColor: StayoraColors.success.withOpacity(0.3),
+                  onSelected: (_) {
+                    setState(() => _advanceStatus = 'received');
+                    _persistFormFields(widget.fullBooking);
+                  },
+                  selectedColor: StayoraColors.success.withValues(alpha:0.3),
                 ),
               ],
             ),
@@ -667,7 +677,7 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         DropdownButtonFormField<String>(
-          value: _status,
+          initialValue: _status,
           decoration: _fieldDecoration(context, 'Status', null),
           items: widget.statusOptions
               .map(
@@ -683,7 +693,10 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
                 ),
               )
               .toList(),
-          onChanged: (v) => setState(() => _status = v ?? _status),
+          onChanged: (v) {
+            setState(() => _status = v ?? _status);
+            _persistFormFields(widget.fullBooking);
+          },
         ),
         const SizedBox(height: 12),
         TextFormField(
@@ -700,15 +713,17 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
-          value: widget.paymentMethods.contains(_paymentMethod)
+          initialValue: widget.paymentMethods.contains(_paymentMethod)
               ? _paymentMethod
               : widget.paymentMethods.first,
           decoration: _fieldDecoration(context, 'Payment method', null),
           items: widget.paymentMethods
               .map((m) => DropdownMenuItem(value: m, child: Text(m)))
               .toList(),
-          onChanged: (v) =>
-              setState(() => _paymentMethod = v ?? widget.paymentMethods.first),
+          onChanged: (v) {
+            setState(() => _paymentMethod = v ?? widget.paymentMethods.first);
+            _persistFormFields(widget.fullBooking);
+          },
         ),
         const SizedBox(height: 12),
         TextFormField(
@@ -749,6 +764,8 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
     );
   }
 
+  /// Save button: applies only money/notes fields so users must confirm
+  /// amount changes explicitly. Status and advance controls save instantly.
   Widget _saveButton(BuildContext context, BookingModel b) {
     return SizedBox(
       width: double.infinity,
@@ -761,19 +778,16 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
             _advanceAmountController.text.trim(),
           );
           final updated = b.copyWith(
-            status: _status,
             amountOfMoneyPaid: amount,
-            paymentMethod: _paymentMethod,
             advanceAmountPaid: advanceAmount,
-            advancePaymentMethod: _advancePaymentMethod,
-            advanceStatus: _advanceStatus,
             notes: _notesController.text.trim().isEmpty
                 ? null
                 : _notesController.text.trim(),
           );
           await widget.onSave(updated);
         },
-        label: const Text('Save changes'),
+        icon: const Icon(Icons.save_rounded, size: 18),
+        label: const Text('Save amounts'),
         style: FilledButton.styleFrom(
           backgroundColor: StayoraColors.success,
           foregroundColor: Colors.white,
@@ -785,6 +799,30 @@ class _BookingDetailsFormState extends State<BookingDetailsForm> {
         ),
       ),
     );
+  }
+
+  /// Persists current form state (status, payment, advance, notes) to the backend.
+  void _persistFormFields(BookingModel b) {
+    final amount = CurrencyFormatter.parseMoneyStringToCents(
+      _amountController.text.trim(),
+    );
+    final advanceAmount = CurrencyFormatter.parseMoneyStringToCents(
+      _advanceAmountController.text.trim(),
+    );
+    final updated = b.copyWith(
+      status: _status,
+      amountOfMoneyPaid: amount,
+      paymentMethod: _paymentMethod,
+      advanceAmountPaid: advanceAmount,
+      advancePaymentMethod: _advancePaymentMethod,
+      advanceStatus: _advanceStatus,
+      notes: _notesController.text.trim().isEmpty
+          ? null
+          : _notesController.text.trim(),
+      checkedInAt: b.checkedInAt,
+      checkedOutAt: b.checkedOutAt,
+    );
+    widget.onSave(updated);
   }
 
   Widget _editFullButton(BuildContext context) {

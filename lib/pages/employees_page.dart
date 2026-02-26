@@ -213,7 +213,7 @@ class _EmployeesPageState extends State<EmployeesPage> {
                               });
                             },
                             backgroundColor: Theme.of(context).colorScheme.surface,
-                            selectedColor: StayoraLogo.stayoraBlue.withOpacity(0.1),
+                            selectedColor: StayoraLogo.stayoraBlue.withValues(alpha:0.1),
                             labelStyle: TextStyle(
                               color: isSelected
                                   ? StayoraLogo.stayoraBlue
@@ -226,8 +226,8 @@ class _EmployeesPageState extends State<EmployeesPage> {
                               borderRadius: BorderRadius.circular(12),
                               side: BorderSide(
                                 color: isSelected
-                                    ? StayoraLogo.stayoraBlue.withOpacity(0.3)
-                                    : Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                                    ? StayoraLogo.stayoraBlue.withValues(alpha:0.3)
+                                    : Theme.of(context).colorScheme.outline.withValues(alpha:0.3),
                               ),
                             ),
                             showCheckmark: false,
@@ -336,7 +336,7 @@ class _EmployeeCard extends StatelessWidget {
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: employee.color.withOpacity(0.1),
+                  color: employee.color.withValues(alpha:0.1),
                   shape: BoxShape.circle,
                 ),
                 child: Center(
@@ -435,7 +435,7 @@ class _EmployeeCard extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: colorScheme.onSurfaceVariant.withOpacity(0.5),
+                color: colorScheme.onSurfaceVariant.withValues(alpha:0.5),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -483,7 +483,7 @@ class _StatusBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: isActive
-            ? StayoraColors.success.withOpacity(0.1)
+            ? StayoraColors.success.withValues(alpha:0.1)
             : colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(6),
       ),

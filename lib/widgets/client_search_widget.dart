@@ -101,109 +101,6 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
     widget.onClientSelected(UserModel(name: '', phone: ''));
   }
 
-  Future<void> _showCreateClientDialog() async {
-    final nameController = TextEditingController();
-    final phoneController = TextEditingController();
-    final emailController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-
-    final result = await showDialog<UserModel>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Create New Client'),
-        content: Form(
-          key: formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Name *',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Name is required';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: phoneController,
-                  decoration: const InputDecoration(
-                    labelText: 'Phone *',
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.phone,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Phone is required';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: emailController,
-                  decoration: const InputDecoration(
-                    labelText: 'Email (optional)',
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.emailAddress,
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                final newClient = UserModel(
-                  name: nameController.text,
-                  phone: phoneController.text,
-                  email: emailController.text.isEmpty
-                      ? null
-                      : emailController.text,
-                );
-                Navigator.pop(context, newClient);
-              }
-            },
-            child: const Text('Create'),
-          ),
-        ],
-      ),
-    );
-
-    if (result != null && widget.hotelId != null && mounted) {
-      final userId = AuthScopeData.of(context).uid;
-      if (userId == null) return;
-
-      try {
-        // Create client in Firebase
-        final clientId = await _firebaseService.createUser(
-          userId,
-          widget.hotelId!,
-          result,
-        );
-        final createdClient = result.copyWith(id: clientId);
-        _selectClient(createdClient);
-      } catch (e) {
-        if (mounted) {
-          showAppNotification(context, 'Error creating client: $e', type: AppNotificationType.error);
-        }
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -251,7 +148,7 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
               border: Border.all(color: colorScheme.outlineVariant),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 10,
                   offset: const Offset(0, 2),
                 ),
@@ -276,7 +173,7 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
                           width: 40,
                           height: 40,
                           decoration: BoxDecoration(
-                            color: StayoraLogo.stayoraBlue.withOpacity(0.1),
+                            color: StayoraLogo.stayoraBlue.withValues(alpha: 0.1),
                             shape: BoxShape.circle,
                           ),
                           child: Center(
@@ -336,7 +233,7 @@ class _ClientSearchWidgetState extends State<ClientSearchWidget> {
             margin: const EdgeInsets.only(top: 12),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: StayoraLogo.stayoraBlue.withOpacity(0.1),
+              color: StayoraLogo.stayoraBlue.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(

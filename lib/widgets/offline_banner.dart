@@ -28,9 +28,9 @@ class _OfflineBannerWrapperState extends State<OfflineBannerWrapper>
     );
     _slideAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeInOut);
 
-    _subscription = Connectivity()
-        .onConnectivityChanged
-        .listen(_onConnectivityChanged);
+    _subscription = Connectivity().onConnectivityChanged.listen(
+      _onConnectivityChanged,
+    );
 
     // Check current state immediately
     Connectivity().checkConnectivity().then((results) {
@@ -39,8 +39,8 @@ class _OfflineBannerWrapperState extends State<OfflineBannerWrapper>
   }
 
   void _onConnectivityChanged(List<ConnectivityResult> results) {
-    final offline = results.isEmpty ||
-        results.every((r) => r == ConnectivityResult.none);
+    final offline =
+        results.isEmpty || results.every((r) => r == ConnectivityResult.none);
     if (offline != _isOffline) {
       setState(() => _isOffline = offline);
       if (offline) {
@@ -84,8 +84,11 @@ class _OfflineBannerWrapperState extends State<OfflineBannerWrapper>
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: const [
-                      Icon(Icons.wifi_off_rounded,
-                          color: Colors.white, size: 16),
+                      Icon(
+                        Icons.wifi_off_rounded,
+                        color: Colors.white,
+                        size: 16,
+                      ),
                       SizedBox(width: 8),
                       Text(
                         'No internet – showing cached data',

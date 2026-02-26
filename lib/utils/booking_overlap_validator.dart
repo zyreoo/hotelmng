@@ -7,6 +7,7 @@
 ///
 /// All DateTime values are treated as UTC and interpreted as
 /// half-open intervals: [checkInUtc, checkOutUtc) where check-out is exclusive.
+library;
 
 /// Lightweight booking input used only for validation.
 class BookingInput {

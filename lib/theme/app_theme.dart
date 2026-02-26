@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../utils/stayora_colors.dart';
 import '../widgets/stayora_logo.dart';
@@ -46,7 +47,7 @@ abstract final class AppTheme {
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         color: Colors.white,
-        shadowColor: Colors.black.withOpacity(0.05),
+        shadowColor: Colors.black.withValues(alpha:0.05),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
@@ -54,11 +55,11 @@ abstract final class AppTheme {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.4)),
+          borderSide: BorderSide(color: colorScheme.outline.withValues(alpha:0.4)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.4)),
+          borderSide: BorderSide(color: colorScheme.outline.withValues(alpha:0.4)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -77,7 +78,7 @@ abstract final class AppTheme {
           fontWeight: FontWeight.w400,
         ),
         hintStyle: TextStyle(
-          color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+          color: colorScheme.onSurfaceVariant.withValues(alpha:0.7),
           fontWeight: FontWeight.w400,
         ),
       ),
@@ -101,8 +102,8 @@ abstract final class AppTheme {
         // Remove the Material 3 pill highlight completely.
         indicatorColor: Colors.transparent,
         indicatorShape: const RoundedRectangleBorder(),
-        labelTextStyle: MaterialStateProperty.resolveWith((states) {
-          if (states.contains(MaterialState.selected)) {
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
             return const TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w600,
@@ -115,8 +116,8 @@ abstract final class AppTheme {
             color: Colors.grey.shade500,
           );
         }),
-        iconTheme: MaterialStateProperty.resolveWith((states) {
-          if (states.contains(MaterialState.selected)) {
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
             return const IconThemeData(color: StayoraLogo.stayoraBlue, size: 24);
           }
           return IconThemeData(color: Colors.grey.shade500, size: 24);
@@ -178,7 +179,7 @@ abstract final class AppTheme {
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         color: colorScheme.surface,
-        shadowColor: Colors.black.withOpacity(0.3),
+        shadowColor: Colors.black.withValues(alpha:0.3),
       ),
       appBarTheme: AppBarTheme(
         backgroundColor: const Color(0xFF000000),
@@ -199,7 +200,7 @@ abstract final class AppTheme {
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.5)),
+          borderSide: BorderSide(color: colorScheme.outline.withValues(alpha:0.5)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -218,7 +219,7 @@ abstract final class AppTheme {
           fontWeight: FontWeight.w400,
         ),
         hintStyle: TextStyle(
-          color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+          color: colorScheme.onSurfaceVariant.withValues(alpha:0.7),
           fontWeight: FontWeight.w400,
         ),
       ),
@@ -230,8 +231,8 @@ abstract final class AppTheme {
         surfaceTintColor: Colors.transparent,
         indicatorColor: Colors.transparent,
         indicatorShape: const RoundedRectangleBorder(),
-        labelTextStyle: MaterialStateProperty.resolveWith((states) {
-          if (states.contains(MaterialState.selected)) {
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
             return const TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w600,
@@ -244,8 +245,8 @@ abstract final class AppTheme {
             color: Colors.grey.shade600,
           );
         }),
-        iconTheme: MaterialStateProperty.resolveWith((states) {
-          if (states.contains(MaterialState.selected)) {
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
             return const IconThemeData(color: StayoraLogo.stayoraBlue, size: 24);
           }
           return IconThemeData(color: Colors.grey.shade600, size: 24);
@@ -254,7 +255,7 @@ abstract final class AppTheme {
         height: 60,
       ),
       dividerTheme: DividerThemeData(
-        color: colorScheme.outline.withOpacity(0.3),
+        color: colorScheme.outline.withValues(alpha:0.3),
         thickness: 1,
         space: 1,
       ),
